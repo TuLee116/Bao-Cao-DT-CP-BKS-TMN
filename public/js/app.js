@@ -5,9 +5,10 @@
   const APP = cfg.APP_NAME || 'Báo cáo doanh thu – chi phí';
   const $app = document.getElementById('app');
   const C = Charts.C;
+  let api = null; // gán sau khi window.apiReady xong
 
   const S = {
-    user: null, profile: null, loaded: false, recovery: false, authTab: 'in',
+    profile: null, needsSetup: false, loaded: false,
     channels: [], categories: [], revenue: [], expenses: [], notes: [], users: [],
     period: '12m', noteMonth: null, editMonth: null, redraw: null
   };
@@ -33,7 +34,9 @@
   }
   function toast(msg, err) {
     const t = h('div', { class: 'toast' + (err ? ' err' : '') }, msg);
-    document.getElementById('toasts').append(t);
+    const box = document.getElementById('toasts');
+    box.append(t);
+    while (box.children.length > 3) box.firstChild.remove();
     setTimeout(() => t.remove(), err ? 6500 : 3000);
   }
   // Chạy thao tác bất đồng bộ: khóa nút trong lúc chạy, báo lỗi bằng toast. Trả về true khi thành công.
@@ -60,7 +63,7 @@
   }
   const isAdmin = () => !!S.profile && S.profile.role === 'admin';
   const isMember = () => !!S.profile && ['admin', 'viewer'].includes(S.profile.role);
-  const ROLE = { admin: 'Admin', viewer: 'Người xem', pending: 'Chờ duyệt' };
+  const ROLE = { admin: 'Admin', viewer: 'Người xem' };
   const ymNow = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); };
   const addMonth = (ym, n) => { const [y, m] = ym.split('-').map(Number); const d = new Date(y, m - 1 + n, 1); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); };
   const byName = list => new Map(list.map(c => [c.name.trim().toLowerCase(), c]));
@@ -70,7 +73,8 @@
   // Dữ liệu
   // ------------------------------------------------------------------
   async function loadAll() {
-    const [ch, ca, rv, ex, no] = await Promise.all([api.listChannels(), api.listCategories(), api.listRevenue(), api.listExpenses(), api.listNotes()]);
+    const d = await api.loadData();
+    const [ch, ca, rv, ex, no] = [d.channels, d.categories, d.revenue, d.expenses, d.notes];
     const norm = r => Object.assign({}, r, { month: String(r.month).slice(0, 7) + '-01', amount: Number(r.amount) || 0 });
     Object.assign(S, { channels: ch, categories: ca, revenue: rv.map(norm), expenses: ex.map(norm), notes: no.map(n => Object.assign({}, n, { month: String(n.month).slice(0, 7) + '-01' })) });
     S.users = isAdmin() ? await api.listUsers() : [];
@@ -105,8 +109,9 @@
   function refreshAuth() {
     authBusy = authBusy.then(async () => {
       try {
-        S.user = await api.getUser();
-        S.profile = S.user ? await api.getProfile() : null;
+        const m = await api.me();
+        S.profile = m.user;
+        S.needsSetup = !!m.needsSetup;
         S.loaded = false;
         render();
         if (S.profile && isMember()) await loadAll();
@@ -120,9 +125,7 @@
 
   function render() {
     S.redraw = null;
-    if (S.recovery) return mount(viewRecovery(), 'Đặt mật khẩu mới');
-    if (!S.user) return mount(viewLogin(), 'Đăng nhập');
-    if (!S.profile || !isMember()) return mount(viewPending(), 'Chờ duyệt');
+    if (!S.profile) return S.needsSetup ? mount(viewSetup(), 'Cài đặt lần đầu') : mount(viewLogin(), 'Đăng nhập');
     if (!S.loaded) return mount(shell(h('div', { class: 'skeleton', style: 'height:320px' })), '');
     const views = {
       '': [viewDashboard, 'Tổng quan'], 'nhap-lieu': [viewEntry, 'Nhập số liệu'], 'danh-muc': [viewCategories, 'Danh mục'],
@@ -141,22 +144,20 @@
   function demoBar() {
     if (api.mode !== 'demo') return null;
     return h('div', { class: 'demo-bar' }, h('div', { class: 'wrap' },
-      h('span', null, h('b', null, 'Chế độ demo. '), 'Dữ liệu chỉ lưu trong trình duyệt này và là số liệu mẫu. Kết nối Supabase để đăng nhập thật và dùng chung dữ liệu (xem README).'),
-      S.user ? confirmBtn('Đặt lại dữ liệu demo', async () => { api.reset(); toast('Đã đặt lại dữ liệu demo.'); }, 'sm') : null));
+      h('span', null, h('b', null, 'Chế độ demo. '), 'Không tìm thấy máy chủ nên dữ liệu chỉ lưu trong trình duyệt này và là số liệu mẫu. Triển khai lên Railway hoặc Vercel để dùng thật (xem README).'),
+      S.profile ? confirmBtn('Đặt lại dữ liệu demo', async () => { api.reset(); toast('Đã đặt lại dữ liệu demo.'); await refreshAuth(); }, 'sm') : null));
   }
 
   function shell(content) {
     const r = route();
-    const pending = S.users.filter(u => u.role === 'pending').length;
     const items = [['', 'Tổng quan'], ['nhap-lieu', 'Nhập số liệu', 1], ['danh-muc', 'Danh mục', 1], ['nhap-file', 'Nhập từ file', 1], ['nguoi-dung', 'Người dùng', 1]];
     const nav = h('nav', { class: 'nav', 'aria-label': 'Chức năng' },
-      items.filter(i => !i[2] || isAdmin()).map(([k, t]) => h('a', { href: '#/' + k, class: (r === k || (k === '' && !items.some(i => i[0] === r) && r !== 'tai-khoan')) ? 'on' : '' },
-        t, k === 'nguoi-dung' && pending ? h('span', { class: 'badge', title: pending + ' tài khoản chờ duyệt' }, pending) : null)));
+      items.filter(i => !i[2] || isAdmin()).map(([k, t]) => h('a', { href: '#/' + k, class: (r === k || (k === '' && !items.some(i => i[0] === r) && r !== 'tai-khoan')) ? 'on' : '' }, t)));
     const who = h('div', { class: 'who' },
-      h('span', { class: 'email', title: S.profile.email }, S.profile.full_name || S.profile.email),
+      h('span', { class: 'email', title: S.profile.username }, S.profile.full_name || S.profile.username),
       h('span', { class: 'chip ' + S.profile.role }, ROLE[S.profile.role]),
       h('a', { class: 'btn sm', href: '#/tai-khoan' }, 'Tài khoản'),
-      h('button', { class: 'btn sm', type: 'button', onclick: e => run(e.currentTarget, () => api.signOut()) }, 'Đăng xuất'));
+      h('button', { class: 'btn sm', type: 'button', onclick: e => run(e.currentTarget, async () => { await api.signOut(); location.hash = ''; await refreshAuth(); }) }, 'Đăng xuất'));
     return h('div', null,
       h('header', { class: 'topbar' }, h('div', { class: 'wrap' },
         h('a', { class: 'brand', href: '#/' }, logo(), APP), nav, who)),
@@ -175,72 +176,51 @@
     return s;
   }
 
-  // ---------- Đăng nhập / đăng ký / quên mật khẩu ----------
+  // ---------- Đăng nhập ----------
+  function authCard(...kids) {
+    return h('div', null, demoBar(), h('div', { class: 'wrap auth' }, h('div', { class: 'card auth-card stack' },
+      h('div', { class: 'brand' }, logo(), 'BKS-TMN'), h('h1', null, APP), ...kids)));
+  }
+
   function viewLogin() {
-    const tab = S.authTab;
-    const msg = h('div', { class: 'alert', hidden: true });
-    const show = (t, kind) => { msg.className = 'alert ' + (kind || ''); msg.textContent = t; msg.hidden = false; };
-    const email = h('input', { type: 'email', id: 'email', autocomplete: 'email', required: true, value: S.lastEmail || '' });
-    const pw = h('input', { type: 'password', id: 'password', autocomplete: tab === 'up' ? 'new-password' : 'current-password', required: true, minlength: tab === 'up' ? 6 : null });
-    const name = h('input', { type: 'text', id: 'full_name', autocomplete: 'name', required: true });
-    const submit = h('button', { class: 'btn primary', type: 'submit' }, { in: 'Đăng nhập', up: 'Tạo tài khoản', reset: 'Gửi link đặt lại mật khẩu' }[tab]);
+    const user = h('input', { type: 'text', id: 'username', autocomplete: 'username', autocapitalize: 'none', spellcheck: 'false', required: true, value: S.lastUser || '' });
+    const pw = h('input', { type: 'password', id: 'password', autocomplete: 'current-password', required: true });
+    const submit = h('button', { class: 'btn primary', type: 'submit' }, 'Đăng nhập');
     const form = h('form', {
-      class: 'stack', novalidate: false, onsubmit: async ev => {
+      class: 'stack', onsubmit: async ev => {
         ev.preventDefault();
-        msg.hidden = true;
-        S.lastEmail = email.value.trim();
-        await run(submit, async () => {
-          if (tab === 'in') await api.signIn(email.value.trim(), pw.value);
-          else if (tab === 'up') {
-            const r = await api.signUp(email.value.trim(), pw.value, name.value.trim());
-            if (r.needsConfirm) show(`Đã gửi thư xác nhận tới ${email.value.trim()}. Mở thư, bấm link kích hoạt, rồi quay lại đây đăng nhập. Sau đó admin cần duyệt tài khoản.`, 'ok');
-          } else {
-            await api.resetPassword(email.value.trim());
-            show('Nếu email này có tài khoản, thư đặt lại mật khẩu đã được gửi. Mở thư và bấm link để đặt mật khẩu mới.', 'ok');
-          }
-        });
+        S.lastUser = user.value.trim();
+        const ok = await run(submit, () => api.signIn(user.value.trim(), pw.value));
+        if (ok) await refreshAuth();
       }
-    },
-    tab === 'up' ? h('label', { class: 'f' }, 'Họ và tên', name) : null,
-    h('label', { class: 'f' }, 'Email', email),
-    tab !== 'reset' ? h('label', { class: 'f' }, 'Mật khẩu', pw) : null,
-    tab === 'up' ? h('p', { class: 'note' }, 'Mật khẩu ít nhất 6 ký tự. Tài khoản mới cần admin duyệt trước khi xem được báo cáo.') : null,
-    submit);
-    const tabBtn = (k, t) => h('button', { type: 'button', class: tab === k ? 'on' : '', 'aria-pressed': tab === k ? 'true' : 'false', onclick: () => { S.authTab = k; render(); } }, t);
+    }, h('label', { class: 'f' }, 'Tên đăng nhập', user), h('label', { class: 'f' }, 'Mật khẩu', pw), submit,
+    h('p', { class: 'note' }, 'Chưa có tài khoản hoặc quên mật khẩu? Hãy liên hệ admin để được cấp hoặc đặt lại.'));
     const demo = api.mode === 'demo' ? h('div', { class: 'alert warn stack' },
-      h('span', null, 'Chế độ demo: chưa kết nối Supabase. Chọn một vai trò để xem thử.'),
+      h('span', null, 'Chế độ demo: chọn một vai trò để xem thử.'),
       h('div', { class: 'row' },
-        h('button', { class: 'btn sm', type: 'button', onclick: e => run(e.currentTarget, () => api.signIn('admin@demo.vn', 'demo')) }, 'Vào với quyền Admin'),
-        h('button', { class: 'btn sm', type: 'button', onclick: e => run(e.currentTarget, () => api.signIn('xem@demo.vn', 'demo')) }, 'Vào với quyền Người xem'))) : null;
-    return h('div', null, demoBar(), h('div', { class: 'wrap auth' }, h('div', { class: 'card auth-card stack' },
-      h('div', { class: 'brand' }, logo(), 'BKS-TMN'),
-      h('h1', null, APP),
-      h('p', { class: 'note' }, 'Đăng nhập để xem báo cáo doanh thu, chi phí và lợi nhuận.'),
-      h('div', { class: 'tabs', role: 'group' }, tabBtn('in', 'Đăng nhập'), tabBtn('up', 'Đăng ký'), tabBtn('reset', 'Quên mật khẩu')),
-      msg, form, demo)));
+        h('button', { class: 'btn sm', type: 'button', onclick: e => run(e.currentTarget, async () => { await api.signIn('admin', ''); await refreshAuth(); }) }, 'Vào với quyền Admin'),
+        h('button', { class: 'btn sm', type: 'button', onclick: e => run(e.currentTarget, async () => { await api.signIn('nguoixem', ''); await refreshAuth(); }) }, 'Vào với quyền Người xem'))) : null;
+    return authCard(h('p', { class: 'note' }, 'Đăng nhập để xem báo cáo doanh thu, chi phí và lợi nhuận.'), form, demo);
   }
 
-  function viewRecovery() {
-    const p1 = h('input', { type: 'password', id: 'new-password', autocomplete: 'new-password', required: true, minlength: 6 });
-    const p2 = h('input', { type: 'password', id: 'new-password-2', autocomplete: 'new-password', required: true, minlength: 6 });
-    const b = h('button', { class: 'btn primary', type: 'submit' }, 'Lưu mật khẩu mới');
-    return h('div', { class: 'wrap auth' }, h('form', {
-      class: 'card auth-card stack', onsubmit: async ev => {
-        ev.preventDefault();
-        if (p1.value !== p2.value) return toast('Hai mật khẩu chưa khớp nhau.', true);
-        const ok = await run(b, () => api.updatePassword(p1.value));
-        if (ok) { S.recovery = false; toast('Đã đổi mật khẩu.'); refreshAuth(); }
-      }
-    }, h('h1', null, 'Đặt mật khẩu mới'), h('label', { class: 'f' }, 'Mật khẩu mới', p1), h('label', { class: 'f' }, 'Nhập lại mật khẩu', p2), b));
-  }
-
-  function viewPending() {
-    return h('div', null, demoBar(), h('div', { class: 'wrap auth' }, h('div', { class: 'card auth-card stack' },
-      h('h1', null, 'Tài khoản đang chờ duyệt'),
-      h('p', null, 'Bạn đã đăng nhập bằng ', h('b', null, S.user.email), '. Admin cần cấp quyền cho tài khoản này trước khi bạn xem được báo cáo.'),
-      h('div', { class: 'row' },
-        h('button', { class: 'btn primary', type: 'button', onclick: e => run(e.currentTarget, refreshAuth) }, 'Kiểm tra lại'),
-        h('button', { class: 'btn', type: 'button', onclick: e => run(e.currentTarget, () => api.signOut()) }, 'Đăng xuất')))));
+  // Lần chạy đầu tiên: chưa có tài khoản nào, tạo tài khoản admin.
+  function viewSetup() {
+    const name = h('input', { type: 'text', id: 'setup-name', autocomplete: 'name' });
+    const user = h('input', { type: 'text', id: 'setup-username', autocomplete: 'username', autocapitalize: 'none', spellcheck: 'false', required: true, minlength: 3 });
+    const p1 = h('input', { type: 'password', id: 'setup-password', autocomplete: 'new-password', required: true, minlength: 8 });
+    const p2 = h('input', { type: 'password', id: 'setup-password2', autocomplete: 'new-password', required: true, minlength: 8 });
+    const b = h('button', { class: 'btn primary', type: 'submit' }, 'Tạo tài khoản admin');
+    return authCard(
+      h('div', { class: 'alert ok' }, 'Web chưa có tài khoản nào. Tạo tài khoản admin đầu tiên để bắt đầu; sau đó admin tạo tài khoản cho những người khác.'),
+      h('form', {
+        class: 'stack', onsubmit: async ev => {
+          ev.preventDefault();
+          if (p1.value !== p2.value) return toast('Hai mật khẩu chưa khớp nhau.', true);
+          const ok = await run(b, () => api.setup(user.value.trim(), name.value.trim(), p1.value));
+          if (ok) { toast('Đã tạo tài khoản admin.'); await refreshAuth(); }
+        }
+      }, h('label', { class: 'f' }, 'Họ và tên', name), h('label', { class: 'f' }, 'Tên đăng nhập (ví dụ: tu.le hoặc email)', user),
+      h('label', { class: 'f' }, 'Mật khẩu (ít nhất 8 ký tự)', p1), h('label', { class: 'f' }, 'Nhập lại mật khẩu', p2), b));
   }
 
   // ------------------------------------------------------------------
@@ -360,14 +340,14 @@
           h('p', null, n.content),
           h('div', { class: 'note-meta' },
             h('span', null, (n.author_name || 'Không rõ') + ' · ' + new Date(n.created_at).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' })),
-            (n.author_id === S.user.id || isAdmin()) ? confirmBtn('Xóa', async () => { await api.deleteNote(n.id); toast('Đã xóa ghi chú.'); await reload(); }) : null))))
+            (n.author_id === S.profile.id || isAdmin()) ? confirmBtn('Xóa', async () => { await api.deleteNote(n.id); toast('Đã xóa ghi chú.'); await reload(); }) : null))))
           : h('p', { class: 'note' }, `Chưa có ghi chú cho ${F.mLong(m)}.`),
         h('form', {
           class: 'stack', onsubmit: async ev => {
             ev.preventDefault();
             const text = ta.value.trim();
             if (!text) return;
-            const ok = await run(add, () => api.addNote(m, text, S.profile.full_name || S.profile.email));
+            const ok = await run(add, () => api.addNote(m, text));
             if (ok) { toast('Đã thêm ghi chú.'); await reload(); }
           }
         }, h('label', { class: 'f' }, 'Ghi chú mới cho ' + F.mLong(m), ta), h('div', { class: 'row' }, add)));
@@ -640,7 +620,8 @@
         for (const n of newCats.rev) await api.saveChannel({ name: n, sort_order: ++o1, active: true });
         for (const n of newCats.exp) await api.saveCategory({ name: n, sort_order: ++o2, active: true });
       }
-      const [chs, cats] = await Promise.all([api.listChannels(), api.listCategories()]);
+      const fresh = await api.loadData();
+      const chs = fresh.channels, cats = fresh.categories;
       const cm = byName(chs), km = byName(cats);
       let i = 0, skipped = 0;
       for (const m of p.months) {
@@ -680,64 +661,103 @@
   }
 
   // ------------------------------------------------------------------
-  // Người dùng (admin)
+  // Người dùng (admin): tạo tài khoản, đổi vai trò, khóa, đặt lại mật khẩu
   // ------------------------------------------------------------------
   function viewUsers() {
-    const users = S.users.slice().sort((a, b) => (a.role === 'pending' ? -1 : 0) - (b.role === 'pending' ? -1 : 0) || (a.created_at < b.created_at ? -1 : 1));
+    const nu = {
+      name: h('input', { type: 'text', id: 'nu-name', autocomplete: 'off' }),
+      user: h('input', { type: 'text', id: 'nu-username', autocomplete: 'off', autocapitalize: 'none', spellcheck: 'false', required: true, minlength: 3 }),
+      pw: h('input', { type: 'text', id: 'nu-password', autocomplete: 'off', required: true, minlength: 8 }),
+      role: h('select', { id: 'nu-role' }, h('option', { value: 'viewer' }, 'Người xem'), h('option', { value: 'admin' }, 'Admin'))
+    };
+    const addBtn = h('button', { class: 'btn primary', type: 'submit' }, 'Tạo tài khoản');
+    const gen = h('button', { class: 'btn', type: 'button', onclick: () => { nu.pw.value = randomPassword(); } }, 'Tạo mật khẩu ngẫu nhiên');
+    const createForm = h('form', {
+      class: 'card stack', id: 'tao-tai-khoan', onsubmit: async ev => {
+        ev.preventDefault();
+        const uname = nu.user.value.trim(), pw = nu.pw.value;
+        const ok = await run(addBtn, () => api.createUser({ username: uname, full_name: nu.name.value.trim(), password: pw, role: nu.role.value }));
+        if (ok) { S.lastCreated = { username: uname, password: pw }; toast('Đã tạo tài khoản ' + uname + '.'); await reload(); }
+      }
+    },
+    h('h2', null, 'Tạo tài khoản mới'),
+    h('div', { class: 'form-grid' }, h('label', { class: 'f' }, 'Họ và tên', nu.name), h('label', { class: 'f' }, 'Tên đăng nhập', nu.user),
+      h('label', { class: 'f' }, 'Mật khẩu tạm (ít nhất 8 ký tự)', nu.pw), h('label', { class: 'f' }, 'Vai trò', nu.role)),
+    h('div', { class: 'row' }, addBtn, gen),
+    S.lastCreated ? h('div', { class: 'alert ok' }, 'Gửi cho người dùng: tên đăng nhập ', h('b', null, S.lastCreated.username), ', mật khẩu ', h('b', null, S.lastCreated.password),
+      '. Họ nên đổi mật khẩu ở trang Tài khoản sau khi đăng nhập.') : null);
+
+    const rows = S.users.map(u => {
+      const self = u.id === S.profile.id;
+      const role = h('select', { id: 'role-' + u.id, 'aria-label': 'Vai trò của ' + u.username, disabled: self }, Object.entries(ROLE).map(([k, t]) => h('option', { value: k }, t)));
+      role.value = u.role;
+      role.addEventListener('change', async () => {
+        const ok = await run(role, () => api.updateUser(u.id, { role: role.value }));
+        if (ok) toast(`Đã đổi ${u.username} thành ${ROLE[role.value]}.`);
+        await reload();
+      });
+      const lock = h('button', { class: 'btn sm' + (u.active ? ' danger' : ''), type: 'button', disabled: self }, u.active ? 'Khóa' : 'Mở khóa');
+      lock.addEventListener('click', async () => {
+        const ok = await run(lock, () => api.updateUser(u.id, { active: !u.active }));
+        if (ok) { toast((u.active ? 'Đã khóa ' : 'Đã mở khóa ') + u.username + '.'); await reload(); }
+      });
+      const reset = h('button', { class: 'btn sm', type: 'button' }, 'Đặt lại mật khẩu');
+      reset.addEventListener('click', async () => {
+        const pw = randomPassword();
+        const ok = await run(reset, () => api.updateUser(u.id, { password: pw }));
+        if (ok) { S.lastCreated = { username: u.username, password: pw }; toast('Đã đặt lại mật khẩu cho ' + u.username + '.'); await reload(); }
+      });
+      return h('tr', { class: u.active ? '' : 'muted' },
+        h('td', null, u.username, self ? ' (bạn)' : ''), h('td', { class: 'l' }, u.full_name || '–'),
+        h('td', { class: 'l' }, role), h('td', { class: 'l' }, u.active ? h('span', { class: 'chip viewer' }, 'Đang hoạt động') : h('span', { class: 'chip pending' }, 'Đã khóa')),
+        h('td', null, u.created_at ? new Date(u.created_at).toLocaleDateString('vi-VN') : ''),
+        h('td', { class: 'actions' }, self ? null : [reset, lock]));
+    });
     return h('div', { class: 'stack', style: 'gap:22px' },
-      h('div', null, h('h1', { class: 'page-head' }, 'Người dùng'), h('p', { class: 'lead' }, 'Người mới tự đăng ký ở trang đăng nhập và nằm ở trạng thái "Chờ duyệt". Chọn vai trò để cấp quyền: Người xem chỉ xem báo cáo và viết ghi chú; Admin được sửa số liệu, danh mục và duyệt người dùng.')),
-      h('div', { class: 'card' }, h('div', { class: 'table-wrap' }, h('table', { class: 't' },
-        h('thead', null, h('tr', null, h('th', null, 'Email'), h('th', { class: 'l' }, 'Họ tên'), h('th', { class: 'l' }, 'Vai trò'), h('th', null, 'Ngày đăng ký'))),
-        h('tbody', null, users.map(u => {
-          const self = u.id === S.user.id;
-          const sel = h('select', { id: 'role-' + u.id, 'aria-label': 'Vai trò của ' + u.email, disabled: self }, Object.entries(ROLE).map(([k, t]) => h('option', { value: k }, t)));
-          sel.value = u.role;
-          sel.addEventListener('change', async () => {
-            const ok = await run(sel, () => api.setRole(u.id, sel.value));
-            if (ok) toast(`Đã đổi ${u.email} thành ${ROLE[sel.value]}.`);
-            await reload();
-          });
-          return h('tr', null, h('td', null, u.email, self ? ' (bạn)' : ''), h('td', { class: 'l' }, u.full_name || '–'),
-            h('td', { class: 'l' }, sel, ' ', u.role === 'pending' ? h('span', { class: 'chip pending' }, 'Cần duyệt') : null),
-            h('td', null, u.created_at ? new Date(u.created_at).toLocaleDateString('vi-VN') : ''));
-        }))))));
+      h('div', null, h('h1', { class: 'page-head' }, 'Người dùng'),
+        h('p', { class: 'lead' }, 'Admin tạo tài khoản và gửi tên đăng nhập, mật khẩu tạm cho từng người. Người xem chỉ xem báo cáo và viết ghi chú; Admin được sửa số liệu, danh mục và quản lý người dùng. Khóa tài khoản sẽ đăng xuất người đó ngay.')),
+      createForm,
+      h('div', { class: 'card' }, h('h2', null, 'Danh sách tài khoản'), h('div', { class: 'table-wrap' }, h('table', { class: 't' },
+        h('thead', null, h('tr', null, h('th', null, 'Tên đăng nhập'), h('th', { class: 'l' }, 'Họ tên'), h('th', { class: 'l' }, 'Vai trò'), h('th', { class: 'l' }, 'Trạng thái'), h('th', null, 'Ngày tạo'), h('th', null, ''))),
+        h('tbody', null, rows)))));
+  }
+  function randomPassword() {
+    const chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const a = new Uint32Array(12);
+    crypto.getRandomValues(a);
+    return Array.from(a, x => chars[x % chars.length]).join('');
   }
 
   // ------------------------------------------------------------------
   // Tài khoản
   // ------------------------------------------------------------------
   function viewAccount() {
-    const p1 = h('input', { type: 'password', id: 'acc-pw', autocomplete: 'new-password', minlength: 6, required: true });
-    const p2 = h('input', { type: 'password', id: 'acc-pw2', autocomplete: 'new-password', minlength: 6, required: true });
+    const cur = h('input', { type: 'password', id: 'acc-current', autocomplete: 'current-password', required: true });
+    const p1 = h('input', { type: 'password', id: 'acc-pw', autocomplete: 'new-password', minlength: 8, required: true });
+    const p2 = h('input', { type: 'password', id: 'acc-pw2', autocomplete: 'new-password', minlength: 8, required: true });
     const b = h('button', { class: 'btn primary', type: 'submit' }, 'Đổi mật khẩu');
     return h('div', { class: 'stack', style: 'gap:22px' },
       h('h1', { class: 'page-head' }, 'Tài khoản'),
       h('div', { class: 'grid' },
         h('div', { class: 'card' }, h('h2', null, 'Thông tin'),
-          h('p', null, h('span', { class: 'muted' }, 'Email: '), S.profile.email),
+          h('p', null, h('span', { class: 'muted' }, 'Tên đăng nhập: '), S.profile.username),
           h('p', null, h('span', { class: 'muted' }, 'Họ tên: '), S.profile.full_name || '–'),
           h('p', null, h('span', { class: 'muted' }, 'Vai trò: '), h('span', { class: 'chip ' + S.profile.role }, ROLE[S.profile.role]))),
         h('form', {
           class: 'card stack', onsubmit: async ev => {
             ev.preventDefault();
-            if (p1.value !== p2.value) return toast('Hai mật khẩu chưa khớp nhau.', true);
-            const ok = await run(b, () => api.updatePassword(p1.value));
-            if (ok) { p1.value = p2.value = ''; toast(api.mode === 'demo' ? 'Chế độ demo không lưu mật khẩu.' : 'Đã đổi mật khẩu.'); }
+            if (p1.value !== p2.value) return toast('Hai mật khẩu mới chưa khớp nhau.', true);
+            const ok = await run(b, () => api.changePassword(cur.value, p1.value));
+            if (ok) { cur.value = p1.value = p2.value = ''; toast(api.mode === 'demo' ? 'Chế độ demo không lưu mật khẩu.' : 'Đã đổi mật khẩu. Các phiên đăng nhập khác đã bị đăng xuất.'); }
           }
-        }, h('h2', null, 'Đổi mật khẩu'), h('label', { class: 'f' }, 'Mật khẩu mới', p1), h('label', { class: 'f' }, 'Nhập lại', p2), h('div', { class: 'row' }, b))));
+        }, h('h2', null, 'Đổi mật khẩu'), h('label', { class: 'f' }, 'Mật khẩu hiện tại', cur),
+        h('label', { class: 'f' }, 'Mật khẩu mới (ít nhất 8 ký tự)', p1), h('label', { class: 'f' }, 'Nhập lại mật khẩu mới', p2), h('div', { class: 'row' }, b))));
   }
 
   // ------------------------------------------------------------------
   // Khởi động
   // ------------------------------------------------------------------
-  api.onAuthChange((event, user) => {
-    if (event === 'PASSWORD_RECOVERY') S.recovery = true;
-    if (event === 'INITIAL_SESSION') return; // đã xử lý bằng refreshAuth() lúc khởi động
-    const same = (user && user.id) === (S.user && S.user.id);
-    if (same && !['PASSWORD_RECOVERY', 'USER_UPDATED', 'SIGNED_OUT'].includes(event)) return;
-    // Không gọi Supabase ngay trong callback (tránh khóa phiên): đẩy sang lượt sau.
-    setTimeout(refreshAuth, 0);
-  });
+  window.addEventListener('auth-expired', () => { if (S.profile) { S.profile = null; toast('Phiên đăng nhập đã hết. Hãy đăng nhập lại.', true); render(); } });
   window.addEventListener('hashchange', () => { if (route() !== 'nhap-lieu') S.editMonth = null; render(); window.scrollTo(0, 0); });
   let rt = 0, lastW = window.innerWidth;
   window.addEventListener('resize', () => {
@@ -746,5 +766,5 @@
     clearTimeout(rt);
     rt = setTimeout(() => { if (S.redraw) S.redraw(); }, 150);
   });
-  refreshAuth();
+  window.apiReady.then(() => { api = window.api; refreshAuth(); });
 })();

@@ -114,7 +114,8 @@ table.t { width: 100%; border-collapse: collapse; font-size: var(--cap); font-va
 .t tbody tr.click { cursor: pointer; }
 .t tbody tr.click:hover, .t tbody tr.sel { background: var(--panel-2); }
 .t .sum { border-left: 1px solid var(--line); }
-.t td.actions { display: flex; gap: 6px; justify-content: flex-end; }
+.t td.actions { text-align: right; }
+.t td.actions > * + * { margin-left: 6px; }
 .t input[type="text"], .t input[type="number"] { width: 100%; min-width: 8rem; }
 .t input.num-sm { min-width: 4.5rem; width: 5rem; }
 

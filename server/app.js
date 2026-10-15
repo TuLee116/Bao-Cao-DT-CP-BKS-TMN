@@ -53,15 +53,6 @@ const password = v => {
   if (typeof v !== 'string' || v.length < 8 || v.length > 200) fail(400, 'Mật khẩu cần ít nhất 8 ký tự.');
   return v;
 };
-const month = v => {
-  if (typeof v !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])-01$/.test(v)) fail(400, 'Tháng không hợp lệ (cần dạng YYYY-MM-01).');
-  return v;
-};
-const amount = v => {
-  const n = Number(v);
-  if (!Number.isFinite(n) || n < 0 || n >= 1e15) fail(400, 'Số tiền không hợp lệ.');
-  return Math.round(n * 100) / 100;
-};
 const intId = v => {
   const n = Number(v);
   if (!Number.isInteger(n) || n <= 0) fail(400, 'Mã không hợp lệ.');
@@ -102,7 +93,9 @@ const DUMMY_HASH = bcrypt.hashSync('khong-dung-den', 4);
 // Middleware cho /api
 // ---------------------------------------------------------------------
 const api = express.Router();
-api.use(express.json({ limit: '2mb' }));
+// JSON tối đa 2MB; riêng tải mốc dữ liệu (file Excel đã đọc) cho tới 15MB ở route của nó.
+const json2mb = express.json({ limit: '2mb' });
+api.use((req, res, next) => (req.method === 'POST' && req.path === '/snapshots' ? next() : json2mb(req, res, next)));
 // Chống CSRF: mọi yêu cầu thay đổi dữ liệu phải có header X-App (form của trang khác không gửi được).
 api.use((req, res, next) => {
   if (req.method !== 'GET' && req.get('x-app') !== '1') return res.status(403).json({ error: 'Yêu cầu không hợp lệ.' });
@@ -169,65 +162,182 @@ api.post('/me/password', need('member'), wrap(async (req, res) => {
 }));
 
 // ---------------------------------------------------------------------
-// Số liệu
+// DT-CP công trình: mỗi lần tải file Excel lên là một "mốc" (snapshot).
+// Mỗi dòng = một dòng Hợp đồng/Phụ lục, gắn công ty, khu vực, công trình, hợp đồng (mã DT-CP), chủ đầu tư, giai đoạn.
+// vals: hd (giá trị HĐ), sl (sản lượng), slhs (sản lượng hồ sơ), tv (tiền về), dt (doanh thu thời điểm), k..y (15 khoản chi phí trực tiếp). Đơn vị: đồng.
 // ---------------------------------------------------------------------
-api.get('/data', need('member'), wrap(async (req, res) => {
-  const [ch, ca, rv, ex, no, dash] = await Promise.all([
-    query('select id, name, sort_order, active from channels order by sort_order, id'),
-    query('select id, name, sort_order, active from expense_categories order by sort_order, id'),
-    query('select month, channel_id, amount from revenue_entries order by month, channel_id'),
-    query('select month, category_id, amount from expense_entries order by month, category_id'),
-    query('select id, month, content, author_id, author_name, created_at from month_notes order by created_at'),
-    query(`select value from app_settings where key = 'dashboard'`)
+const VAL_KEYS = ['hd', 'sl', 'slhs', 'tv', 'dt', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y'];
+const COST_KEYS = VAL_KEYS.slice(5);
+const LINE_TEXT = ['company', 'region', 'region_name', 'project_code', 'project_name', 'project_stage', 'contract_code', 'contract_no', 'contract_title', 'investor', 'stage', 'line_label'];
+const CATALOG_KINDS = ['company', 'region', 'investor', 'stage', 'cost'];
+const isoDate = v => {
+  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v) || isNaN(Date.parse(v))) fail(400, 'Ngày báo cáo không hợp lệ (cần dạng YYYY-MM-DD).');
+  return v;
+};
+const shortText = (v, max) => (v == null ? '' : String(v).trim().slice(0, max));
+
+api.get('/meta', need('member'), wrap(async (req, res) => {
+  const [snaps, cat, dash] = await Promise.all([
+    query(`select id, to_char(report_date, 'YYYY-MM-DD') as report_date, label, file_name, cost_labels, line_count, created_at
+           from snapshots order by report_date desc, id desc`),
+    query('select kind, code, name, sort from catalog order by kind, sort, code'),
+    query(`select value from app_settings where key = 'dashboard_v2'`)
   ]);
-  res.json({ channels: ch.rows, categories: ca.rows, revenue: rv.rows, expenses: ex.rows, notes: no.rows, dashboard: (dash.rows[0] || {}).value || null });
+  res.json({ snapshots: snaps.rows, catalog: cat.rows, dashboard: (dash.rows[0] || {}).value || null });
+}));
+
+api.get('/snapshots/:id/lines', need('member'), wrap(async (req, res) => {
+  const r = await query(`select seq, ${LINE_TEXT.join(', ')}, vals from snapshot_lines where snapshot_id = $1 order by seq`, [intId(req.params.id)]);
+  res.json(r.rows);
+}));
+
+api.post('/snapshots', need('admin'), express.json({ limit: '15mb' }), wrap(async (req, res) => {
+  const b = req.body || {};
+  const date = isoDate(b.report_date);
+  const lines = Array.isArray(b.lines) ? b.lines : [];
+  if (!lines.length) fail(400, 'File không có dòng số liệu nào.');
+  if (lines.length > 30000) fail(400, 'File quá lớn (tối đa 30.000 dòng).');
+  const costLabels = {};
+  if (b.cost_labels && typeof b.cost_labels === 'object') for (const k of COST_KEYS) if (b.cost_labels[k]) costLabels[k] = shortText(b.cost_labels[k], 200);
+  const cols = Object.fromEntries(LINE_TEXT.map(k => [k, []]));
+  const vals = [];
+  lines.forEach(l => {
+    if (!l || typeof l !== 'object') fail(400, 'Dòng số liệu không hợp lệ.');
+    LINE_TEXT.forEach(k => cols[k].push(shortText(l[k], k === 'contract_title' || k === 'project_name' ? 500 : 200)));
+    const v = {};
+    for (const k of VAL_KEYS) {
+      const n = l.vals && l.vals[k];
+      if (n == null || n === '') continue;
+      const x = Number(n);
+      if (!Number.isFinite(x) || Math.abs(x) >= 1e16) fail(400, 'Có ô số liệu không hợp lệ.');
+      if (x !== 0) v[k] = Math.round(x * 100) / 100;
+    }
+    vals.push(JSON.stringify(v));
+  });
+  const id = await tx(async c => {
+    const s = (await c.query(`insert into snapshots (report_date, label, file_name, cost_labels, line_count, created_by)
+      values ($1, $2, $3, $4, $5, $6) returning id`, [date, shortText(b.label, 120), shortText(b.file_name, 200), JSON.stringify(costLabels), lines.length, req.user.id])).rows[0].id;
+    for (let i = 0; i < lines.length; i += 2000) {
+      const end = Math.min(lines.length, i + 2000);
+      const params = [s, Array.from({ length: end - i }, (_, j) => i + j + 1)];
+      LINE_TEXT.forEach(k => params.push(cols[k].slice(i, end)));
+      params.push(vals.slice(i, end));
+      const casts = LINE_TEXT.map((k, j) => `$${j + 3}::text[]`).join(', ');
+      await c.query(`insert into snapshot_lines (snapshot_id, seq, ${LINE_TEXT.join(', ')}, vals)
+        select $1, * from unnest($2::int[], ${casts}, $${LINE_TEXT.length + 3}::jsonb[])`, params);
+    }
+    // Bổ sung danh mục còn thiếu (tên mặc định = mã), không ghi đè tên admin đã đặt.
+    const add = (kind, codes, names) => c.query(`insert into catalog (kind, code, name) select $1, x.code, x.name from unnest($2::text[], $3::text[]) as x(code, name)
+      where x.code <> '' on conflict (kind, code) do nothing`, [kind, codes, names]);
+    const uniq = (codeKey, nameKey) => { const m = new Map(); cols[codeKey].forEach((code, i) => { if (code && !m.has(code)) m.set(code, nameKey ? cols[nameKey][i] || code : code); }); return [[...m.keys()], [...m.values()]]; };
+    const hints = b.company_names && typeof b.company_names === 'object' ? b.company_names : {};
+    const comp = uniq('company');
+    await add('company', comp[0], comp[0].map(code => shortText(hints[code], 160) || code));
+    await add('region', ...uniq('region', 'region_name'));
+    await add('investor', ...uniq('investor'));
+    const st = uniq('stage'); const ps = uniq('project_stage');
+    await add('stage', [...new Set(st[0].concat(ps[0]))], [...new Set(st[0].concat(ps[0]))].map(x => (/^\d+$/.test(x) ? 'Giai đoạn ' + x : x)));
+    return s;
+  });
+  res.json({ id });
+}));
+
+api.put('/snapshots/:id', need('admin'), wrap(async (req, res) => {
+  const r = await query('update snapshots set report_date = $1, label = $2 where id = $3', [isoDate(req.body.report_date), shortText(req.body.label, 120), intId(req.params.id)]);
+  if (!r.rowCount) fail(404, 'Không tìm thấy mốc dữ liệu.');
+  res.json({ ok: true });
+}));
+
+api.delete('/snapshots/:id', need('admin'), wrap(async (req, res) => {
+  await query('delete from snapshots where id = $1', [intId(req.params.id)]);
+  res.json({ ok: true });
+}));
+
+// Diễn biến một hợp đồng qua các mốc + ghi chú của hợp đồng.
+api.get('/contracts/:code/history', need('member'), wrap(async (req, res) => {
+  const code = shortText(req.params.code, 200);
+  const sum = k => `coalesce(sum((l.vals->>'${k}')::numeric), 0)::float8 as ${k}`;
+  const cp = COST_KEYS.map(k => `coalesce((l.vals->>'${k}')::numeric, 0)`).join(' + ');
+  const [h, n] = await Promise.all([
+    query(`select s.id as snapshot_id, to_char(s.report_date, 'YYYY-MM-DD') as report_date, s.label, max(l.stage) as stage,
+        ${['hd', 'sl', 'slhs', 'tv', 'dt'].map(sum).join(', ')}, coalesce(sum(${cp}), 0)::float8 as cp
+      from snapshot_lines l join snapshots s on s.id = l.snapshot_id
+      where l.contract_code = $1 group by s.id order by s.report_date, s.id`, [code]),
+    query('select id, content, author_id, author_name, created_at from contract_notes where contract_code = $1 order by created_at desc', [code])
+  ]);
+  res.json({ history: h.rows, notes: n.rows });
+}));
+
+api.post('/contract-notes', need('member'), wrap(async (req, res) => {
+  const code = str(req.body.contract_code, 'Mã DT-CP', 1, 200);
+  const content = str(req.body.content, 'Ghi chú', 1, 4000);
+  const r = await query('insert into contract_notes (contract_code, content, author_id, author_name) values ($1, $2, $3, $4) returning id',
+    [code, content, req.user.id, req.user.full_name || req.user.username]);
+  res.json({ id: r.rows[0].id });
+}));
+
+api.delete('/contract-notes/:id', need('member'), wrap(async (req, res) => {
+  const id = intId(req.params.id);
+  const n = (await query('select author_id from contract_notes where id = $1', [id])).rows[0];
+  if (!n) fail(404, 'Ghi chú không còn tồn tại.');
+  if (n.author_id !== req.user.id && req.user.role !== 'admin') fail(403, 'Bạn chỉ xóa được ghi chú của mình.');
+  await query('delete from contract_notes where id = $1', [id]);
+  res.json({ ok: true });
+}));
+
+// Danh mục tên hiển thị: công ty, khu vực, chủ đầu tư, giai đoạn, khoản chi phí.
+api.put('/catalog', need('admin'), wrap(async (req, res) => {
+  const kind = req.body.kind;
+  if (!CATALOG_KINDS.includes(kind)) fail(400, 'Loại danh mục không hợp lệ.');
+  const code = str(req.body.code, 'Mã', 1, 60);
+  const name = str(req.body.name, 'Tên', 1, 160);
+  const sort = Number.isInteger(Number(req.body.sort)) ? Number(req.body.sort) : 0;
+  await query(`insert into catalog (kind, code, name, sort) values ($1, $2, $3, $4)
+    on conflict (kind, code) do update set name = excluded.name, sort = excluded.sort`, [kind, code, name, sort]);
+  res.json({ ok: true });
 }));
 
 // ---------------------------------------------------------------------
-// Bố cục dashboard (admin tùy biến). Chỉ nhận đúng cấu trúc đã biết.
+// Bố cục dashboard DT-CP (admin tùy biến). Chỉ nhận đúng cấu trúc đã biết.
 // ---------------------------------------------------------------------
-const METRIC = /^(doanh_thu|tong_chi_phi|loi_nhuan|bien_ln|rev:(\d{1,9}|\*)|exp:(\d{1,9}|\*))$/;
-const CARD_TYPES = ['columns', 'line', 'stacked', 'breakdown', 'table', 'notes'];
-const TERM_KEYS = ['doanh_thu', 'tong_chi_phi', 'loi_nhuan', 'bien_ln', 'rev_group', 'exp_group'];
+const DASH_METRICS = ['count', 'hd', 'sl', 'slhs', 'tv', 'dt', 'cp', 'pct'];
+const DASH_DIMS = ['company', 'region', 'project', 'investor', 'stage'];
+const CARD_TYPES = ['kpis', 'group', 'costs', 'table'];
+const TERM_KEYS = DASH_METRICS.concat(DASH_DIMS, ['contract']);
 function dashboardConfig(v) {
   if (!v || typeof v !== 'object' || Array.isArray(v)) fail(400, 'Cấu hình dashboard không hợp lệ.');
   const text = (s, field, max) => str(typeof s === 'string' ? s : '', field, 0, max);
-  const metrics = (a, max) => {
+  const pick = (a, allowed, max) => {
     if (a == null) return [];
-    if (!Array.isArray(a) || a.length > max || !a.every(m => typeof m === 'string' && METRIC.test(m))) fail(400, 'Danh sách dữ liệu của biểu đồ không hợp lệ.');
+    if (!Array.isArray(a) || a.length > max || !a.every(x => allowed.includes(x))) fail(400, 'Danh sách dữ liệu của biểu đồ không hợp lệ.');
     return [...new Set(a)];
   };
-  const tiles = Array.isArray(v.tiles) ? v.tiles : [];
   const cards = Array.isArray(v.cards) ? v.cards : [];
-  if (tiles.length > 8) fail(400, 'Tối đa 8 ô chỉ số.');
   if (cards.length > 24) fail(400, 'Tối đa 24 biểu đồ.');
-  const ids = new Set();
   const terms = {};
   if (v.terms != null) {
     if (typeof v.terms !== 'object' || Array.isArray(v.terms)) fail(400, 'Tên gọi không hợp lệ.');
     for (const k of TERM_KEYS) if (v.terms[k] != null) terms[k] = text(v.terms[k], 'Tên gọi', 60);
   }
+  const ids = new Set();
   return {
     title: text(v.title, 'Tiêu đề trang', 80),
     terms,
-    tiles: tiles.map(x => {
-      const m = metrics([x && x.metric], 1)[0];
-      if (!m || m.endsWith('*')) fail(400, 'Ô chỉ số cần chọn một chỉ số cụ thể.');
-      return { metric: m, label: text(x.label, 'Tên ô chỉ số', 60) };
-    }),
     cards: cards.map(c => {
       if (!c || typeof c !== 'object') fail(400, 'Biểu đồ không hợp lệ.');
       const id = String(c.id || '');
       if (!/^[A-Za-z0-9_-]{1,24}$/.test(id) || ids.has(id)) fail(400, 'Mã biểu đồ không hợp lệ.');
       ids.add(id);
       if (!CARD_TYPES.includes(c.type)) fail(400, 'Loại biểu đồ không hợp lệ.');
+      const top = Number(c.top);
       return {
         id, type: c.type,
         title: text(c.title, 'Tiêu đề biểu đồ', 120),
         note: text(c.note, 'Mô tả biểu đồ', 400),
-        metrics: metrics(c.metrics, 12),
-        lines: metrics(c.lines, 6),
-        group: c.group === 'rev' || c.group === 'exp' ? c.group : null,
+        dim: DASH_DIMS.includes(c.dim) ? c.dim : 'region',
+        metrics: pick(c.metrics, DASH_METRICS, 8),
+        top: Number.isInteger(top) && top >= 3 && top <= 50 ? top : 12,
+        detail: c.detail === true,
         width: c.width === 'half' ? 'half' : 'full',
         hidden: c.hidden === true
       };
@@ -237,87 +347,14 @@ function dashboardConfig(v) {
 
 api.put('/settings/dashboard', need('admin'), wrap(async (req, res) => {
   if (req.body && req.body.reset === true) {
-    await query(`delete from app_settings where key = 'dashboard'`);
+    await query(`delete from app_settings where key = 'dashboard_v2'`);
     return res.json({ dashboard: null });
   }
   const value = dashboardConfig(req.body);
   if (JSON.stringify(value).length > 60000) fail(400, 'Cấu hình dashboard quá lớn.');
-  await query(`insert into app_settings (key, value, updated_by) values ('dashboard', $1, $2)
+  await query(`insert into app_settings (key, value, updated_by) values ('dashboard_v2', $1, $2)
     on conflict (key) do update set value = excluded.value, updated_at = now(), updated_by = excluded.updated_by`, [JSON.stringify(value), req.user.id]);
   res.json({ dashboard: value });
-}));
-
-// Danh mục: kênh bán và khoản mục chi phí dùng chung một bộ route.
-for (const [route, table] of [['channels', 'channels'], ['categories', 'expense_categories']]) {
-  const body = b => ({
-    name: str(b.name, 'Tên', 1, 100),
-    sort_order: Number.isInteger(Number(b.sort_order)) ? Number(b.sort_order) : 0,
-    active: b.active !== false
-  });
-  api.post(`/${route}`, need('admin'), wrap(async (req, res) => {
-    const b = body(req.body);
-    const r = await query(`insert into ${table} (name, sort_order, active) values ($1, $2, $3) returning id`, [b.name, b.sort_order, b.active]);
-    res.json({ id: r.rows[0].id });
-  }));
-  api.put(`/${route}/:id`, need('admin'), wrap(async (req, res) => {
-    const b = body(req.body);
-    const r = await query(`update ${table} set name = $1, sort_order = $2, active = $3 where id = $4`, [b.name, b.sort_order, b.active, intId(req.params.id)]);
-    if (!r.rowCount) fail(404, 'Không tìm thấy mục này.');
-    res.json({ ok: true });
-  }));
-  api.delete(`/${route}/:id`, need('admin'), wrap(async (req, res) => {
-    await query(`delete from ${table} where id = $1`, [intId(req.params.id)]);
-    res.json({ ok: true });
-  }));
-}
-
-api.put('/months/:month', need('admin'), wrap(async (req, res) => {
-  const m = month(req.params.month);
-  const revs = Array.isArray(req.body.revenues) ? req.body.revenues : [];
-  const exps = Array.isArray(req.body.expenses) ? req.body.expenses : [];
-  if (revs.length + exps.length > 500) fail(400, 'Quá nhiều ô số liệu trong một tháng.');
-  await tx(async c => {
-    for (const r of revs) {
-      await c.query(`insert into revenue_entries (month, channel_id, amount, updated_by) values ($1, $2, $3, $4)
-        on conflict (month, channel_id) do update set amount = excluded.amount, updated_at = now(), updated_by = excluded.updated_by`,
-      [m, intId(r.channel_id), amount(r.amount), req.user.id]);
-    }
-    for (const r of exps) {
-      await c.query(`insert into expense_entries (month, category_id, amount, updated_by) values ($1, $2, $3, $4)
-        on conflict (month, category_id) do update set amount = excluded.amount, updated_at = now(), updated_by = excluded.updated_by`,
-      [m, intId(r.category_id), amount(r.amount), req.user.id]);
-    }
-  });
-  res.json({ ok: true });
-}));
-
-api.delete('/months/:month', need('admin'), wrap(async (req, res) => {
-  const m = month(req.params.month);
-  await tx(async c => {
-    await c.query('delete from revenue_entries where month = $1', [m]);
-    await c.query('delete from expense_entries where month = $1', [m]);
-  });
-  res.json({ ok: true });
-}));
-
-// ---------------------------------------------------------------------
-// Ghi chú
-// ---------------------------------------------------------------------
-api.post('/notes', need('member'), wrap(async (req, res) => {
-  const m = month(req.body.month);
-  const content = str(req.body.content, 'Ghi chú', 1, 4000);
-  const r = await query('insert into month_notes (month, content, author_id, author_name) values ($1, $2, $3, $4) returning id',
-    [m, content, req.user.id, req.user.full_name || req.user.username]);
-  res.json({ id: r.rows[0].id });
-}));
-
-api.delete('/notes/:id', need('member'), wrap(async (req, res) => {
-  const id = intId(req.params.id);
-  const n = (await query('select author_id from month_notes where id = $1', [id])).rows[0];
-  if (!n) fail(404, 'Ghi chú không còn tồn tại.');
-  if (n.author_id !== req.user.id && req.user.role !== 'admin') fail(403, 'Bạn chỉ xóa được ghi chú của mình.');
-  await query('delete from month_notes where id = $1', [id]);
-  res.json({ ok: true });
 }));
 
 // ---------------------------------------------------------------------
@@ -368,6 +405,7 @@ api.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
   else if (err.code === '23503') { status = 409; msg = req.method === 'DELETE' ? 'Mục này đang có số liệu nên không xóa được. Hãy bỏ chọn "Đang dùng" để ẩn thay vì xóa.' : 'Không tìm thấy danh mục này. Hãy tải lại trang.'; }
   else if (err.code === '23514') { status = 400; msg = 'Dữ liệu không hợp lệ.'; }
   else if (err.type === 'entity.parse.failed') { status = 400; msg = 'Dữ liệu gửi lên không đúng định dạng.'; }
+  else if (err.type === 'entity.too.large') { status = 413; msg = 'Dữ liệu gửi lên quá lớn.'; }
   if (status >= 500) console.error(err);
   res.status(status).json({ error: msg });
 });

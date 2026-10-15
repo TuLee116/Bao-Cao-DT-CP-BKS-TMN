@@ -20,51 +20,58 @@ create table if not exists sessions (
 );
 create index if not exists sessions_user_idx on sessions (user_id);
 
-create table if not exists channels (
-  id          integer generated always as identity primary key,
-  name        text not null check (length(trim(name)) between 1 and 100),
-  sort_order  integer not null default 0,
-  active      boolean not null default true,
-  created_at  timestamptz not null default now()
-);
-create unique index if not exists channels_name_key on channels (lower(name));
-
-create table if not exists expense_categories (
-  id          integer generated always as identity primary key,
-  name        text not null check (length(trim(name)) between 1 and 100),
-  sort_order  integer not null default 0,
-  active      boolean not null default true,
-  created_at  timestamptz not null default now()
-);
-create unique index if not exists expense_categories_name_key on expense_categories (lower(name));
-
-create table if not exists revenue_entries (
-  month       date not null check (extract(day from month) = 1),
-  channel_id  integer not null references channels(id) on delete restrict,
-  amount      numeric(18, 2) not null default 0 check (amount >= 0),
-  updated_at  timestamptz not null default now(),
-  updated_by  integer references users(id) on delete set null,
-  primary key (month, channel_id)
-);
-
-create table if not exists expense_entries (
-  month        date not null check (extract(day from month) = 1),
-  category_id  integer not null references expense_categories(id) on delete restrict,
-  amount       numeric(18, 2) not null default 0 check (amount >= 0),
-  updated_at   timestamptz not null default now(),
-  updated_by   integer references users(id) on delete set null,
-  primary key (month, category_id)
-);
-
-create table if not exists month_notes (
+-- Mốc dữ liệu: mỗi lần tải file DT-CP lên là một mốc (ngày cập nhật của file).
+create table if not exists snapshots (
   id           integer generated always as identity primary key,
-  month        date not null check (extract(day from month) = 1),
-  content      text not null check (length(trim(content)) between 1 and 4000),
-  author_id    integer references users(id) on delete set null,
-  author_name  text not null default '',
-  created_at   timestamptz not null default now()
+  report_date  date not null,
+  label        text not null default '',
+  file_name    text not null default '',
+  cost_labels  jsonb not null default '{}',
+  line_count   integer not null default 0,
+  created_at   timestamptz not null default now(),
+  created_by   integer references users(id) on delete set null
 );
-create index if not exists month_notes_month_idx on month_notes (month);
+
+-- Dòng Hợp đồng/Phụ lục của từng mốc. vals: hd, sl, slhs, tv, dt và 15 khoản chi phí k..y (đồng).
+create table if not exists snapshot_lines (
+  snapshot_id     integer not null references snapshots(id) on delete cascade,
+  seq             integer not null,
+  company         text not null default '',
+  region          text not null default '',
+  region_name     text not null default '',
+  project_code    text not null default '',
+  project_name    text not null default '',
+  project_stage   text not null default '',
+  contract_code   text not null default '',
+  contract_no     text not null default '',
+  contract_title  text not null default '',
+  investor        text not null default '',
+  stage           text not null default '',
+  line_label      text not null default '',
+  vals            jsonb not null default '{}',
+  primary key (snapshot_id, seq)
+);
+create index if not exists snapshot_lines_contract_idx on snapshot_lines (contract_code);
+
+-- Tên hiển thị cho mã: công ty, khu vực, chủ đầu tư, giai đoạn, khoản chi phí.
+create table if not exists catalog (
+  kind  text not null,
+  code  text not null,
+  name  text not null,
+  sort  integer not null default 0,
+  primary key (kind, code)
+);
+
+-- Ghi chú theo hợp đồng (mã DT-CP).
+create table if not exists contract_notes (
+  id             integer generated always as identity primary key,
+  contract_code  text not null,
+  content        text not null check (length(trim(content)) between 1 and 4000),
+  author_id      integer references users(id) on delete set null,
+  author_name    text not null default '',
+  created_at     timestamptz not null default now()
+);
+create index if not exists contract_notes_code_idx on contract_notes (contract_code);
 
 -- Cấu hình dùng chung (ví dụ bố cục dashboard do admin tùy biến), lưu dạng JSON.
 create table if not exists app_settings (

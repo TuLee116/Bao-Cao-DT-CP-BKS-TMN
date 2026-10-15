@@ -213,3 +213,36 @@ input.invalid { border-color: var(--bad); }
 .check input { width: 16px; height: 16px; accent-color: var(--teal); flex: none; }
 .preview { padding: 14px; border: 1px dashed var(--line); border-radius: var(--radius); background: var(--bg); }
 .empty-chart { padding: 28px 0; text-align: center; }
+
+/* ---------- DT-CP: bộ lọc, bảng nhiều tầng, so sánh, hợp đồng ---------- */
+.filters { padding-block: 14px; }
+.filter-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 11.5rem), 1fr)); gap: 10px 12px; align-items: end; }
+.filter-grid .grow { grid-column: span 2; }
+@media (max-width: 520px) { .filter-grid .grow { grid-column: auto; } }
+.filter-grid select, .filter-grid input { width: 100%; min-width: 0; }
+.chart-hb { min-height: 120px; }
+.axis-note { margin-top: -4px; }
+.hb-label { fill: var(--fg); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip.gone { background: var(--bad-soft); border-color: transparent; color: var(--fg); }
+.chip.stagechg { background: var(--accent-soft); border-color: transparent; color: var(--fg); }
+.eyebrow { margin: 0 0 4px; font-size: var(--cap); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.contract-title { margin: 0; font-size: 1.35rem; font-weight: 700; letter-spacing: -.01em; text-wrap: balance; }
+.tree td.name { white-space: normal; min-width: 18rem; max-width: 42rem; }
+.tree tr.lv0 td { font-weight: 600; background: var(--panel-2); }
+.tree tr.lv1 td.name { padding-left: 26px; font-weight: 500; }
+.tree tr.lv2 td.name { padding-left: 52px; color: var(--fg); }
+.tree .tw { display: inline-block; width: 16px; color: var(--muted); }
+.tree tfoot td, .t tfoot td { font-weight: 600; border-top: 2px solid var(--line); border-bottom: 0; }
+.tree-wrap { max-height: 70vh; overflow: auto; }
+.cmp th.grp { text-align: center; border-left: 1px solid var(--line); }
+.cmp th.grp.hl { color: var(--fg); background: var(--accent-soft); }
+.cmp td.name { white-space: normal; min-width: 16rem; max-width: 36rem; }
+.t code { font-size: .8125rem; }
+.tile { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.card .tiles { gap: 18px 24px; }
+.card .tiles > .tile { padding-right: 8px; }
+.filter-grid .check { white-space: nowrap; align-self: end; padding-bottom: 9px; }
+.card .tiles { grid-template-columns: repeat(auto-fit, minmax(min(100%, 13.5rem), 1fr)); }
+.card .tiles .big { font-size: clamp(1.45rem, 1.1rem + 1vw, 1.95rem); white-space: nowrap; }
+.chart-hb svg { display: block; overflow: visible; }

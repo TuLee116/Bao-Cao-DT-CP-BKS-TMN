@@ -9,6 +9,14 @@
     pct: v => (isFinite(v) ? loc.format('.1%')(v) : '—'),
     spct: v => (isFinite(v) ? loc.format('+.1%')(v) : '—'),
     pt: v => (isFinite(v) ? loc.format('+.1f')(v * 100) + ' điểm %' : '—'),
+    // Số tiền tính bằng đồng
+    vnd: v => (!isFinite(v) ? '—' : Math.abs(v) >= 1e9 ? loc.format(',.2f')(v / 1e9) + ' tỷ' : Math.abs(v) >= 1e6 ? loc.format(',.0f')(v / 1e6) + ' tr' : loc.format(',.0f')(v) + ' đ'),
+    trieu: v => (isFinite(v) ? loc.format(',.0f')(v / 1e6) : '—'),
+    tyAxis: v => loc.format(',~f')(v / 1e9),
+    svnd: v => (isFinite(v) ? (v > 0 ? '+' : v < 0 ? '−' : '') + F.vnd(Math.abs(v)) : '—'),
+    int: loc.format(','),
+    date: d => (d ? d.slice(8, 10) + '/' + d.slice(5, 7) + '/' + d.slice(0, 4) : ''),
+    dateShort: d => (d ? d.slice(8, 10) + '/' + d.slice(5, 7) + '/' + d.slice(2, 4) : ''),
     mShort: m => 'T' + (+m.slice(5, 7)) + '/' + m.slice(2, 4),
     mLong: m => 'T' + (+m.slice(5, 7)) + '/' + m.slice(0, 4),
     // Nhận "1.234,5", "1234.5", "1.234.567", "1 234" → số; rỗng → null; sai → NaN
@@ -42,12 +50,12 @@
       .style('stroke', 'var(--chart-grid)').attr('stroke-width', 1);
     return ml;
   }
-  function xLabels(svg, ms, fx, yPos, avail) {
+  function xLabels(svg, ms, fx, yPos, avail, fmt) {
     const per = avail / ms.length;
-    const step = per < 46 ? Math.ceil(46 / per) : 1;
+    const step = per < 56 ? Math.ceil(56 / per) : 1;
     svg.append('g').attr('class', 'ax').selectAll('text')
       .data(ms.filter((m, i) => (ms.length - 1 - i) % step === 0)).join('text')
-      .attr('x', fx).attr('y', yPos).attr('text-anchor', 'middle').text(F.mShort);
+      .attr('x', fx).attr('y', yPos).attr('text-anchor', 'middle').text(fmt || F.mShort);
   }
   function baseline(svg, x1, x2, yv) {
     return svg.append('line').attr('x1', x1).attr('x2', x2).attr('y1', yv).attr('y2', yv).style('stroke', 'var(--chart-axis)').attr('stroke-width', 1);
@@ -162,7 +170,7 @@
           .text((p !== last && pts.length > 1 ? 'Thấp nhất ' : '') + fmt(p.v));
       });
     });
-    xLabels(svg, months, x, h - mb + 17, w - ml - mr);
+    xLabels(svg, months, x, h - mb + 17, w - ml - mr, o.xFmt);
     const dots = svg.append('g').attr('opacity', 0);
     overlay(svg, months, m => x(m), x.step() || 40, mt, h - mb - mt, (ev, m) => {
       const j = months.indexOf(m);
@@ -170,7 +178,7 @@
       rule.attr('x1', x(m)).attr('x2', x(m)).attr('opacity', single ? 0 : 1);
       dots.attr('opacity', 1).selectAll('circle').data(at).join('circle').attr('cx', x(m)).attr('cy', r => y(r.v)).attr('r', 4)
         .style('fill', r => r.s.color).style('stroke', 'var(--panel)').attr('stroke-width', 2);
-      tip.show(ev, F.mLong(m), at.map(r => [single ? null : r.s.color, r.s.name, fmt(r.v)]));
+      tip.show(ev, (o.headFmt || F.mLong)(m), at.map(r => [single ? null : r.s.color, r.s.name, fmt(r.v)]));
     }, () => { rule.attr('opacity', 0); dots.attr('opacity', 0); tip.hide(); });
   }
 
@@ -209,14 +217,15 @@
   }
 
   // Thanh ngang tỷ trọng trong kỳ. items: [{name, value, share}]
-  function breakdown(host, items, color) {
+  function breakdown(host, items, color, fmt) {
+    fmt = fmt || (v => F.tr(v) + ' tr');
     host.replaceChildren();
     const max = d3.max(items, r => r.value) || 1;
     items.forEach(r => {
       const row = el('div', 'bar-row');
       const top = el('div', 'bar-top');
       const val = el('span', 'bar-val');
-      val.append(el('b', null, F.tr(r.value) + ' tr'), document.createTextNode(' · ' + F.pct(r.share)));
+      val.append(el('b', null, fmt(r.value)), document.createTextNode(' · ' + F.pct(r.share)));
       top.append(el('span', null, r.name), val);
       const track = el('div', 'track');
       const bar = el('div', 'bar');
@@ -228,6 +237,65 @@
     });
   }
 
+  // Thanh ngang theo nhóm (khu vực, công ty, chủ đầu tư…). cats: [{key, label, values: [số theo từng series]}],
+  // series: [{name, color}]. Hỗ trợ giá trị âm (chênh lệch). Một series: ghi giá trị ở đầu thanh.
+  function hbars(host, cats, series, o) {
+    o = o || {};
+    const tip = tipFor(host);
+    const n = Math.max(1, series.length), bh = n > 1 ? 12 : 18, gap = 2, rowPad = 10;
+    const rowH = n * bh + (n - 1) * gap + rowPad;
+    const mt = 4, mb = 24, h = mt + mb + Math.max(1, cats.length) * rowH;
+    host.replaceChildren();
+    const w = Math.max(280, host.clientWidth || 640);
+    const svg = d3.select(host).append('svg').attr('width', '100%').attr('height', h).attr('viewBox', `0 0 ${w} ${h}`);
+    const fmt = o.fmt || F.vnd;
+    // Cột nhãn: đo nhãn dài nhất, tối đa 38% chiều rộng; nhãn dài bị cắt có dấu …
+    const maxL = Math.min(w * 0.38, 260);
+    const probe = svg.append('text').attr('class', 'ax');
+    const fit = s => {
+      probe.text(s);
+      if (probe.node().getComputedTextLength() <= maxL) return s;
+      let lo = 0, hi = s.length;
+      while (lo < hi) { const mid = (lo + hi + 1) >> 1; probe.text(s.slice(0, mid) + '…'); if (probe.node().getComputedTextLength() <= maxL) lo = mid; else hi = mid - 1; }
+      return s.slice(0, lo) + '…';
+    };
+    const labels = cats.map(c => fit(c.label));
+    let lw = 0; labels.forEach(s => { probe.text(s); lw = Math.max(lw, probe.node().getComputedTextLength()); });
+    probe.remove();
+    const all = cats.flatMap(c => c.values.filter(v => v != null && isFinite(v)));
+    const lo = Math.min(0, d3.min(all) ?? 0), hi = Math.max(0, d3.max(all) ?? 1);
+    const valW = n === 1 ? 64 : 24;
+    const x = d3.scaleLinear([lo, hi || 1], [lw + 14, w - valW - 6]).nice();
+    const yOf = i => mt + i * rowH;
+    // lưới
+    svg.append('g').selectAll('line').data(x.ticks(4)).join('line').attr('x1', d => x(d)).attr('x2', d => x(d)).attr('y1', mt).attr('y2', h - mb)
+      .style('stroke', 'var(--chart-grid)');
+    svg.append('g').attr('class', 'ax').selectAll('text').data(x.ticks(4)).join('text').attr('x', d => x(d)).attr('y', h - mb + 16).attr('text-anchor', 'middle').text(o.axisFmt || F.tyAxis);
+    const hl = svg.append('rect').attr('x', 0).attr('width', w).attr('height', rowH).attr('rx', 4).style('fill', 'var(--chart-grid)').attr('opacity', 0);
+    const g = svg.append('g');
+    cats.forEach((c, i) => {
+      const y0 = yOf(i) + rowPad / 2;
+      g.append('text').attr('class', 'ax hb-label').attr('x', lw + 4).attr('y', y0 + (n * bh + (n - 1) * gap) / 2 + 4).attr('text-anchor', 'end').text(labels[i]);
+      series.forEach((s, j) => {
+        const v = c.values[j];
+        if (v == null || !isFinite(v)) return;
+        const xa = x(Math.min(0, v)), xb = x(Math.max(0, v));
+        g.append('rect').attr('x', xa).attr('y', y0 + j * (bh + gap)).attr('width', Math.max(1, xb - xa)).attr('height', bh).attr('rx', Math.min(4, bh / 2))
+          .style('fill', (o.colorOf && o.colorOf(v, j)) || s.color);
+        if (n === 1) g.append('text').attr('class', 'ptl').attr('x', v < 0 ? xa - 4 : xb + 4).attr('y', y0 + bh / 2 + 4).attr('text-anchor', v < 0 ? 'end' : 'start').text(fmt(v));
+      });
+    });
+    svg.append('line').attr('x1', x(0)).attr('x2', x(0)).attr('y1', mt).attr('y2', h - mb).style('stroke', 'var(--chart-axis)');
+    svg.append('g').selectAll('rect').data(cats).join('rect').attr('x', 0).attr('width', w).attr('y', (c, i) => yOf(i)).attr('height', rowH)
+      .style('fill', 'transparent').style('cursor', o.onPick ? 'pointer' : 'default')
+      .on('pointerenter pointermove', (ev, c) => {
+        hl.attr('y', yOf(cats.indexOf(c))).attr('opacity', 0.6);
+        tip.show(ev, c.label, series.map((s, j) => [n > 1 ? s.color : null, s.name, c.values[j] == null ? '–' : fmt(c.values[j])]).concat(c.extra || []));
+      })
+      .on('pointerleave', () => { hl.attr('opacity', 0); tip.hide(); })
+      .on('click', (ev, c) => { if (o.onPick) o.onPick(c.key); });
+  }
+
   window.F = F;
-  window.Charts = { C, columns, lines, stacked, breakdown };
+  window.Charts = { C, columns, lines, stacked, breakdown, hbars };
 })();

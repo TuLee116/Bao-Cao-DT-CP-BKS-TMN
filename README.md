@@ -1,17 +1,18 @@
-# Báo cáo doanh thu – chi phí
+# Báo cáo doanh thu – chi phí (DT-CP) công trình
 
-Web theo dõi doanh thu, chi phí và lợi nhuận theo tháng, có đăng nhập và phân quyền. Chạy trên **Railway** hoặc **Vercel**, dữ liệu lưu trong **PostgreSQL**.
+Web theo dõi doanh thu – chi phí công trình của Tân Minh Nhân từ file Excel **"Bảng tổng hợp theo dõi doanh thu - chi phí"**, có đăng nhập và phân quyền. Chạy trên **Railway** (hoặc Vercel), dữ liệu lưu trong **PostgreSQL**.
 
-- **Tổng quan**: 4 chỉ số tháng gần nhất, biểu đồ doanh thu/chi phí/lợi nhuận, biên lợi nhuận, cơ cấu chi phí, doanh thu theo kênh, bảng lãi lỗ; lọc theo 12 tháng gần nhất, từng năm hoặc toàn bộ.
-- **Ghi chú theo tháng**: mọi người viết được; xóa ghi chú của mình, admin xóa được mọi ghi chú.
-- **Nhập số liệu** (admin): thêm/sửa/xóa số liệu từng tháng.
-- **Danh mục** (admin): thêm, đổi tên, sắp xếp, ẩn kênh bán và khoản mục chi phí.
-- **Nhập từ file** (admin): tải lên Excel/CSV nhiều tháng, xem trước rồi mới ghi; tải file mẫu, xuất toàn bộ số liệu ra Excel.
+- **Dữ liệu** (admin): tải file DT-CP lên; mỗi lần tải là một **mốc** (ngày lấy từ dòng "CẬP NHẬT: NGÀY …"). Web tự nhận công ty, khu vực, công trình, hợp đồng (mã DT-CP, số HĐ), phụ lục, chủ đầu tư (mã trong số HĐ, ví dụ `12/2026/HĐ/ABC-TMN` → ABC) và giai đoạn (cột THỜI ĐIỂM). Có bước xem trước, đối chiếu tổng và cảnh báo lỗi trong file (mã DT-CP trùng, thiếu cột công ty, thiếu STT…).
+- **Tổng quan**: lọc theo mốc, công ty, khu vực, chủ đầu tư, giai đoạn, công trình, tìm kiếm; chỉ số chính có so sánh với mốc liền trước; biểu đồ theo khu vực, công ty, chủ đầu tư, giai đoạn, công trình (bấm để lọc); cơ cấu 15 khoản chi phí trực tiếp; bảng nhiều tầng Khu vực › Công trình › Hợp đồng; xuất Excel.
+- **So sánh**: giữa hai mốc bất kỳ (theo hợp đồng, công trình, khu vực, công ty, chủ đầu tư, giai đoạn; đánh dấu hợp đồng mới, không còn, thay đổi, đổi giai đoạn; biểu đồ thay đổi lớn nhất; xuất Excel) hoặc giữa các giai đoạn trong một mốc.
+- **Hợp đồng**: số liệu mốc đang xem, diễn biến qua mọi mốc, các dòng Hợp đồng/Phụ lục theo nhóm chi phí, ghi chú.
+- **Danh mục** (admin): đặt tên hiển thị cho mã công ty, khu vực, chủ đầu tư, giai đoạn, 15 khoản chi phí.
+- **Tùy biến** (admin): tiêu đề, tên gọi các chỉ số/nhóm, thêm/sửa/ẩn/sắp xếp biểu đồ, có xem trước.
 - **Người dùng** (admin): tạo tài khoản, đổi vai trò, khóa/mở khóa, đặt lại mật khẩu.
-- **Tùy biến** (admin): đổi tiêu đề trang, ô chỉ số và từng biểu đồ (tiêu đề, mô tả, loại biểu đồ, dữ liệu, độ rộng, ẩn/hiện, thứ tự), thêm/xóa biểu đồ, có xem trước; lưu trên máy chủ nên mọi người thấy giống nhau, có nút khôi phục mặc định.
-  Mục **Tên gọi** đổi các tên dùng khắp web cho hợp ngành (ví dụ "Kênh bán" → "Nguồn doanh thu", "Khoản mục chi phí" → "Hạng mục chi phí", "Lợi nhuận trước thuế" → "Lãi/lỗ"); từng mục trong nhóm sửa ở trang **Danh mục**.
 
-Đơn vị số tiền: **triệu đồng**. Lợi nhuận = doanh thu − tổng chi phí (trước thuế TNDN).
+Số liệu lưu đúng đơn vị **đồng** như file; bảng hiển thị triệu đồng, biểu đồ hiển thị tỷ đồng. %CPTT/DT = tổng chi phí trực tiếp ÷ doanh thu thời điểm.
+
+Cách tính khớp với dòng TỔNG CỘNG của file: web cộng các dòng Hợp đồng/Phụ lục dưới mỗi hợp đồng; hợp đồng không có dòng chi tiết thì lấy số ngay trên dòng hợp đồng. Mã DT-CP bị trùng trong file sẽ bị cộng chung (web cảnh báo khi tải lên).
 
 ## Tài khoản và vai trò
 
@@ -52,7 +53,7 @@ Ghi chú: trên Vercel, giới hạn đăng nhập sai được đếm riêng ch
 
 ## Chế độ demo
 
-Khi không có máy chủ (ví dụ mở qua GitHub Pages hoặc chỉ phục vụ thư mục `public/`), web tự chạy ở **chế độ demo**: dữ liệu mẫu lưu trong trình duyệt, có nút vào nhanh với quyền Admin hoặc Người xem. Chỉ dùng để xem thử.
+Khi không có máy chủ (ví dụ mở qua GitHub Pages hoặc chỉ phục vụ thư mục `public/`), web tự chạy **chế độ demo** với **số liệu giả** (3 mốc, tên công trình/chủ đầu tư giả), lưu trong trình duyệt. Chỉ để xem thử. Repo này công khai nên **không đưa file số liệu thật vào repo**; hãy tải file thật lên web đã triển khai.
 
 ## Chạy trên máy
 
@@ -68,27 +69,25 @@ Bảng dữ liệu được tạo tự động lần đầu máy chủ nhận y�
 
 ## Định dạng file nhập
 
-Dòng đầu là tiêu đề. Cột `Tháng` (dạng `2026-09` hoặc `09/2026`), các cột `DT: <tên kênh>` là doanh thu và `CP: <tên khoản mục>` là chi phí. File mẫu có số liệu 12 tháng: `public/data/mau-nhap-lieu.csv` (số liệu mẫu, không phải số thật).
+Dùng mẫu bảng tổng hợp DT-CP hiện tại (sheet đầu tiên có dòng tiêu đề). Web tìm cột theo **tên tiêu đề**, không theo vị trí:
+`STT`, `CÔNG TY`, `KÝ HIỆU DT-CP`, `TÊN CÔNG TRÌNH`, `THỜI ĐIỂM`, `GIÁ TRỊ HỢP ĐỒNG`, `GIÁ TRỊ SẢN LƯỢNG ĐẾN…`, `GIÁ TRỊ SẢN LƯỢNG HỒ SƠ ĐẾN…`, `GIÁ TRỊ TIỀN VỀ ĐẾN…`, `DOANH THU THỜI ĐIỂM`, 15 cột từ `CHI PHÍ TRỰC TIẾP` tới trước `GIÁ TRỊ CHI PHÍ`.
 
-| Tháng | DT: Bán lẻ cửa hàng | DT: Thương mại điện tử | CP: Giá vốn hàng bán | CP: Nhân sự |
-|---|---|---|---|---|
-| 2026-09 | 1059 | 1100 | 1489 | 442 |
-
-Ô để trống thì giữ nguyên số liệu đang có. Cột có tên kênh/khoản mục chưa tồn tại thì web hỏi có tạo mới không.
+Cấu trúc dòng: nhóm công ty (B1, B2…) → khu vực (I, II… "KHU VỰC …") → công trình (STT số, mã như `KV1.1-14`) → hợp đồng (có CÔNG TY, mã như `KV1.1-14.01`) → các dòng "Hợp đồng", "Phụ lục 01"… Dòng "TỔNG CỘNG" kết thúc bảng.
 
 ## Cấu trúc
 
 ```
 server.js              Chạy máy chủ (Railway / trên máy)
+Dockerfile             Build cho Railway / Coolify / Docker
 api/index.js           Điểm vào cho Vercel
-vercel.json            Cấu hình Vercel
-server/app.js          API: đăng nhập, phân quyền, số liệu, danh mục, ghi chú, người dùng
+server/app.js          API: đăng nhập, phân quyền, mốc dữ liệu, danh mục, ghi chú, người dùng
 server/db.js           Kết nối PostgreSQL (DATABASE_URL), tự tạo bảng
 server/schema.js       Lược đồ bảng
 public/                Giao diện
-  index.html, css/app.css
+  js/dtcp.js           Đọc file Excel DT-CP và tổng hợp số liệu
   js/app.js            Các trang
   js/api.js            Gọi API máy chủ, hoặc chế độ demo
-  js/charts.js         Biểu đồ d3 và định dạng số kiểu Việt Nam
+  js/charts.js         Biểu đồ d3, định dạng số kiểu Việt Nam
+  js/demo-seed.js      Số liệu GIẢ cho chế độ demo
   js/vendor/           d3 7.9.0, SheetJS 0.18.5
 ```

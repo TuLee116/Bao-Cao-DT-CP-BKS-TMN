@@ -1,7 +1,7 @@
 // Lớp truy cập dữ liệu. Cùng một giao diện cho hai chế độ:
 //  - Máy chủ: gọi API /api/* (Railway, Vercel hoặc chạy trên máy), đăng nhập bằng cookie
-//  - Demo: khi không có máy chủ (ví dụ GitHub Pages), dữ liệu mẫu lưu trong localStorage
-// Tháng luôn ở dạng 'YYYY-MM-01'; số tiền tính bằng triệu đồng.
+//  - Demo: khi không có máy chủ (ví dụ GitHub Pages), dữ liệu GIẢ lưu trong localStorage
+// Số tiền tính bằng đồng.
 (function () {
   // ------------------------------------------------------------------
   // Máy chủ
@@ -37,16 +37,15 @@
     signOut: () => call('POST', 'logout', {}),
     changePassword: (current, password) => call('POST', 'me/password', { current, password }),
 
-    loadData: () => call('GET', 'data'),
-    saveChannel: c => (c.id ? call('PUT', 'channels/' + c.id, c) : call('POST', 'channels', c)),
-    deleteChannel: id => call('DELETE', 'channels/' + id),
-    saveCategory: c => (c.id ? call('PUT', 'categories/' + c.id, c) : call('POST', 'categories', c)),
-    deleteCategory: id => call('DELETE', 'categories/' + id),
-    saveMonth: (month, revenues, expenses) => call('PUT', 'months/' + month, { revenues, expenses }),
-    deleteMonth: month => call('DELETE', 'months/' + month),
-    addNote: (month, content) => call('POST', 'notes', { month, content }),
-    deleteNote: id => call('DELETE', 'notes/' + id),
-
+    meta: () => call('GET', 'meta'),
+    lines: id => call('GET', 'snapshots/' + id + '/lines'),
+    saveSnapshot: payload => call('POST', 'snapshots', payload),
+    updateSnapshot: (id, patch) => call('PUT', 'snapshots/' + id, patch),
+    deleteSnapshot: id => call('DELETE', 'snapshots/' + id),
+    contractHistory: code => call('GET', 'contracts/' + encodeURIComponent(code) + '/history'),
+    addContractNote: (code, content) => call('POST', 'contract-notes', { contract_code: code, content }),
+    deleteContractNote: id => call('DELETE', 'contract-notes/' + id),
+    saveCatalog: (kind, code, name, sort) => call('PUT', 'catalog', { kind, code, name, sort }),
     saveDashboard: cfg => call('PUT', 'settings/dashboard', cfg).then(r => r.dashboard),
     resetDashboard: () => call('PUT', 'settings/dashboard', { reset: true }).then(r => r.dashboard),
 
@@ -56,26 +55,27 @@
   };
 
   // ------------------------------------------------------------------
-  // Demo (localStorage). Không kiểm tra mật khẩu: chỉ để xem thử giao diện.
+  // Demo (localStorage). Không kiểm tra mật khẩu; số liệu là số GIẢ để xem thử giao diện.
   // ------------------------------------------------------------------
   function demoApi() {
-    const KEY = 'bc-dtcp-demo-v3';
+    const KEY = 'bc-dtcp-demo-v4';
     let db = load();
     function load() {
       try { const s = localStorage.getItem(KEY); if (s) return JSON.parse(s); } catch (e) { /* bỏ qua */ }
-      const seed = JSON.parse(JSON.stringify(window.DEMO_SEED || { channels: [], categories: [], revenue: [], expenses: [], notes: [] }));
+      const seed = window.DEMO_SEED ? window.DEMO_SEED() : { snapshots: [], lines: {}, catalog: [] };
       seed.users = [
         { id: 1, username: 'admin', full_name: 'Quản trị (demo)', role: 'admin', active: true, created_at: '2026-01-01T00:00:00Z' },
         { id: 2, username: 'nguoixem', full_name: 'Người xem (demo)', role: 'viewer', active: true, created_at: '2026-01-02T00:00:00Z' }
       ];
-      seed.notes.forEach(n => { n.author_id = 1; });
+      seed.notes = [];
+      seed.dashboard = null;
       seed.session = null;
       return seed;
     }
-    const save = () => { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) { /* bỏ qua */ } };
+    const save = () => { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) { /* bỏ qua: dữ liệu lớn có thể vượt hạn mức */ } };
     const clone = x => JSON.parse(JSON.stringify(x));
     const nextId = arr => arr.reduce((m, r) => Math.max(m, +r.id || 0), 0) + 1;
-    const tick = () => new Promise(r => setTimeout(r, 40));
+    const tick = () => new Promise(r => setTimeout(r, 30));
     const me = () => db.users.find(u => u.id === db.session && u.active);
     function need(role) {
       const u = me();
@@ -83,19 +83,8 @@
       if (role === 'admin' && u.role !== 'admin') throw new Error('Bạn không có quyền thực hiện thao tác này.');
       return u;
     }
-    function saveCat(list, c) {
-      const name = String(c.name || '').trim();
-      if (!name) throw new Error('Tên cần từ 1 đến 100 ký tự.');
-      if (list.some(x => x.name.toLowerCase() === name.toLowerCase() && x.id !== c.id)) throw new Error('Tên này đã tồn tại.');
-      if (c.id) Object.assign(list.find(x => x.id === c.id), { name, sort_order: c.sort_order || 0, active: c.active !== false });
-      else list.push({ id: nextId(list), name, sort_order: c.sort_order || 0, active: c.active !== false });
-      save();
-    }
-    const upsert = (arr, key, month, rows) => rows.forEach(r => {
-      const e = arr.find(x => x.month === month && x[key] === r[key]);
-      if (e) e.amount = r.amount; else arr.push({ month, [key]: r[key], amount: r.amount });
-    });
     const pub = u => ({ id: u.id, username: u.username, full_name: u.full_name, role: u.role });
+    const catAdd = (kind, code, name) => { if (code && !db.catalog.some(c => c.kind === kind && c.code === code)) db.catalog.push({ kind, code, name: name || code, sort: 0 }); };
 
     return {
       mode: 'demo',
@@ -112,47 +101,54 @@
       async signOut() { db.session = null; save(); },
       async changePassword() { need(); await tick(); },
 
-      async loadData() {
+      async meta() {
         need();
-        const sort = l => clone(l).sort((a, b) => a.sort_order - b.sort_order || a.id - b.id);
-        return { channels: sort(db.channels), categories: sort(db.categories), revenue: clone(db.revenue), expenses: clone(db.expenses), notes: clone(db.notes), dashboard: db.dashboard ? clone(db.dashboard) : null };
+        const snaps = db.snapshots.slice().sort((a, b) => (a.report_date < b.report_date ? 1 : a.report_date > b.report_date ? -1 : b.id - a.id));
+        return { snapshots: clone(snaps), catalog: clone(db.catalog), dashboard: db.dashboard ? clone(db.dashboard) : null };
       },
-      async saveChannel(c) { need('admin'); saveCat(db.channels, c); },
-      async deleteChannel(id) {
-        need('admin');
-        if (db.revenue.some(r => r.channel_id === id)) throw new Error('Mục này đang có số liệu nên không xóa được. Hãy bỏ chọn "Đang dùng" để ẩn thay vì xóa.');
-        db.channels = db.channels.filter(x => x.id !== id); save();
-      },
-      async saveCategory(c) { need('admin'); saveCat(db.categories, c); },
-      async deleteCategory(id) {
-        need('admin');
-        if (db.expenses.some(r => r.category_id === id)) throw new Error('Mục này đang có số liệu nên không xóa được. Hãy bỏ chọn "Đang dùng" để ẩn thay vì xóa.');
-        db.categories = db.categories.filter(x => x.id !== id); save();
-      },
-      async saveMonth(month, revenues, expenses) {
+      async lines(id) { need(); await tick(); return clone(db.lines[id] || []); },
+      async saveSnapshot(p) {
         need('admin'); await tick();
-        upsert(db.revenue, 'channel_id', month, revenues);
-        upsert(db.expenses, 'category_id', month, expenses);
+        const id = nextId(db.snapshots);
+        db.snapshots.push({ id, report_date: p.report_date, label: p.label || '', file_name: p.file_name || '', cost_labels: p.cost_labels || {}, line_count: p.lines.length, created_at: new Date().toISOString() });
+        db.lines[id] = p.lines.map((l, i) => Object.assign({ seq: i + 1 }, l));
+        p.lines.forEach(l => {
+          catAdd('company', l.company, (p.company_names || {})[l.company]); catAdd('region', l.region, l.region_name);
+          catAdd('investor', l.investor); catAdd('stage', l.stage, /^\d+$/.test(l.stage) ? 'Giai đoạn ' + l.stage : l.stage);
+        });
         save();
+        return { id };
       },
-      async deleteMonth(month) {
-        need('admin');
-        db.revenue = db.revenue.filter(r => r.month !== month);
-        db.expenses = db.expenses.filter(r => r.month !== month);
-        save();
+      async updateSnapshot(id, patch) { need('admin'); Object.assign(db.snapshots.find(s => s.id === id), { report_date: patch.report_date, label: patch.label || '' }); save(); },
+      async deleteSnapshot(id) { need('admin'); db.snapshots = db.snapshots.filter(s => s.id !== id); delete db.lines[id]; save(); },
+      async contractHistory(code) {
+        need();
+        const cpKeys = DTCP.COST_KEYS;
+        const history = db.snapshots.slice().sort((a, b) => (a.report_date < b.report_date ? -1 : 1)).map(s => {
+          const ls = (db.lines[s.id] || []).filter(l => l.contract_code === code);
+          if (!ls.length) return null;
+          const sum = k => ls.reduce((t, l) => t + (l.vals[k] || 0), 0);
+          return { snapshot_id: s.id, report_date: s.report_date, label: s.label, stage: ls[0].stage, hd: sum('hd'), sl: sum('sl'), slhs: sum('slhs'), tv: sum('tv'), dt: sum('dt'), cp: cpKeys.reduce((t, k) => t + sum(k), 0) };
+        }).filter(Boolean);
+        return { history, notes: clone(db.notes.filter(n => n.contract_code === code).sort((a, b) => (a.created_at < b.created_at ? 1 : -1))) };
       },
-      async addNote(month, content) {
+      async addContractNote(code, content) {
         const u = need();
-        db.notes.push({ id: nextId(db.notes), month, content, author_id: u.id, author_name: u.full_name || u.username, created_at: new Date().toISOString() });
+        db.notes.push({ id: nextId(db.notes), contract_code: code, content, author_id: u.id, author_name: u.full_name || u.username, created_at: new Date().toISOString() });
         save();
       },
-      async deleteNote(id) {
+      async deleteContractNote(id) {
         const u = need();
         const n = db.notes.find(x => x.id === id);
         if (n && n.author_id !== u.id && u.role !== 'admin') throw new Error('Bạn chỉ xóa được ghi chú của mình.');
         db.notes = db.notes.filter(x => x.id !== id); save();
       },
-
+      async saveCatalog(kind, code, name, sort) {
+        need('admin');
+        const c = db.catalog.find(x => x.kind === kind && x.code === code);
+        if (c) Object.assign(c, { name, sort: sort || 0 }); else db.catalog.push({ kind, code, name, sort: sort || 0 });
+        save();
+      },
       async saveDashboard(cfg) { need('admin'); await tick(); db.dashboard = clone(cfg); save(); return clone(cfg); },
       async resetDashboard() { need('admin'); db.dashboard = null; save(); return null; },
 

@@ -1,4 +1,4 @@
-// Ứng dụng một trang: đăng nhập, dashboard, nhập số liệu, danh mục, nhập file, người dùng.
+// Ứng dụng một trang: đăng nhập, tổng quan DT-CP, so sánh, hợp đồng, dữ liệu, danh mục, tùy biến, người dùng.
 (function () {
   'use strict';
   const cfg = window.APP_CONFIG || {};
@@ -8,9 +8,11 @@
   let api = null; // gán sau khi window.apiReady xong
 
   const S = {
-    profile: null, needsSetup: false, loaded: false,
-    channels: [], categories: [], revenue: [], expenses: [], notes: [], users: [],
-    period: '12m', noteMonth: null, editMonth: null, redraw: null
+    profile: null, needsSetup: false, loaded: false, users: [],
+    snapshots: [], catalog: new Map(), dashboard: null, lines: new Map(), loading: new Set(), snap: null,
+    filters: { company: '', region: '', investor: '', stage: '', project: '', q: '' },
+    cmp: { mode: 'snap', a: null, b: null, by: 'contract', metric: 'dt', only: false },
+    open: new Set(), hist: null, catKind: null, custom: null, redraw: null
   };
 
   // ------------------------------------------------------------------
@@ -67,41 +69,8 @@
   const ymNow = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); };
   const addMonth = (ym, n) => { const [y, m] = ym.split('-').map(Number); const d = new Date(y, m - 1 + n, 1); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); };
   const byName = list => new Map(list.map(c => [c.name.trim().toLowerCase(), c]));
-  const route = () => location.hash.replace(/^#\/?/, '').split(/[?#]/)[0];
-
-  // ------------------------------------------------------------------
-  // Dữ liệu
-  // ------------------------------------------------------------------
-  async function loadAll() {
-    const d = await api.loadData();
-    const [ch, ca, rv, ex, no] = [d.channels, d.categories, d.revenue, d.expenses, d.notes];
-    const norm = r => Object.assign({}, r, { month: String(r.month).slice(0, 7) + '-01', amount: Number(r.amount) || 0 });
-    Object.assign(S, { channels: ch, categories: ca, revenue: rv.map(norm), expenses: ex.map(norm), notes: no.map(n => Object.assign({}, n, { month: String(n.month).slice(0, 7) + '-01' })) });
-    S.dashboard = d.dashboard || null;
-    S.users = isAdmin() ? await api.listUsers() : [];
-    S.loaded = true;
-  }
-  async function reload() { await loadAll(); render(); }
-
-  function buildModel() {
-    const months = new Map();
-    const get = m => { if (!months.has(m)) months.set(m, { month: m, rev: {}, exp: {}, doanh_thu: 0, tong_chi_phi: 0 }); return months.get(m); };
-    S.revenue.forEach(r => { const o = get(r.month); o.rev[r.channel_id] = r.amount; o.doanh_thu += r.amount; });
-    S.expenses.forEach(r => { const o = get(r.month); o.exp[r.category_id] = r.amount; o.tong_chi_phi += r.amount; });
-    const notesBy = d3.rollup(S.notes, v => v.length, n => n.month);
-    const rows = [...months.values()].sort((a, b) => (a.month < b.month ? -1 : 1));
-    rows.forEach(o => {
-      o.loi_nhuan = o.doanh_thu - o.tong_chi_phi;
-      o.bien_ln = o.doanh_thu ? o.loi_nhuan / o.doanh_thu : NaN;
-      o.notes = notesBy.get(o.month) || 0;
-    });
-    return rows;
-  }
-  function periodRows(rows, p) {
-    if (p === 'all') return rows;
-    if (p.startsWith('y')) return rows.filter(r => r.month.startsWith(p.slice(1)));
-    return rows.slice(-12);
-  }
+  const route = () => location.hash.replace(/^#\/?/, '').split(/[?#/]/)[0];
+  const routeArg = () => { const s = location.hash.replace(/^#\/?/, '').split('?')[0]; const i = s.indexOf('/'); return i < 0 ? '' : decodeURIComponent(s.slice(i + 1)); };
 
   // ------------------------------------------------------------------
   // Đăng nhập & điều hướng
@@ -129,31 +98,36 @@
     if (!S.profile) return S.needsSetup ? mount(viewSetup(), 'Cài đặt lần đầu') : mount(viewLogin(), 'Đăng nhập');
     if (!S.loaded) return mount(shell(h('div', { class: 'skeleton', style: 'height:320px' })), '');
     const views = {
-      '': [viewDashboard, 'Tổng quan'], 'nhap-lieu': [viewEntry, 'Nhập số liệu'], 'danh-muc': [viewCategories, 'Danh mục'],
-      'nhap-file': [viewImport, 'Nhập từ file'], 'nguoi-dung': [viewUsers, 'Người dùng'], 'tuy-bien': [viewCustomize, 'Tùy biến'], 'tai-khoan': [viewAccount, 'Tài khoản']
+      '': [viewDashboard, 'Tổng quan'], 'so-sanh': [viewCompare, 'So sánh'], 'hop-dong': [viewContract, 'Hợp đồng'], 'du-lieu': [viewData, 'Dữ liệu'],
+      'danh-muc': [viewCatalog, 'Danh mục'], 'nguoi-dung': [viewUsers, 'Người dùng'], 'tuy-bien': [viewCustomize, 'Tùy biến'], 'tai-khoan': [viewAccount, 'Tài khoản']
     };
     let r = route();
-    if (!views[r] || (['nhap-lieu', 'danh-muc', 'nhap-file', 'nguoi-dung', 'tuy-bien'].includes(r) && !isAdmin())) r = '';
+    if (!views[r] || (['du-lieu', 'danh-muc', 'nguoi-dung', 'tuy-bien'].includes(r) && !isAdmin())) r = '';
     mount(shell(views[r][0]()), views[r][1]);
     if (S.redraw) S.redraw();
   }
+  // Vẽ lại trang mà vẫn giữ ô đang gõ (ví dụ ô tìm kiếm) và vị trí con trỏ.
   function mount(node, title) {
+    const a = document.activeElement, id = a && a.id, pos = a && typeof a.selectionStart === 'number' ? a.selectionStart : null;
     $app.replaceChildren(node);
     document.title = title ? title + ' · ' + APP : APP;
+    const b = id && document.getElementById(id);
+    if (b && b !== document.body) { b.focus({ preventScroll: true }); if (pos != null && b.setSelectionRange) try { b.setSelectionRange(pos, pos); } catch (e) { /* bỏ qua */ } }
   }
 
   function demoBar() {
     if (api.mode !== 'demo') return null;
     return h('div', { class: 'demo-bar' }, h('div', { class: 'wrap' },
-      h('span', null, h('b', null, 'Chế độ demo. '), 'Không tìm thấy máy chủ nên dữ liệu chỉ lưu trong trình duyệt này và là số liệu mẫu. Triển khai lên Railway hoặc Vercel để dùng thật (xem README).'),
+      h('span', null, h('b', null, 'Chế độ demo. '), 'Không tìm thấy máy chủ nên web dùng số liệu GIẢ, chỉ lưu trong trình duyệt này. Triển khai lên Railway hoặc Vercel để dùng dữ liệu thật (xem README).'),
       S.profile ? confirmBtn('Đặt lại dữ liệu demo', async () => { api.reset(); toast('Đã đặt lại dữ liệu demo.'); await refreshAuth(); }, 'sm') : null));
   }
 
+  const views0 = ['', 'so-sanh', 'hop-dong', 'du-lieu', 'danh-muc', 'nguoi-dung', 'tuy-bien', 'tai-khoan'];
   function shell(content) {
     const r = route();
-    const items = [['', 'Tổng quan'], ['nhap-lieu', 'Nhập số liệu', 1], ['danh-muc', 'Danh mục', 1], ['nhap-file', 'Nhập từ file', 1], ['tuy-bien', 'Tùy biến', 1], ['nguoi-dung', 'Người dùng', 1]];
+    const items = [['', 'Tổng quan'], ['so-sanh', 'So sánh'], ['du-lieu', 'Dữ liệu', 1], ['danh-muc', 'Danh mục', 1], ['tuy-bien', 'Tùy biến', 1], ['nguoi-dung', 'Người dùng', 1]];
     const nav = h('nav', { class: 'nav', 'aria-label': 'Chức năng' },
-      items.filter(i => !i[2] || isAdmin()).map(([k, t]) => h('a', { href: '#/' + k, class: (r === k || (k === '' && !items.some(i => i[0] === r) && r !== 'tai-khoan')) ? 'on' : '' }, t)));
+      items.filter(i => !i[2] || isAdmin()).map(([k, t]) => h('a', { href: '#/' + k, class: (r === k || (k === '' && (r === 'hop-dong' || !views0.includes(r)))) ? 'on' : '' }, t)));
     const who = h('div', { class: 'who' },
       h('span', { class: 'email', title: S.profile.username }, S.profile.full_name || S.profile.username),
       h('span', { class: 'chip ' + S.profile.role }, ROLE[S.profile.role]),
@@ -167,7 +141,7 @@
           h('div', { class: 'topbar-row nav-row' }, nav, h('span', { class: 'credit' }, 'Produced by Supervisory Board of Tan Minh Nhan Corporation®'))))),
       demoBar(),
       h('main', { class: 'wrap' }, content),
-      h('footer', { class: 'wrap foot' }, 'Đơn vị số tiền: triệu đồng. Lợi nhuận tính trước thuế TNDN.'));
+      h('footer', { class: 'wrap foot' }, 'Số liệu theo file DT-CP (đơn vị đồng). Bảng hiển thị triệu đồng, biểu đồ hiển thị tỷ đồng.'));
   }
 
 
@@ -220,240 +194,249 @@
   }
 
   // ------------------------------------------------------------------
-  // Tổng quan (dashboard): vẽ theo cấu hình. Admin chỉnh cấu hình ở trang "Tùy biến".
+  // Dữ liệu: các mốc (snapshot) và dòng Hợp đồng/Phụ lục của từng mốc
   // ------------------------------------------------------------------
-  // Tên gọi admin đổi được cho hợp ngành (ví dụ xây dựng: "Kênh bán" → "Nguồn doanh thu").
+  async function loadAll() {
+    const m = await api.meta();
+    S.snapshots = m.snapshots;
+    S.catalog = new Map();
+    m.catalog.forEach(c => { if (!S.catalog.has(c.kind)) S.catalog.set(c.kind, new Map()); S.catalog.get(c.kind).set(c.code, c); });
+    S.dashboard = m.dashboard || null;
+    if (!S.snapshots.some(s => s.id === S.snap)) S.snap = S.snapshots.length ? S.snapshots[0].id : null;
+    if (S.snap) await getLines(S.snap);
+    S.users = isAdmin() ? await api.listUsers() : [];
+    S.loaded = true;
+  }
+  async function reload() { S.lines.clear(); S.hist = null; await loadAll(); render(); }
+  async function getLines(id) { if (!S.lines.has(id)) S.lines.set(id, await api.lines(id)); return S.lines.get(id); }
+  // Dòng của một mốc nếu đã tải; nếu chưa, tải nền rồi vẽ lại trang.
+  function linesOf(id) {
+    if (S.lines.has(id)) return S.lines.get(id);
+    if (!S.loading.has(id)) {
+      S.loading.add(id);
+      getLines(id).then(() => { S.loading.delete(id); render(); }, e => { S.loading.delete(id); toast(e.message, true); });
+    }
+    return null;
+  }
+  const snapById = id => S.snapshots.find(s => s.id === id);
+  const snapLabel = s => (s ? F.date(s.report_date) + (s.label ? ' · ' + s.label : '') : '');
+  const prevSnap = id => { const i = S.snapshots.findIndex(s => s.id === id); return i >= 0 ? S.snapshots[i + 1] || null : null; };
+  const skeleton = () => h('div', { class: 'skeleton', style: 'height:320px' });
+
+  // Tên hiển thị cho mã (danh mục do admin đặt; mặc định là mã trong file)
+  function nameOf(kind, code) {
+    if (!code) return { investor: '(Không rõ chủ đầu tư)', stage: '(Chưa ghi giai đoạn)', company: '(Không rõ công ty)', region: '(Không rõ khu vực)' }[kind] || '(Không rõ)';
+    const m = S.catalog.get(kind), c = m && m.get(code);
+    return c ? c.name : code;
+  }
+  const catSort = (kind, code) => { const m = S.catalog.get(kind), c = m && m.get(code); return c && c.sort ? c.sort : 1e6; };
+  function dimLabel(dim, key, first) {
+    if (dim === 'project') return key && key !== '(không rõ)' ? `${key} – ${first.project_name}` : '(Không rõ công trình)';
+    if (dim === 'contract') return `${key} – ${first.contract_title || first.contract_no}`;
+    if (dim === 'region') return nameOf('region', key) === key && first.region_name ? first.region_name : nameOf('region', key);
+    return nameOf(dim, key);
+  }
+  function costLabel(key) {
+    const c = S.catalog.get('cost') && S.catalog.get('cost').get(key);
+    if (c) return c.name;
+    const s = snapById(S.snap), fromFile = s && s.cost_labels && s.cost_labels[key];
+    if (fromFile) return fromFile;
+    const d = DTCP.COST_COLS.find(x => x.key === key);
+    return d.group === d.label ? d.label : `${d.group} › ${d.label}`;
+  }
+  const costGroup = key => costLabel(key).split(' › ')[0];
+
+  // ------------------------------------------------------------------
+  // Tên gọi và chỉ số
+  // ------------------------------------------------------------------
   const DEFAULT_TERMS = {
-    doanh_thu: 'Doanh thu', tong_chi_phi: 'Tổng chi phí', loi_nhuan: 'Lợi nhuận trước thuế', bien_ln: 'Biên lợi nhuận',
-    rev_group: 'Kênh bán', exp_group: 'Khoản mục chi phí'
+    count: 'Số hợp đồng', hd: 'Giá trị hợp đồng', sl: 'Sản lượng', slhs: 'Sản lượng hồ sơ', tv: 'Tiền về', dt: 'Doanh thu',
+    cp: 'Chi phí trực tiếp', pct: '%CPTT/DT', company: 'Công ty', region: 'Khu vực', project: 'Công trình', investor: 'Chủ đầu tư',
+    stage: 'Giai đoạn', contract: 'Hợp đồng'
   };
   const TERM_HELP = {
-    doanh_thu: 'Tổng các mục doanh thu', tong_chi_phi: 'Tổng các mục chi phí', loi_nhuan: 'Doanh thu − chi phí', bien_ln: 'Lợi nhuận ÷ doanh thu',
-    rev_group: 'Nhóm các mục doanh thu (trang Danh mục)', exp_group: 'Nhóm các mục chi phí (trang Danh mục)'
+    count: 'Số hợp đồng (mã DT-CP)', hd: 'Cột Giá trị hợp đồng', sl: 'Cột Giá trị sản lượng', slhs: 'Cột Sản lượng hồ sơ', tv: 'Cột Giá trị tiền về',
+    dt: 'Cột Doanh thu thời điểm', cp: 'Tổng 15 khoản chi phí trực tiếp', pct: 'Chi phí trực tiếp ÷ doanh thu', company: 'Cột Công ty',
+    region: 'Nhóm Khu vực', project: 'Nhóm công trình', investor: 'Mã chủ đầu tư trong số HĐ', stage: 'Cột Thời điểm', contract: 'Dòng hợp đồng (mã DT-CP)'
   };
-  // Trên trang Tùy biến dùng tên trong bản nháp để xem trước; nơi khác dùng tên đã lưu.
   function T(k) {
     const src = route() === 'tuy-bien' && S.custom ? S.custom.draft.terms : (S.dashboard || {}).terms;
     const v = src && typeof src[k] === 'string' ? src[k].trim() : '';
     return v || DEFAULT_TERMS[k];
   }
   const lc = s => (s ? s.charAt(0).toLocaleLowerCase('vi') + s.slice(1) : s);
+  const METRICS = ['count', 'hd', 'sl', 'slhs', 'tv', 'dt', 'cp', 'pct'];
+  const MONEY = ['hd', 'sl', 'slhs', 'tv', 'dt', 'cp'];
+  const DIMS = ['region', 'company', 'investor', 'stage', 'project'];
+  const GOOD = { dt: 1, hd: 1, tv: 1, sl: 1, slhs: 1, cp: 0, pct: -1, count: 0 };
+  const METRIC_COLOR = { dt: C[0], cp: C[1], tv: C[2], hd: C[3], sl: C[4], slhs: C[5], count: C[0], pct: C[2] };
+  const fmtM = (k, v) => (k === 'count' ? F.int(v) : k === 'pct' ? F.pct(v) : F.vnd(v));
+  function deltaEl(k, a, b, vsText) {
+    if (a == null || b == null || !isFinite(a) || !isFinite(b)) return h('span', { class: 'delta' }, vsText ? 'Chưa có mốc trước để so sánh' : '');
+    const d = k === 'pct' ? b - a : a ? (b - a) / Math.abs(a) : NaN;
+    const good = GOOD[k] > 0 ? d > 0 : GOOD[k] < 0 ? d < 0 : null;
+    const cls = !isFinite(d) || d === 0 || good === null ? '' : good ? 'is-good' : 'is-bad';
+    const txt = k === 'pct' ? F.pt(d) : k === 'count' ? (b - a > 0 ? '+' : '') + F.int(b - a) : F.spct(d);
+    return h('span', { class: 'delta' }, h('b', { class: cls }, txt), vsText ? ' ' + vsText : '');
+  }
+
+  // ------------------------------------------------------------------
+  // Bộ lọc dùng chung (Tổng quan, So sánh)
+  // ------------------------------------------------------------------
+  let qTimer = 0;
+  function filterBar(lines, opts) {
+    const o = opts || {};
+    const f = S.filters;
+    const opt = (dim, field) => {
+      const keys = [...new Set(lines.map(DTCP.DIM_KEY[dim]))];
+      const first = new Map(); lines.forEach(l => { const k = DTCP.DIM_KEY[dim](l); if (!first.has(k)) first.set(k, l); });
+      keys.sort((a, b) => catSort(dim, a) - catSort(dim, b) || String(a).localeCompare(String(b), 'vi', { numeric: true }));
+      const sel = h('select', { id: 'f-' + field, 'aria-label': T(dim) },
+        h('option', { value: '' }, 'Tất cả ' + lc(T(dim))), keys.map(k => h('option', { value: k }, dimLabel(dim, k, first.get(k)))));
+      sel.value = f[field] || '';
+      sel.addEventListener('change', () => { f[field] = sel.value; render(); });
+      return h('label', { class: 'f' }, T(dim), sel);
+    };
+    const q = h('input', { type: 'search', id: 'f-q', placeholder: 'Mã DT-CP, số HĐ, tên công trình…', value: f.q || '' });
+    q.addEventListener('input', () => { clearTimeout(qTimer); qTimer = setTimeout(() => { f.q = q.value; render(); }, 300); });
+    const any = Object.values(f).some(Boolean);
+    let snapSel = null;
+    if (o.snap) {
+      snapSel = h('select', { id: 'f-snap', 'aria-label': 'Mốc dữ liệu' }, S.snapshots.map(s => h('option', { value: s.id }, snapLabel(s))));
+      snapSel.value = S.snap;
+      snapSel.addEventListener('change', () => { S.snap = +snapSel.value; render(); });
+    }
+    return h('div', { class: 'card filters' },
+      h('div', { class: 'filter-grid' },
+        snapSel ? h('label', { class: 'f' }, 'Mốc dữ liệu', snapSel) : null,
+        opt('company', 'company'), opt('region', 'region'), opt('investor', 'investor'), opt('stage', 'stage'), opt('project', 'project'),
+        h('label', { class: 'f grow' }, 'Tìm', q)),
+      any ? h('div', { class: 'row' }, h('span', { class: 'note' }, 'Đang lọc dữ liệu.'),
+        h('button', { class: 'btn sm', type: 'button', onclick: () => { S.filters = { company: '', region: '', investor: '', stage: '', project: '', q: '' }; render(); } }, 'Bỏ lọc')) : null);
+  }
+
+  // ------------------------------------------------------------------
+  // Tổng quan (dashboard) – vẽ theo cấu hình do admin tùy biến
+  // ------------------------------------------------------------------
   const DEFAULT_DASH = {
-    title: 'Tổng quan',
+    title: 'Tổng quan DT-CP',
     terms: {},
-    tiles: [{ metric: 'doanh_thu', label: '' }, { metric: 'tong_chi_phi', label: '' }, { metric: 'loi_nhuan', label: '' }, { metric: 'bien_ln', label: '' }],
     cards: [
-      { id: 'dt-cp', type: 'columns', title: 'Doanh thu, chi phí và lợi nhuận theo tháng', note: 'Bấm vào một tháng để xem ghi chú của tháng đó.', metrics: ['doanh_thu', 'tong_chi_phi'], lines: ['loi_nhuan'], group: null, width: 'full', hidden: false },
-      { id: 'bien', type: 'line', title: 'Biên lợi nhuận', note: 'Lợi nhuận trước thuế chia cho doanh thu.', metrics: ['bien_ln'], lines: [], group: null, width: 'half', hidden: false },
-      { id: 'co-cau', type: 'breakdown', title: '', note: 'Tổng từng mục trong kỳ và tỷ trọng trên tổng.', metrics: [], lines: [], group: 'exp', width: 'half', hidden: false },
-      { id: 'kenh', type: 'line', title: '', note: 'Số liệu hằng tháng của từng mục, triệu đồng.', metrics: ['rev:*'], lines: [], group: null, width: 'full', hidden: false },
-      { id: 'bang', type: 'table', title: 'Bảng lãi lỗ theo tháng', note: 'Tháng mới nhất ở trên cùng. Bấm một dòng để xem và thêm ghi chú.', metrics: [], lines: [], group: null, width: 'full', hidden: false },
-      { id: 'ghi-chu', type: 'notes', title: 'Ghi chú theo tháng', note: '', metrics: [], lines: [], group: null, width: 'full', hidden: false }
+      { id: 'kpi', type: 'kpis', title: '', note: '', dim: 'region', metrics: ['count', 'hd', 'dt', 'cp', 'pct', 'tv'], top: 12, detail: false, width: 'full', hidden: false },
+      { id: 'kv', type: 'group', title: '', note: 'Bấm vào một dòng để lọc theo khu vực đó.', dim: 'region', metrics: ['dt', 'cp'], top: 12, detail: false, width: 'half', hidden: false },
+      { id: 'cty', type: 'group', title: '', note: 'Bấm vào một dòng để lọc theo công ty đó.', dim: 'company', metrics: ['dt', 'cp'], top: 12, detail: false, width: 'half', hidden: false },
+      { id: 'cdt', type: 'group', title: '', note: 'Tỷ lệ chi phí trực tiếp trên doanh thu: thấp hơn là tốt hơn.', dim: 'investor', metrics: ['pct'], top: 12, detail: false, width: 'half', hidden: false },
+      { id: 'gd', type: 'group', title: '', note: '', dim: 'stage', metrics: ['dt', 'cp'], top: 12, detail: false, width: 'half', hidden: false },
+      { id: 'ct', type: 'group', title: '', note: '10 công trình có doanh thu lớn nhất; phần còn lại gộp vào "Khác".', dim: 'project', metrics: ['dt', 'cp'], top: 10, detail: false, width: 'half', hidden: false },
+      { id: 'cocau', type: 'costs', title: '', note: 'Tổng từng khoản trong phạm vi đang lọc và tỷ trọng trên tổng chi phí trực tiếp.', dim: 'region', metrics: [], top: 12, detail: false, width: 'half', hidden: false },
+      { id: 'bang', type: 'table', title: '', note: 'Bấm vào một dòng để mở hoặc thu gọn; bấm vào hợp đồng để xem chi tiết và diễn biến qua các mốc. Đơn vị: triệu đồng.', dim: 'region', metrics: [], top: 12, detail: false, width: 'full', hidden: false }
     ]
   };
-  const CARD_TYPES = {
-    columns: 'Cột theo tháng', line: 'Đường theo tháng', stacked: 'Cột chồng theo tháng',
-    breakdown: 'Thanh ngang tỷ trọng', table: 'Bảng lãi lỗ', notes: 'Ghi chú theo tháng'
-  };
-  const groups = () => ({ rev: T('rev_group'), exp: T('exp_group') });
+  const CARD_TYPES = { kpis: 'Ô chỉ số', group: 'Biểu đồ theo nhóm', costs: 'Cơ cấu chi phí', table: 'Bảng chi tiết' };
   const clone = x => JSON.parse(JSON.stringify(x));
-  const dashConfig = () => S.dashboard || DEFAULT_DASH;
-
-  // Chỉ số: tổng hợp, từng kênh (rev:<id>), từng khoản chi phí (exp:<id>); rev:* / exp:* = tất cả.
-  function metricInfo(k) {
-    const base = {
-      doanh_thu: [T('doanh_thu'), 'money', r => r.doanh_thu], tong_chi_phi: [T('tong_chi_phi'), 'money', r => r.tong_chi_phi],
-      loi_nhuan: [T('loi_nhuan'), 'money', r => r.loi_nhuan], bien_ln: [T('bien_ln'), 'pct', r => r.bien_ln]
-    };
-    if (base[k]) return { key: k, name: base[k][0], kind: base[k][1], get: base[k][2], lowerIsBetter: k === 'tong_chi_phi' };
-    const [g, id] = String(k).split(':');
-    const c = (g === 'rev' ? S.channels : S.categories).find(x => String(x.id) === id);
-    if (!c) return null;
-    return { key: k, name: c.name, kind: 'money', lowerIsBetter: g === 'exp', get: r => { const v = (g === 'rev' ? r.rev : r.exp)[c.id]; return v == null ? null : v; } };
-  }
-  function metricChoices(opts) {
-    const o = opts || {};
-    // Mục đã ẩn ở trang Danh mục không hiện để chọn, trừ khi đang được chọn sẵn.
-    const keep = (g, c) => c.active || (o.selected || []).includes(g + ':' + c.id);
-    const out = [{ key: 'doanh_thu', name: T('doanh_thu') }, { key: 'tong_chi_phi', name: T('tong_chi_phi') }, { key: 'loi_nhuan', name: T('loi_nhuan') }];
-    if (o.pct) out.push({ key: 'bien_ln', name: T('bien_ln') + ' (%)' });
-    if (o.groups) out.push({ key: 'rev:*', name: 'Tất cả: ' + lc(T('rev_group')) });
-    S.channels.filter(c => keep('rev', c)).forEach(c => out.push({ key: 'rev:' + c.id, name: T('rev_group') + ': ' + c.name }));
-    if (o.groups) out.push({ key: 'exp:*', name: 'Tất cả: ' + lc(T('exp_group')) });
-    S.categories.filter(c => keep('exp', c)).forEach(c => out.push({ key: 'exp:' + c.id, name: T('exp_group') + ': ' + c.name }));
-    return out;
-  }
-  // Màu đi theo chỉ số (không theo thứ tự): doanh thu, chi phí, lợi nhuận cố định; kênh và khoản mục nối tiếp.
-  function colorIndex(k) {
-    const fixed = { doanh_thu: 0, tong_chi_phi: 1, loi_nhuan: 2, bien_ln: 2 };
-    if (k in fixed) return fixed[k];
-    const [g, id] = k.split(':');
-    if (g === 'rev') return (3 + Math.max(0, S.channels.findIndex(c => String(c.id) === id))) % 8;
-    return (3 + S.channels.length + Math.max(0, S.categories.findIndex(c => String(c.id) === id))) % 8;
-  }
-  function resolve(keys, used) {
-    used = used || new Set();
-    const flat = [];
-    (keys || []).forEach(k => {
-      if (k === 'rev:*') S.channels.forEach(c => flat.push('rev:' + c.id));
-      else if (k === 'exp:*') S.categories.forEach(c => flat.push('exp:' + c.id));
-      else flat.push(k);
-    });
-    return [...new Set(flat)].map(k => {
-      const m = metricInfo(k);
-      if (!m) return null;
-      let ci = colorIndex(k);
-      if (used.has(ci)) { const free = [0, 1, 2, 3, 4, 5, 6, 7].find(i => !used.has(i)); if (free != null) ci = free; }
-      used.add(ci);
-      return Object.assign(m, { color: C[ci] });
-    }).filter(Boolean);
-  }
-
-  // Tiêu đề tự sinh khi admin để trống, theo tên gọi hiện hành.
+  const dashConfig = () => (S.dashboard && Array.isArray(S.dashboard.cards) ? S.dashboard : DEFAULT_DASH);
   function autoTitle(c) {
-    const m = c.metrics || [];
-    if (c.type === 'stacked') return groups()[c.group || 'exp'] + ' theo tháng';
-    if (c.type === 'breakdown') return 'Cơ cấu ' + lc(groups()[c.group || 'exp']);
-    if (c.type === 'table' || c.type === 'notes') return CARD_TYPES[c.type];
-    if (m.length === 1 && m[0] === 'rev:*') return T('doanh_thu') + ' theo ' + lc(T('rev_group'));
-    if (m.length === 1 && m[0] === 'exp:*') return T('tong_chi_phi') + ' theo ' + lc(T('exp_group'));
-    const names = resolve(m.concat(c.lines || [])).map(s => s.name);
-    return names.length ? names.slice(0, 3).join(', ') + (names.length > 3 ? '…' : '') : CARD_TYPES[c.type];
+    if (c.type === 'kpis') return 'Chỉ số chính';
+    if (c.type === 'costs') return 'Cơ cấu ' + lc(T('cp'));
+    if (c.type === 'table') return `Bảng chi tiết: ${T('region')} › ${T('project')} › ${T('contract')}`;
+    const ms = (c.metrics || []).map(T);
+    return (ms.length ? ms.join(' & ') : 'Biểu đồ') + ' theo ' + lc(T(c.dim));
+  }
+  function drawAll(draws) { draws.forEach(f => { try { f(); } catch (e) { console.error(e); } }); }
+  function sw(color, line) { const s = h('i', { class: 'sw' + (line ? ' line' : '') }); s.style.background = color; return s; }
+
+  function emptyData() {
+    return h('div', { class: 'card empty' },
+      h('h2', null, 'Chưa có dữ liệu'),
+      isAdmin()
+        ? [h('p', null, 'Tải lên file "Bảng tổng hợp theo dõi doanh thu - chi phí" (Excel) để bắt đầu. Mỗi lần tải là một mốc dữ liệu để so sánh về sau.'),
+          h('a', { class: 'btn primary', href: '#/du-lieu' }, 'Tải file DT-CP')]
+        : h('p', null, 'Admin chưa tải dữ liệu nào. Hãy quay lại sau.'));
   }
 
   function viewDashboard() {
     const cfg = dashConfig();
-    const all = buildModel();
-    const customize = isAdmin() ? h('a', { class: 'btn', href: '#/tuy-bien', onclick: () => { S.custom = S.custom || { draft: clone(cfg), editId: null }; } }, 'Tùy biến dashboard') : null;
-    if (!all.length) {
-      return h('div', { class: 'card empty' },
-        h('h2', null, 'Chưa có số liệu'),
-        isAdmin()
-          ? [h('p', null, 'Nhập tay từng tháng hoặc tải lên file Excel để bắt đầu.'),
-            h('div', { class: 'row' }, h('a', { class: 'btn primary', href: '#/nhap-lieu' }, 'Nhập số liệu tháng'), h('a', { class: 'btn', href: '#/nhap-file' }, 'Nhập từ file Excel'))]
-          : h('p', null, 'Admin chưa nhập số liệu nào. Hãy quay lại sau.'));
-    }
-    const years = [...new Set(all.map(r => r.month.slice(0, 4)))].sort().reverse();
-    if (S.period !== '12m' && S.period !== 'all' && !years.includes(S.period.slice(1))) S.period = '12m';
-    const rows = periodRows(all, S.period);
-    const sel = h('select', { id: 'period', 'aria-label': 'Kỳ báo cáo', onchange: e => { S.period = e.target.value; render(); } },
-      h('option', { value: '12m' }, '12 tháng gần nhất'), years.map(y => h('option', { value: 'y' + y }, 'Năm ' + y)), h('option', { value: 'all' }, 'Toàn bộ'));
-    sel.value = S.period;
-
-    const sum = k => d3.sum(rows, r => r[k]);
-    const tDt = sum('doanh_thu'), tCp = sum('tong_chi_phi'), tLn = tDt - tCp;
-    const lo = rows.filter(r => isFinite(r.bien_ln)).reduce((m, r) => (!m || r.bien_ln < m.bien_ln ? r : m), null);
+    if (!S.snapshots.length) return emptyData();
+    const all = linesOf(S.snap);
+    if (!all) return skeleton();
+    const prev = prevSnap(S.snap), prevAll = prev ? linesOf(prev.id) : null;
+    const fl = DTCP.filter(all, S.filters);
+    const tot = DTCP.total(fl);
+    const ptot = prevAll ? DTCP.total(DTCP.filter(prevAll, S.filters)) : null;
+    const snap = snapById(S.snap);
+    const nProj = new Set(fl.map(l => l.project_code)).size;
     const lead = h('p', { class: 'lead' },
-      `Từ ${F.mLong(rows[0].month)} đến ${F.mLong(rows[rows.length - 1].month)}, ${lc(T('doanh_thu'))} đạt `, h('b', null, F.ty(tDt)),
-      `, ${lc(T('tong_chi_phi'))} `, h('b', null, F.ty(tCp)), `, ${lc(T('loi_nhuan'))} `, h('b', { class: tLn < 0 ? 'is-bad' : '' }, F.ty(tLn)),
-      ` (${lc(T('bien_ln'))} `, h('b', null, F.pct(tDt ? tLn / tDt : NaN)), ').',
-      lo && rows.length > 1 ? [` ${T('bien_ln')} thấp nhất ở ${F.mLong(lo.month)}: `, h('b', null, F.pct(lo.bien_ln)), '.'] : null);
-
-    const last = rows[rows.length - 1];
-    const prev = all[all.indexOf(last) - 1];
-    const tiles = cfg.tiles.map(t => tileCard(t, last, prev)).filter(Boolean);
-
-    const ctx = { all, rows, months: rows.map(r => r.month), draws: [] };
-    const visible = cfg.cards.filter(c => !c.hidden);
-    if (visible.some(c => c.type === 'notes')) ctx.notes = notesCard(all, visible.find(c => c.type === 'notes'));
-    const cards = visible.map(c => renderCard(c, ctx));
+      `Mốc ${F.date(snap.report_date)}: `, h('b', null, F.int(tot.count)), ` ${lc(T('contract'))} thuộc `, h('b', null, F.int(nProj)), ` ${lc(T('project'))}; ${lc(T('hd'))} `,
+      h('b', null, F.vnd(tot.hd)), `, ${lc(T('dt'))} `, h('b', null, F.vnd(tot.dt)), `, ${lc(T('cp'))} `, h('b', null, F.vnd(tot.cp)),
+      ` (${T('pct')} `, h('b', null, F.pct(tot.pct)), ').');
+    const ctx = { lines: fl, tot, ptot, prev, draws: [] };
+    const cards = fl.length ? cfg.cards.filter(c => !c.hidden).map(c => renderCard(c, ctx)) : [h('div', { class: 'card empty wide' }, h('p', null, 'Không có dòng nào khớp bộ lọc.'))];
     S.redraw = () => drawAll(ctx.draws);
-
-    return h('div', { class: 'stack', style: 'gap:22px' },
-      h('div', null, h('div', { class: 'page-head' }, h('h1', null, cfg.title || 'Tổng quan'),
-        h('div', { class: 'row' }, customize, h('label', { class: 'f' }, 'Kỳ báo cáo', sel))), lead),
-      tiles.length ? h('section', { class: 'tiles', 'aria-label': 'Chỉ số tháng gần nhất' }, tiles) : null,
+    return h('div', { class: 'stack', style: 'gap:18px' },
+      h('div', null, h('div', { class: 'page-head' }, h('h1', null, cfg.title || DEFAULT_DASH.title),
+        isAdmin() ? h('a', { class: 'btn', href: '#/tuy-bien' }, 'Tùy biến dashboard') : null), lead),
+      filterBar(all, { snap: true }),
       h('section', { class: 'grid' }, cards));
   }
 
-  function tileCard(t, last, prev) {
-    const m = metricInfo(t.metric);
-    if (!m) return null;
-    const v = m.get(last), pv = prev ? m.get(prev) : null;
-    const pct = m.kind === 'pct';
-    let delta = h('span', { class: 'delta' }, 'Chưa có tháng trước để so sánh');
-    if (prev && v != null && pv != null) {
-      const d = pct ? v - pv : (pv ? (v - pv) / Math.abs(pv) : NaN);
-      const good = m.lowerIsBetter ? d < 0 : d > 0;
-      const cls = !isFinite(d) || d === 0 ? '' : (good ? 'is-good' : 'is-bad');
-      delta = h('span', { class: 'delta' }, h('b', { class: cls }, pct ? F.pt(d) : F.spct(d)), ' so với ' + F.mLong(prev.month));
-    }
-    return h('div', { class: 'card tile' },
-      h('span', { class: 'label' }, (t.label || m.name) + ' · ' + F.mLong(last.month)),
-      h('span', { class: 'big' + (v != null && v < 0 ? ' is-bad' : '') }, v == null ? '–' : pct ? F.pct(v) : F.money(v)),
-      delta);
-  }
-
-  // Vẽ từng biểu đồ độc lập: một biểu đồ lỗi không làm hỏng các biểu đồ khác.
-  function drawAll(draws) {
-    draws.forEach(f => { try { f(); } catch (e) { console.error(e); } });
-  }
-  function sw(color, line) { const s = h('i', { class: 'sw' + (line ? ' line' : '') }); s.style.background = color; return s; }
-  function legend(bars, lines) {
-    return h('div', { class: 'legend' }, bars.map(s => h('span', null, sw(s.color), s.name)), (lines || []).map(s => h('span', null, sw(s.color, true), s.name)));
-  }
-
-  // Một thẻ biểu đồ. ctx: {all, rows, months, draws, notes, preview}
   function renderCard(card, ctx) {
     const editBtn = isAdmin() && !ctx.preview
       ? h('button', { class: 'btn sm card-edit', type: 'button', title: 'Sửa biểu đồ này', onclick: () => {
         S.custom = S.custom || { draft: clone(dashConfig()), editId: null };
         S.custom.editId = card.id; location.hash = '#/tuy-bien';
       } }, 'Sửa') : null;
-    if (card.type === 'notes') {
-      const n = ctx.notes || notesCard(ctx.all, card);
-      n.setEdit(editBtn);
-      if (card.width !== 'full') n.card.classList.remove('wide');
-      return n.card;
-    }
     const body = [];
     const empty = msg => h('p', { class: 'note empty-chart' }, msg);
-    const months = ctx.months, rows = ctx.rows;
-    const vals = s => rows.map(r => s.get(r));
-    if (card.type === 'columns') {
-      const used = new Set();
-      const bars = resolve(card.metrics, used).filter(s => s.kind === 'money');
-      const lines = resolve(card.lines, used).filter(s => s.kind === 'money');
-      if (!bars.length && !lines.length) body.push(empty('Chưa chọn dữ liệu cho biểu đồ này.'));
+    if (card.type === 'kpis') {
+      const vs = ctx.prev && ctx.ptot ? 'so với mốc ' + F.dateShort(ctx.prev.report_date) : null;
+      const ms = (card.metrics && card.metrics.length ? card.metrics : DEFAULT_DASH.cards[0].metrics).filter(m => m !== 'tv' || ctx.tot.tv || (ctx.ptot && ctx.ptot.tv));
+      body.push(h('div', { class: 'tiles' }, ms.map(m => h('div', { class: 'tile' },
+        h('span', { class: 'label' }, T(m)),
+        h('span', { class: 'big' + (m === 'pct' && ctx.tot.pct > 1 ? ' is-bad' : '') }, fmtM(m, ctx.tot[m])),
+        deltaEl(m, ctx.ptot ? ctx.ptot[m] : null, ctx.tot[m], vs || (ctx.prev ? 'đang tải mốc trước…' : null))))));
+    } else if (card.type === 'group') {
+      let ms = (card.metrics || []).filter(m => METRICS.includes(m));
+      if (ms.includes('pct')) ms = ['pct']; else if (ms.includes('count')) ms = ['count'];
+      if (!ms.length) body.push(empty('Chưa chọn dữ liệu cho biểu đồ này.'));
       else {
-        const host = h('div', { class: 'chart' });
-        body.push(legend(bars, lines), h('div', { class: 'chart-box' }, host));
-        ctx.draws.push(() => Charts.columns(host, months, bars.map(s => ({ name: s.name, color: s.color, values: vals(s) })), lines.map(s => ({ name: s.name, color: s.color, values: vals(s) })),
-          { onPick: ctx.notes ? m => ctx.notes.open(m) : null, head: m => { const r = rows.find(x => x.month === m); return F.mLong(m) + (r && r.notes ? ` · ${r.notes} ghi chú` : ''); } }));
+        const groups = [...DTCP.groupBy(ctx.lines, card.dim).values()];
+        const ranked = ['investor', 'project', 'company'].includes(card.dim) || groups.length > card.top;
+        if (ranked) groups.sort((a, b) => (b[ms[0]] || 0) - (a[ms[0]] || 0)); else groups.sort((a, b) => catSort(card.dim, a.key) - catSort(card.dim, b.key) || String(a.key).localeCompare(String(b.key), 'vi', { numeric: true }));
+        let shown = groups;
+        if (groups.length > card.top) {
+          const rest = groups.slice(card.top);
+          const other = DTCP.total(ctx.lines.filter(l => rest.some(g => g.key === DTCP.DIM_KEY[card.dim](l))));
+          shown = groups.slice(0, card.top).concat([Object.assign(other, { key: null, other: rest.length })]);
+        }
+        const series = ms.map(m => ({ name: T(m), color: METRIC_COLOR[m] }));
+        const cats = shown.map(g => ({
+          key: g.key, label: g.other ? `Khác (${g.other})` : dimLabel(card.dim, g.key, g.first), values: ms.map(m => g[m]),
+          extra: ms.includes('pct') || ms.includes('count') ? [[null, T('dt'), F.vnd(g.dt)], [null, T('count'), F.int(g.count)]] : [[null, T('pct'), F.pct(g.pct)], [null, T('count'), F.int(g.count)]]
+        }));
+        const host = h('div', { class: 'chart-hb' });
+        if (series.length > 1) body.push(h('div', { class: 'legend' }, series.map(s => h('span', null, sw(s.color), s.name))));
+        body.push(h('div', { class: 'chart-box' }, host), h('p', { class: 'note axis-note' }, ms[0] === 'pct' ? 'Đơn vị: %' : ms[0] === 'count' ? 'Đơn vị: hợp đồng' : 'Trục: tỷ đồng'));
+        const pickable = !ctx.preview && ['company', 'region', 'investor', 'stage', 'project'].includes(card.dim);
+        ctx.draws.push(() => Charts.hbars(host, cats, series, {
+          fmt: v => fmtM(ms[0], v), axisFmt: ms[0] === 'pct' ? d3.format('.0%') : ms[0] === 'count' ? F.int : F.tyAxis,
+          onPick: pickable ? key => { if (key != null) { S.filters[card.dim] = key; render(); window.scrollTo({ top: 0, behavior: 'smooth' }); } } : null
+        }));
       }
-    } else if (card.type === 'line') {
-      let series = resolve(card.metrics);
-      const pct = series.length && series.every(s => s.kind === 'pct');
-      series = series.filter(s => (s.kind === 'pct') === !!pct);
-      if (!series.length) body.push(empty('Chưa chọn dữ liệu cho biểu đồ này.'));
-      else {
-        const host = h('div', { class: 'chart md' });
-        if (series.length > 1) body.push(legend([], series));
-        body.push(h('div', { class: 'chart-box' }, host));
-        ctx.draws.push(() => Charts.lines(host, months, series.map(s => ({ name: s.name, color: s.color, values: vals(s) })),
-          pct ? { fmt: F.pct, axisFmt: d3.format('.0%') } : {}));
+    } else if (card.type === 'costs') {
+      const t = ctx.tot;
+      let items = DTCP.COST_KEYS.map(k => ({ key: k, name: costLabel(k), value: t.costs[k] }));
+      if (!card.detail) {
+        const m = new Map();
+        items.forEach(x => { const g = costGroup(x.key); m.set(g, (m.get(g) || 0) + x.value); });
+        items = [...m].map(([name, value]) => ({ name, value }));
       }
-    } else if (card.type === 'stacked') {
-      const series = resolve([(card.group || 'exp') + ':*']);
-      if (!series.length) body.push(empty('Chưa có danh mục nào.'));
-      else {
-        const host = h('div', { class: 'chart' });
-        body.push(legend(series), h('div', { class: 'chart-box' }, host));
-        ctx.draws.push(() => Charts.stacked(host, months, series.map(s => ({ name: s.name, color: s.color, values: vals(s) }))));
-      }
-    } else if (card.type === 'breakdown') {
-      const series = resolve([(card.group || 'exp') + ':*']);
-      const items = series.map(s => ({ name: s.name, value: d3.sum(rows, r => s.get(r) || 0) })).filter(x => x.value > 0).sort((a, b) => b.value - a.value);
-      const total = d3.sum(items, x => x.value) || 1;
-      items.forEach(x => { x.share = x.value / total; });
-      if (!items.length) body.push(empty('Chưa có số liệu trong kỳ này.'));
-      else {
-        const host = h('div', { class: 'bars' });
-        body.push(host);
-        ctx.draws.push(() => Charts.breakdown(host, items, C[card.group === 'rev' ? 0 : 1]));
-      }
+      items = items.filter(x => x.value).sort((a, b) => b.value - a.value);
+      const sum = d3.sum(items, x => x.value) || 1;
+      items.forEach(x => { x.share = x.value / sum; });
+      if (!items.length) body.push(empty('Không có chi phí trong phạm vi đang lọc.'));
+      else { const host = h('div', { class: 'bars' }); body.push(host); ctx.draws.push(() => Charts.breakdown(host, items, C[1], F.vnd)); }
     } else if (card.type === 'table') {
-      body.push(h('div', { class: 'table-wrap' }, plTable(rows, ctx.notes)));
+      body.push(treeTable(ctx.lines, !!ctx.preview));
     }
     return h('div', { class: 'card' + (card.width === 'full' ? ' wide' : ''), id: 'card-' + card.id, 'data-type': card.type },
       h('div', { class: 'card-head' }, h('h2', null, card.title || autoTitle(card)), editBtn),
@@ -461,76 +444,429 @@
       body);
   }
 
-  function plTable(rows, notes) {
-    const used = new Set(rows.flatMap(r => Object.keys(r.exp).map(Number)));
-    const costCols = S.categories.filter(c => used.has(c.id));
-    return h('table', { class: 't pl-table' },
-      h('thead', null, h('tr', null, h('th', null, 'Tháng'), h('th', null, T('doanh_thu')), costCols.map(c => h('th', null, c.name)),
-        h('th', { class: 'sum' }, T('tong_chi_phi')), h('th', null, T('loi_nhuan')), h('th', null, T('bien_ln')), notes ? h('th', null, 'Ghi chú') : null)),
-      h('tbody', null, rows.slice().reverse().map(r => h('tr', notes ? {
-        class: 'click' + (S.noteMonth === r.month ? ' sel' : ''), tabindex: '0', title: 'Xem ghi chú tháng này', 'data-month': r.month,
-        onclick: () => notes.open(r.month), onkeydown: e => { if (e.key === 'Enter') notes.open(r.month); }
-      } : { 'data-month': r.month },
-      h('td', null, F.mLong(r.month)), h('td', null, F.tr(r.doanh_thu)), costCols.map(c => h('td', null, r.exp[c.id] != null ? F.tr(r.exp[c.id]) : '–')),
-      h('td', { class: 'sum' }, F.tr(r.tong_chi_phi)), h('td', { class: r.loi_nhuan < 0 ? 'is-bad' : '' }, F.tr(r.loi_nhuan)), h('td', null, F.pct(r.bien_ln)),
-      notes ? h('td', null, r.notes ? r.notes + ' ✎' : '') : null))));
+  // Bảng nhiều tầng: Khu vực › Công trình › Hợp đồng (mở/thu gọn)
+  function treeTable(lines, preview) {
+    const tv = lines.some(l => l.vals.tv);
+    const cols = ['hd', 'dt', 'cp', 'pct'].concat(tv ? ['tv'] : []);
+    const num = (g, k) => (k === 'pct' ? F.pct(g.pct) : F.trieu(g[k]));
+    const tbody = h('tbody');
+    const regions = [...DTCP.groupBy(lines, 'region').values()].sort((a, b) => catSort('region', a.key) - catSort('region', b.key) || String(a.key).localeCompare(String(b.key), 'vi', { numeric: true }));
+    const row = (level, key, label, g, extra, onClick, open) => h('tr', { class: 'lv' + level + (onClick ? ' click' : ''), tabindex: onClick ? '0' : null, onclick: onClick, onkeydown: onClick ? e => { if (e.key === 'Enter') onClick(); } : null },
+      h('td', { class: 'l name' }, level < 2 ? h('span', { class: 'tw' }, open ? '▾' : '▸') : null, h('span', null, label)),
+      h('td', { class: 'l' }, extra[0] || ''), h('td', { class: 'l' }, extra[1] || ''),
+      cols.map(k => h('td', { class: k === 'pct' && g.pct > 1 ? 'is-bad' : '' }, num(g, k))));
+    const toggle = key => () => { if (S.open.has(key)) S.open.delete(key); else S.open.add(key); render(); };
+    regions.forEach(rg => {
+      const rk = 'r:' + rg.key, rOpen = S.open.has(rk);
+      tbody.append(row(0, rk, dimLabel('region', rg.key, rg.first), rg, [F.int(rg.count) + ' HĐ', ''], preview ? null : toggle(rk), rOpen));
+      if (!rOpen) return;
+      const rl = lines.filter(l => l.region === rg.key);
+      [...DTCP.groupBy(rl, 'project').values()].sort((a, b) => String(a.key).localeCompare(String(b.key), 'vi', { numeric: true })).forEach(pg => {
+        const pk = 'p:' + rg.key + ':' + pg.key, pOpen = S.open.has(pk);
+        tbody.append(row(1, pk, dimLabel('project', pg.key, pg.first), pg, [F.int(pg.count) + ' HĐ', ''], preview ? null : toggle(pk), pOpen));
+        if (!pOpen) return;
+        const pl = rl.filter(l => (l.project_code || '(không rõ)') === pg.key);
+        [...DTCP.groupBy(pl, 'contract').values()].sort((a, b) => String(a.key).localeCompare(String(b.key), 'vi', { numeric: true })).forEach(cg => {
+          const f = cg.first;
+          tbody.append(row(2, cg.key, `${cg.key} · ${f.contract_no}${f.contract_title ? ' – ' + f.contract_title : ''}`, cg,
+            [nameOf('investor', f.investor), nameOf('stage', f.stage)], preview ? null : () => { location.hash = '#/hop-dong/' + encodeURIComponent(cg.key); }, false));
+        });
+      });
+    });
+    const tot = DTCP.total(lines);
+    const allKeys = () => { regions.forEach(rg => { S.open.add('r:' + rg.key); [...DTCP.groupBy(lines.filter(l => l.region === rg.key), 'project').keys()].forEach(pk => S.open.add('p:' + rg.key + ':' + pk)); }); };
+    return h('div', { class: 'stack' },
+      preview ? null : h('div', { class: 'row' },
+        h('button', { class: 'btn sm', type: 'button', onclick: () => { allKeys(); render(); } }, 'Mở tất cả'),
+        h('button', { class: 'btn sm', type: 'button', onclick: () => { S.open.clear(); render(); } }, 'Thu gọn'),
+        h('button', { class: 'btn sm', type: 'button', onclick: e => run(e.currentTarget, () => exportContracts(lines, 'bang-dtcp')) }, 'Xuất Excel')),
+      h('div', { class: 'table-wrap tree-wrap' }, h('table', { class: 't tree' },
+        h('thead', null, h('tr', null, h('th', null, `${T('region')} / ${T('project')} / ${T('contract')}`), h('th', { class: 'l' }, T('investor')), h('th', { class: 'l' }, T('stage')),
+          cols.map(k => h('th', null, T(k))))),
+        tbody,
+        h('tfoot', null, h('tr', null, h('td', { class: 'l' }, 'Tổng cộng'), h('td', { class: 'l' }, F.int(tot.count) + ' HĐ'), h('td'), cols.map(k => h('td', null, num(tot, k))))))));
   }
 
-  // Ghi chú theo tháng: ai đã được duyệt cũng viết được; xóa ghi chú của mình, admin xóa mọi ghi chú.
-  function notesCard(all, cardCfg) {
-    const c = cardCfg || {};
-    const months = [...new Set(all.map(r => r.month).concat(S.notes.map(n => n.month)))].sort().reverse();
-    if (!S.noteMonth || !months.includes(S.noteMonth)) S.noteMonth = months[0];
-    const card = h('div', { class: 'card wide', id: 'card-' + (c.id || 'ghi-chu'), 'data-type': 'notes' });
-    let edit = null;
-    function draw() {
-      const m = S.noteMonth;
-      const sel = h('select', { id: 'note-month', 'aria-label': 'Tháng', onchange: e => { S.noteMonth = e.target.value; draw(); markRow(); } },
-        months.map(x => h('option', { value: x }, F.mLong(x))));
-      sel.value = m;
-      const list = S.notes.filter(n => n.month === m).sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
-      const ta = h('textarea', { id: 'note-text', placeholder: 'Ví dụ: chi phí nhân sự tăng do thưởng Tết…', maxlength: 4000, required: true });
-      const add = h('button', { class: 'btn primary', type: 'submit' }, 'Thêm ghi chú');
-      card.replaceChildren(...[
-        h('div', { class: 'card-head' }, h('h2', null, c.title || CARD_TYPES.notes), h('div', { class: 'row' }, sel, edit)),
-        c.note ? h('p', { class: 'note' }, c.note) : null,
-        list.length ? h('div', { class: 'notes' }, list.map(n => h('div', { class: 'note-item' },
-          h('p', null, n.content),
-          h('div', { class: 'note-meta' },
-            h('span', null, (n.author_name || 'Không rõ') + ' · ' + new Date(n.created_at).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' })),
-            (n.author_id === S.profile.id || isAdmin()) ? confirmBtn('Xóa', async () => { await api.deleteNote(n.id); toast('Đã xóa ghi chú.'); await reload(); }) : null))))
-          : h('p', { class: 'note' }, `Chưa có ghi chú cho ${F.mLong(m)}.`),
-        h('form', {
-          class: 'stack', onsubmit: async ev => {
-            ev.preventDefault();
-            const text = ta.value.trim();
-            if (!text) return;
-            const ok = await run(add, () => api.addNote(m, text));
-            if (ok) { toast('Đã thêm ghi chú.'); await reload(); }
-          }
-        }, h('label', { class: 'f' }, 'Ghi chú mới cho ' + F.mLong(m), ta), h('div', { class: 'row' }, add))].filter(Boolean));
-    }
-    function markRow() {
-      document.querySelectorAll('.pl-table tbody tr').forEach(tr => tr.classList.toggle('sel', tr.dataset.month === S.noteMonth));
-    }
-    draw();
-    return {
-      card,
-      setEdit(btn) { edit = btn; draw(); },
-      open(m) { S.noteMonth = m; draw(); markRow(); card.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); card.querySelector('textarea').focus({ preventScroll: true }); }
-    };
+  // Xuất danh sách hợp đồng (theo bộ lọc hiện tại) ra Excel
+  async function exportContracts(lines, name) {
+    await loadXLSX();
+    const snap = snapById(S.snap);
+    const head = ['Mã DT-CP', 'Số hợp đồng', 'Nội dung', T('company'), T('region'), T('project'), T('investor'), T('stage'),
+      T('hd'), T('sl'), T('slhs'), T('tv'), T('dt')].concat(DTCP.COST_KEYS.map(costLabel), [T('cp'), T('pct')]);
+    const body = [...DTCP.groupBy(lines, 'contract').values()].map(g => {
+      const f = g.first;
+      return [g.key, f.contract_no, f.contract_title, nameOf('company', f.company), dimLabel('region', f.region, f), f.project_code + ' – ' + f.project_name,
+        nameOf('investor', f.investor), nameOf('stage', f.stage), g.hd, g.sl, g.slhs, g.tv, g.dt].concat(DTCP.COST_KEYS.map(k => g.costs[k]), [g.cp, isFinite(g.pct) ? g.pct : '']);
+    });
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([[`Mốc dữ liệu: ${snapLabel(snap)} – đơn vị: đồng`], head].concat(body));
+    ws['!cols'] = head.map((t, i) => ({ wch: i < 3 ? 28 : 16 }));
+    XLSX.utils.book_append_sheet(wb, ws, 'Hop dong');
+    XLSX.writeFile(wb, `${name}-${snap ? snap.report_date : ''}.xlsx`);
   }
 
   // ------------------------------------------------------------------
-  // Tùy biến dashboard (admin): tiêu đề, ô chỉ số, biểu đồ. Sửa trên bản nháp, bấm Lưu mới áp dụng cho mọi người.
+  // Chi tiết một hợp đồng: số liệu mốc hiện tại, diễn biến qua các mốc, dòng HĐ/PL, ghi chú
+  // ------------------------------------------------------------------
+  function viewContract() {
+    const code = routeArg();
+    const all = linesOf(S.snap);
+    if (!all) return skeleton();
+    if (!S.hist || S.hist.code !== code) {
+      S.hist = { code, data: null };
+      api.contractHistory(code).then(d => { if (S.hist && S.hist.code === code) { S.hist.data = d; render(); } }, e => toast(e.message, true));
+    }
+    const ls = all.filter(l => l.contract_code === code);
+    const hist = S.hist.data;
+    const back = h('a', { class: 'btn sm', href: '#/', onclick: e => { if (history.length > 1) { e.preventDefault(); history.back(); } } }, '← Quay lại');
+    if (!ls.length && hist && !hist.history.length) return h('div', { class: 'card empty' }, h('h2', null, 'Không tìm thấy hợp đồng ' + code), back);
+    const f = ls[0] || null;
+    const g = DTCP.total(ls);
+    const snap = snapById(S.snap);
+    const chips = f ? [
+      [T('company'), nameOf('company', f.company)], [T('region'), dimLabel('region', f.region, f)], [T('project'), f.project_code + ' – ' + f.project_name],
+      [T('investor'), nameOf('investor', f.investor)], [T('stage'), nameOf('stage', f.stage)]
+    ] : [];
+    const hostH = h('div', { class: 'chart md' });
+    const cards = [];
+    cards.push(h('div', { class: 'card wide' },
+      h('div', { class: 'card-head' }, h('div', null, h('p', { class: 'eyebrow' }, T('contract') + ' · ' + code), h('h1', { class: 'contract-title' }, f ? f.contract_no : code),
+        f && f.contract_title ? h('p', { class: 'lead' }, f.contract_title) : null), back),
+      h('div', { class: 'chips' }, chips.map(([k, v]) => h('span', { class: 'chip' }, h('span', { class: 'muted' }, k + ': '), v))),
+      f ? h('div', { class: 'tiles' }, ['hd', 'dt', 'cp', 'pct'].concat(g.tv ? ['tv'] : []).map(m => h('div', { class: 'tile' },
+        h('span', { class: 'label' }, T(m) + ' · mốc ' + F.dateShort(snap.report_date)), h('span', { class: 'big' }, fmtM(m, g[m]))))) : h('p', { class: 'note' }, 'Hợp đồng không có trong mốc đang chọn.')));
+    // Diễn biến
+    if (!hist) cards.push(h('div', { class: 'card wide' }, h('div', { class: 'skeleton', style: 'height:200px' })));
+    else {
+      const hs = hist.history;
+      const rows = hs.map((r, i) => {
+        const p = hs[i - 1], pct = r.dt ? r.cp / r.dt : NaN;
+        return h('tr', { class: r.snapshot_id === S.snap ? 'sel' : '' }, h('td', { class: 'l' }, F.date(r.report_date) + (r.label ? ' · ' + r.label : '')),
+          h('td', { class: 'l' }, nameOf('stage', r.stage) + (p && p.stage !== r.stage ? ' (đổi)' : '')),
+          h('td', null, F.trieu(r.hd)), h('td', null, F.trieu(r.dt)), h('td', null, p ? deltaEl('dt', p.dt, r.dt) : ''),
+          h('td', null, F.trieu(r.cp)), h('td', null, p ? deltaEl('cp', p.cp, r.cp) : ''), h('td', null, F.pct(pct)), h('td', null, F.trieu(r.tv)));
+      });
+      cards.push(h('div', { class: 'card wide' }, h('h2', null, 'Diễn biến qua các mốc'),
+        hs.length > 1 ? [h('div', { class: 'legend' }, h('span', null, sw(C[0], true), T('dt')), h('span', null, sw(C[1], true), T('cp')), h('span', null, sw(C[3], true), T('hd'))), h('div', { class: 'chart-box' }, hostH), h('p', { class: 'note axis-note' }, 'Trục: tỷ đồng')] : h('p', { class: 'note' }, 'Hợp đồng mới có trong một mốc; tải thêm mốc để xem diễn biến.'),
+        h('div', { class: 'table-wrap' }, h('table', { class: 't' },
+          h('thead', null, h('tr', null, ['Mốc', T('stage'), T('hd'), T('dt'), 'Δ', T('cp'), 'Δ', T('pct'), T('tv')].map((t, i) => h('th', { class: i < 2 ? 'l' : '' }, t)))),
+          h('tbody', null, rows))), h('p', { class: 'note' }, 'Đơn vị: triệu đồng. Δ: thay đổi so với mốc liền trước.')));
+      if (hs.length > 1) S.redraw = () => Charts.lines(hostH, hs.map(r => r.report_date), [
+        { name: T('dt'), color: C[0], values: hs.map(r => r.dt) }, { name: T('cp'), color: C[1], values: hs.map(r => r.cp) }, { name: T('hd'), color: C[3], values: hs.map(r => r.hd) }],
+      { fmt: F.vnd, axisFmt: F.tyAxis, xFmt: F.dateShort, headFmt: F.date });
+    }
+    // Dòng Hợp đồng/Phụ lục
+    if (ls.length) {
+      const groups = [...new Set(DTCP.COST_KEYS.map(costGroup))];
+      const gsum = (l, gname) => DTCP.COST_KEYS.filter(k => costGroup(k) === gname).reduce((t, k) => t + (l.vals[k] || 0), 0);
+      cards.push(h('div', { class: 'card wide' }, h('h2', null, 'Các dòng hợp đồng và phụ lục · mốc ' + F.date(snap.report_date)),
+        h('div', { class: 'table-wrap' }, h('table', { class: 't' },
+          h('thead', null, h('tr', null, h('th', null, 'Dòng'), h('th', null, T('hd')), h('th', null, T('dt')), groups.map(gn => h('th', { title: gn }, gn.replace(/^\d+\.\s*/, ''))), h('th', { class: 'sum' }, T('cp')), h('th', null, T('pct')))),
+          h('tbody', null, ls.map(l => { const cp = DTCP.cpOf(l.vals); return h('tr', null, h('td', { class: 'l' }, l.line_label || '–'), h('td', null, F.trieu(l.vals.hd || 0)), h('td', null, F.trieu(l.vals.dt || 0)),
+            groups.map(gn => h('td', null, F.trieu(gsum(l, gn)))), h('td', { class: 'sum' }, F.trieu(cp)), h('td', null, F.pct(l.vals.dt ? cp / l.vals.dt : NaN))); })))),
+        h('p', { class: 'note' }, 'Đơn vị: triệu đồng.')));
+    }
+    // Ghi chú
+    if (hist) {
+      const ta = h('textarea', { id: 'note-text', maxlength: 4000, placeholder: 'Ví dụ: chủ đầu tư đã duyệt phụ lục 02, chi phí thầu phụ tăng…' });
+      const add = h('button', { class: 'btn primary', type: 'submit' }, 'Thêm ghi chú');
+      cards.push(h('div', { class: 'card wide' }, h('h2', null, 'Ghi chú'),
+        hist.notes.length ? h('div', { class: 'notes' }, hist.notes.map(n => h('div', { class: 'note-item' }, h('p', null, n.content),
+          h('div', { class: 'note-meta' }, h('span', null, (n.author_name || 'Không rõ') + ' · ' + new Date(n.created_at).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' })),
+            (n.author_id === S.profile.id || isAdmin()) ? confirmBtn('Xóa', async () => { await api.deleteContractNote(n.id); S.hist = null; toast('Đã xóa ghi chú.'); render(); }) : null))))
+          : h('p', { class: 'note' }, 'Chưa có ghi chú cho hợp đồng này.'),
+        h('form', { class: 'stack', onsubmit: async ev => {
+          ev.preventDefault();
+          const text = ta.value.trim(); if (!text) return;
+          const ok = await run(add, () => api.addContractNote(code, text));
+          if (ok) { S.hist = null; toast('Đã thêm ghi chú.'); render(); }
+        } }, h('label', { class: 'f' }, 'Ghi chú mới', ta), h('div', { class: 'row' }, add))));
+    }
+    return h('div', { class: 'grid' }, cards);
+  }
+
+  // ------------------------------------------------------------------
+  // So sánh: giữa hai mốc, hoặc giữa các giai đoạn trong một mốc
+  // ------------------------------------------------------------------
+  function viewCompare() {
+    if (!S.snapshots.length) return emptyData();
+    const cm = S.cmp;
+    const tabs = h('div', { class: 'tabs', role: 'group' },
+      [['snap', 'Giữa hai mốc dữ liệu'], ['stage', 'Giữa các ' + lc(T('stage')) + ' (trong một mốc)']].map(([k, t]) =>
+        h('button', { type: 'button', class: cm.mode === k ? 'on' : '', 'aria-pressed': cm.mode === k ? 'true' : 'false', onclick: () => { cm.mode = k; render(); } }, t)));
+    const head = h('div', null, h('h1', { class: 'page-head' }, 'So sánh DT-CP'), h('p', { class: 'lead' },
+      cm.mode === 'snap' ? 'Chọn hai mốc để xem doanh thu, chi phí và tỷ lệ chi phí thay đổi thế nào; bấm vào một hợp đồng để xem diễn biến chi tiết.'
+        : `So sánh các nhóm theo cột "${T('stage')}" của file trong cùng một mốc dữ liệu.`), tabs);
+    return h('div', { class: 'stack', style: 'gap:18px' }, head, cm.mode === 'snap' ? compareSnapshots() : compareStages());
+  }
+
+  function compareSnapshots() {
+    const cm = S.cmp;
+    if (S.snapshots.length < 2) return h('div', { class: 'card empty' }, h('p', null, 'Cần ít nhất hai mốc dữ liệu để so sánh. Mỗi lần tải file DT-CP mới lên là thêm một mốc.'),
+      isAdmin() ? h('a', { class: 'btn primary', href: '#/du-lieu' }, 'Tải thêm file') : null);
+    if (!snapById(cm.b)) cm.b = S.snapshots[0].id;
+    if (!snapById(cm.a) || cm.a === cm.b) cm.a = (prevSnap(cm.b) || S.snapshots.find(s => s.id !== cm.b)).id;
+    const pick = (field, label) => {
+      const sel = h('select', { id: 'cmp-' + field }, S.snapshots.map(s => h('option', { value: s.id }, snapLabel(s))));
+      sel.value = cm[field];
+      sel.addEventListener('change', () => { cm[field] = +sel.value; render(); });
+      return h('label', { class: 'f' }, label, sel);
+    };
+    const bySel = h('select', { id: 'cmp-by' }, [['contract', T('contract')], ['project', T('project')], ['region', T('region')], ['company', T('company')], ['investor', T('investor')], ['stage', T('stage')]].map(([k, t]) => h('option', { value: k }, t)));
+    bySel.value = cm.by; bySel.addEventListener('change', () => { cm.by = bySel.value; render(); });
+    const mSel = h('select', { id: 'cmp-metric' }, ['dt', 'cp', 'pct', 'hd', 'tv', 'sl'].map(k => h('option', { value: k }, T(k))));
+    mSel.value = cm.metric; mSel.addEventListener('change', () => { cm.metric = mSel.value; render(); });
+    const only = h('input', { type: 'checkbox', id: 'cmp-only', checked: cm.only });
+    only.addEventListener('change', () => { cm.only = only.checked; render(); });
+    const controls = h('div', { class: 'card filters' }, h('div', { class: 'filter-grid' }, pick('a', 'Mốc cũ (A)'), pick('b', 'Mốc mới (B)'),
+      h('label', { class: 'f' }, 'So sánh theo', bySel), h('label', { class: 'f' }, 'Sắp xếp theo thay đổi của', mSel),
+      h('label', { class: 'check' }, only, 'Chỉ hiện dòng có thay đổi')));
+    const la = linesOf(cm.a), lb = linesOf(cm.b);
+    if (!la || !lb) return h('div', { class: 'stack' }, controls, skeleton());
+    const fa = DTCP.filter(la, S.filters), fb = DTCP.filter(lb, S.filters);
+    const ta = DTCP.total(fa), tb = DTCP.total(fb);
+    const sa = snapById(cm.a), sb = snapById(cm.b);
+    // Trạng thái theo hợp đồng
+    const ca = DTCP.groupBy(fa, 'contract'), cb = DTCP.groupBy(fb, 'contract');
+    const status = code => {
+      const a = ca.get(code), b = cb.get(code);
+      if (!a) return 'new'; if (!b) return 'gone';
+      if ((a.first.stage || '') !== (b.first.stage || '')) return 'stage';
+      return ['hd', 'dt', 'cp', 'tv', 'sl'].some(k => Math.abs((a[k] || 0) - (b[k] || 0)) >= 1) ? 'changed' : 'same';
+    };
+    const allCodes = [...new Set([...ca.keys(), ...cb.keys()])];
+    const counts = { new: 0, gone: 0, stage: 0, changed: 0, same: 0 };
+    allCodes.forEach(c => counts[status(c)]++);
+    const ST = { new: ['Mới', 'new'], gone: ['Không còn', 'gone'], stage: ['Đổi ' + lc(T('stage')), 'stagechg'], changed: ['Thay đổi', 'over'], same: ['Không đổi', ''] };
+    const summary = h('div', { class: 'card wide' }, h('h2', null, `Mốc ${F.dateShort(sa.report_date)} → ${F.dateShort(sb.report_date)}`),
+      h('div', { class: 'tiles' }, ['dt', 'cp', 'pct', 'hd', 'count'].map(k => h('div', { class: 'tile' }, h('span', { class: 'label' }, T(k)),
+        h('span', { class: 'big' }, fmtM(k, tb[k])), h('span', { class: 'delta' }, 'Mốc A: ' + fmtM(k, ta[k])), deltaEl(k, ta[k], tb[k], 'so với mốc A')))),
+      h('div', { class: 'chips' }, Object.entries(counts).filter(([k]) => k !== 'same').map(([k, n]) => h('span', { class: 'chip ' + ST[k][1] }, `${ST[k][0]}: ${F.int(n)} ${lc(T('contract'))}`)),
+        h('span', { class: 'chip' }, `Không đổi: ${F.int(counts.same)}`)));
+    // Nhóm theo chiều đã chọn
+    const ga = DTCP.groupBy(fa, cm.by), gb = DTCP.groupBy(fb, cm.by);
+    const keys = [...new Set([...ga.keys(), ...gb.keys()])];
+    const val = (g, k) => (g ? g[k] : k === 'pct' ? NaN : 0);
+    let rows = keys.map(k => {
+      const a = ga.get(k), b = gb.get(k), m = cm.metric;
+      const d = val(b, m) - val(a, m);
+      const st = cm.by === 'contract' ? status(k) : !a ? 'new' : !b ? 'gone' : ['hd', 'dt', 'cp'].some(x => Math.abs(val(a, x) - val(b, x)) >= 1) ? 'changed' : 'same';
+      return { key: k, a, b, d, st, label: dimLabel(cm.by, k, (b || a).first) };
+    });
+    if (cm.only) rows = rows.filter(r => r.st !== 'same');
+    rows.sort((x, y) => (Math.abs(y.d) || 0) - (Math.abs(x.d) || 0) || String(x.key).localeCompare(String(y.key), 'vi', { numeric: true }));
+    const top = rows.filter(r => isFinite(r.d) && r.d !== 0).slice(0, 15);
+    const host = h('div', { class: 'chart-hb' });
+    const m = cm.metric;
+    const chartCard = h('div', { class: 'card wide' }, h('h2', null, `Thay đổi ${lc(T(m))} lớn nhất theo ${lc(T(cm.by))}`),
+      top.length ? [h('div', { class: 'chart-box' }, host), h('p', { class: 'note axis-note' }, m === 'pct' ? 'Đơn vị: điểm %' : 'Trục: tỷ đồng')] : h('p', { class: 'note' }, 'Không có thay đổi nào.'));
+    if (top.length) S.redraw = () => Charts.hbars(host, top.map(r => ({ key: r.key, label: r.label, values: [r.d], extra: [[null, 'Mốc A', fmtM(m, val(r.a, m))], [null, 'Mốc B', fmtM(m, val(r.b, m))]] })),
+      [{ name: 'Thay đổi ' + lc(T(m)), color: C[0] }],
+      { fmt: m === 'pct' ? F.pt : F.svnd, axisFmt: m === 'pct' ? (v => d3.format('+.0f')(v * 100)) : F.tyAxis, colorOf: v => (GOOD[m] === 0 ? C[0] : (v > 0) === (GOOD[m] > 0) ? 'var(--ok)' : 'var(--bad)'),
+        onPick: cm.by === 'contract' ? key => { location.hash = '#/hop-dong/' + encodeURIComponent(key); } : null });
+    const cell = (g, k) => (g ? (k === 'pct' ? F.pct(g.pct) : F.trieu(g[k])) : '–');
+    const dcell = (a, b, k) => {
+      const x = val(a, k), y = val(b, k), d = y - x;
+      if (!isFinite(d) || !d) return h('td', { class: 'muted' }, '0');
+      const good = GOOD[k] > 0 ? d > 0 : GOOD[k] < 0 ? d < 0 : null;
+      return h('td', { class: good === null ? '' : good ? 'is-good' : 'is-bad' }, k === 'pct' ? F.pt(d) : (d > 0 ? '+' : '') + F.trieu(d));
+    };
+    const show = rows.slice(0, 500);
+    const tbl = h('div', { class: 'table-wrap' }, h('table', { class: 't cmp' },
+      h('thead', null, h('tr', null, h('th', { rowspan: 2 }, T(cm.by)), h('th', { class: 'l', rowspan: 2 }, 'Trạng thái'),
+        ...['dt', 'cp', 'pct'].map(k => h('th', { colspan: 3, class: 'grp' + (k === m ? ' hl' : '') }, T(k)))),
+      h('tr', null, ...['dt', 'cp', 'pct'].flatMap(() => [h('th', null, 'A'), h('th', null, 'B'), h('th', null, 'Δ')]))),
+      h('tbody', null, show.map(r => h('tr', cm.by === 'contract' ? { class: 'click', tabindex: '0', onclick: () => { location.hash = '#/hop-dong/' + encodeURIComponent(r.key); }, onkeydown: e => { if (e.key === 'Enter') location.hash = '#/hop-dong/' + encodeURIComponent(r.key); } } : null,
+        h('td', { class: 'l name' }, r.label),
+        h('td', { class: 'l' }, r.st !== 'same' ? h('span', { class: 'chip ' + ST[r.st][1] }, ST[r.st][0] + (r.st === 'stage' ? `: ${nameOf('stage', r.a.first.stage)} → ${nameOf('stage', r.b.first.stage)}` : '')) : h('span', { class: 'muted' }, 'Không đổi')),
+        ...['dt', 'cp', 'pct'].flatMap(k => [h('td', null, cell(r.a, k)), h('td', null, cell(r.b, k)), dcell(r.a, r.b, k)]))))));
+    const tableCard = h('div', { class: 'card wide' }, h('div', { class: 'card-head' }, h('h2', null, `Chi tiết theo ${lc(T(cm.by))} (${F.int(rows.length)} dòng)`),
+      h('button', { class: 'btn sm', type: 'button', onclick: e => run(e.currentTarget, () => exportCompare(rows, sa, sb)) }, 'Xuất Excel')),
+      h('p', { class: 'note' }, `Đơn vị: triệu đồng; ${T('pct')} tính bằng %, Δ của nó là điểm %. Xanh là tốt lên, đỏ là xấu đi.` + (rows.length > 500 ? ' Đang hiện 500 dòng đầu; xuất Excel để xem đủ.' : '')), tbl);
+    return h('div', { class: 'stack', style: 'gap:18px' }, controls, filterBar(lb, { snap: false }), h('div', { class: 'grid' }, summary, chartCard, tableCard));
+  }
+
+  async function exportCompare(rows, sa, sb) {
+    await loadXLSX();
+    const head = [T(S.cmp.by), 'Trạng thái'].concat(...['hd', 'dt', 'cp', 'tv'].map(k => [T(k) + ' A', T(k) + ' B', T(k) + ' Δ']), [T('pct') + ' A', T('pct') + ' B']);
+    const v = (g, k) => (g ? g[k] : 0);
+    const body = rows.map(r => [r.label, { new: 'Mới', gone: 'Không còn', stage: 'Đổi giai đoạn', changed: 'Thay đổi', same: 'Không đổi' }[r.st]]
+      .concat(...['hd', 'dt', 'cp', 'tv'].map(k => [v(r.a, k), v(r.b, k), v(r.b, k) - v(r.a, k)]), [r.a && isFinite(r.a.pct) ? r.a.pct : '', r.b && isFinite(r.b.pct) ? r.b.pct : '']));
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([[`So sánh mốc ${snapLabel(sa)} (A) và ${snapLabel(sb)} (B) – đơn vị: đồng`], head].concat(body));
+    ws['!cols'] = head.map((t, i) => ({ wch: i ? 16 : 40 }));
+    XLSX.utils.book_append_sheet(wb, ws, 'So sanh');
+    XLSX.writeFile(wb, `so-sanh-dtcp-${sa.report_date}-${sb.report_date}.xlsx`);
+  }
+
+  function compareStages() {
+    const all = linesOf(S.snap);
+    const snapSel = h('select', { id: 'stg-snap' }, S.snapshots.map(s => h('option', { value: s.id }, snapLabel(s))));
+    snapSel.value = S.snap; snapSel.addEventListener('change', () => { S.snap = +snapSel.value; render(); });
+    const controls = h('div', { class: 'card filters' }, h('div', { class: 'filter-grid' }, h('label', { class: 'f' }, 'Mốc dữ liệu', snapSel)));
+    if (!all) return h('div', { class: 'stack' }, controls, skeleton());
+    const fl = DTCP.filter(all, Object.assign({}, S.filters, { stage: '' }));
+    const groups = [...DTCP.groupBy(fl, 'stage').values()].sort((a, b) => catSort('stage', a.key) - catSort('stage', b.key) || String(a.key).localeCompare(String(b.key), 'vi', { numeric: true }));
+    const tot = DTCP.total(fl);
+    const host1 = h('div', { class: 'chart-hb' }), host2 = h('div', { class: 'chart-hb' });
+    const cats = ms => groups.map(g => ({ key: g.key, label: nameOf('stage', g.key), values: ms.map(m => g[m]), extra: [[null, T('count'), F.int(g.count)], [null, T('pct'), F.pct(g.pct)]] }));
+    S.redraw = () => {
+      Charts.hbars(host1, cats(['dt', 'cp']), [{ name: T('dt'), color: C[0] }, { name: T('cp'), color: C[1] }], { fmt: F.vnd, axisFmt: F.tyAxis });
+      Charts.hbars(host2, cats(['pct']), [{ name: T('pct'), color: C[2] }], { fmt: F.pct, axisFmt: d3.format('.0%') });
+    };
+    const cols = ['count', 'hd', 'dt', 'cp', 'pct', 'tv'];
+    return h('div', { class: 'stack', style: 'gap:18px' }, controls, filterBar(all, { snap: false }),
+      h('div', { class: 'grid' },
+        h('div', { class: 'card' }, h('h2', null, `${T('dt')} & ${lc(T('cp'))} theo ${lc(T('stage'))}`), h('div', { class: 'legend' }, h('span', null, sw(C[0]), T('dt')), h('span', null, sw(C[1]), T('cp'))), h('div', { class: 'chart-box' }, host1), h('p', { class: 'note axis-note' }, 'Trục: tỷ đồng')),
+        h('div', { class: 'card' }, h('h2', null, `${T('pct')} theo ${lc(T('stage'))}`), h('div', { class: 'chart-box' }, host2)),
+        h('div', { class: 'card wide' }, h('h2', null, 'Bảng so sánh'), h('p', { class: 'note' }, `Tên từng ${lc(T('stage'))} đặt ở trang Danh mục. Đơn vị: triệu đồng.`),
+          h('div', { class: 'table-wrap' }, h('table', { class: 't' },
+            h('thead', null, h('tr', null, h('th', null, T('stage')), cols.map(k => h('th', null, T(k))), h('th', null, 'Tỷ trọng ' + lc(T('dt'))))),
+            h('tbody', null, groups.map(g => h('tr', { class: 'click', tabindex: '0', title: 'Lọc dashboard theo ' + lc(T('stage')) + ' này', onclick: () => { S.filters.stage = g.key; location.hash = '#/'; } },
+              h('td', { class: 'l' }, nameOf('stage', g.key)), cols.map(k => h('td', null, k === 'count' ? F.int(g.count) : k === 'pct' ? F.pct(g.pct) : F.trieu(g[k]))),
+              h('td', null, F.pct(tot.dt ? g.dt / tot.dt : NaN))))),
+            h('tfoot', null, h('tr', null, h('td', { class: 'l' }, 'Tổng cộng'), cols.map(k => h('td', null, k === 'count' ? F.int(tot.count) : k === 'pct' ? F.pct(tot.pct) : F.trieu(tot[k]))), h('td', null, '100%'))))))));
+  }
+
+  // ------------------------------------------------------------------
+  // Dữ liệu (admin): tải file DT-CP thành mốc mới, quản lý các mốc
+  // ------------------------------------------------------------------
+  let xlsxLoading = null;
+  function loadXLSX() {
+    if (window.XLSX) return Promise.resolve();
+    if (!xlsxLoading) xlsxLoading = new Promise((res, rej) => {
+      const s = document.createElement('script'); s.src = 'js/vendor/xlsx.full.min.js'; s.onload = res; s.onerror = () => { xlsxLoading = null; rej(new Error('Không tải được thư viện đọc Excel.')); };
+      document.head.append(s);
+    });
+    return xlsxLoading;
+  }
+
+  function viewData() {
+    const out = h('div', { class: 'stack' });
+    const file = h('input', { type: 'file', id: 'import-file', accept: '.xlsx,.xls,.xlsm' });
+    file.addEventListener('change', async () => {
+      const f = file.files[0];
+      if (!f) return;
+      out.replaceChildren(h('div', { class: 'skeleton', style: 'height:160px' }));
+      try {
+        await loadXLSX();
+        const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
+        // Chọn sheet có dòng tiêu đề DT-CP (thường là sheet đầu)
+        let parsed = null, lastErr = null;
+        for (const name of wb.SheetNames) {
+          try { parsed = DTCP.parseRows(XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: true, defval: null })); parsed.sheet = name; break; } catch (e) { lastErr = e; }
+        }
+        if (!parsed) throw lastErr || new Error('Không đọc được file.');
+        out.replaceChildren(importPreview(parsed, f.name));
+      } catch (e) { out.replaceChildren(h('div', { class: 'alert err' }, e.message || String(e))); }
+    });
+    const rows = S.snapshots.map(s => {
+      const date = h('input', { type: 'date', id: 'snap-date-' + s.id, value: s.report_date, 'aria-label': 'Ngày báo cáo' });
+      const label = h('input', { type: 'text', id: 'snap-label-' + s.id, value: s.label || '', maxlength: 120, placeholder: 'Nhãn (tùy chọn)', 'aria-label': 'Nhãn' });
+      const save = h('button', { class: 'btn sm', type: 'button' }, 'Lưu');
+      save.addEventListener('click', async () => { const ok = await run(save, () => api.updateSnapshot(s.id, { report_date: date.value, label: label.value })); if (ok) { toast('Đã lưu mốc.'); await reload(); } });
+      return h('tr', { class: s.id === S.snap ? 'sel' : '' }, h('td', { class: 'l' }, date), h('td', { class: 'l' }, label), h('td', { class: 'l' }, s.file_name || '–'),
+        h('td', null, F.int(s.line_count)), h('td', null, new Date(s.created_at).toLocaleDateString('vi-VN')),
+        h('td', { class: 'actions' }, save, h('button', { class: 'btn sm', type: 'button', onclick: () => { S.snap = s.id; location.hash = '#/'; } }, 'Xem'),
+          confirmBtn('Xóa', async () => { await api.deleteSnapshot(s.id); if (S.snap === s.id) S.snap = null; toast('Đã xóa mốc ' + F.date(s.report_date) + '.'); await reload(); })));
+    });
+    return h('div', { class: 'stack', style: 'gap:18px' },
+      h('div', null, h('h1', { class: 'page-head' }, 'Dữ liệu DT-CP'), h('p', { class: 'lead' }, 'Mỗi lần tải file "Bảng tổng hợp theo dõi doanh thu - chi phí" lên là một mốc dữ liệu. Giữ các mốc cũ để so sánh diễn biến.')),
+      h('div', { class: 'card' }, h('h2', null, 'Tải file mới'),
+        h('p', { class: 'note' }, 'Dùng đúng mẫu bảng tổng hợp hiện tại: dòng tiêu đề có "KÝ HIỆU DT-CP", "GIÁ TRỊ HỢP ĐỒNG", "DOANH THU THỜI ĐIỂM", "CHI PHÍ TRỰC TIẾP"… Web tự nhận công ty, khu vực, công trình, hợp đồng, phụ lục, chủ đầu tư (lấy từ số HĐ) và ngày cập nhật. Số liệu giữ nguyên đơn vị đồng như trong file.'),
+        h('label', { class: 'f' }, 'File Excel (.xlsx)', file)),
+      out,
+      h('div', { class: 'card' }, h('h2', null, 'Các mốc dữ liệu'),
+        S.snapshots.length ? h('div', { class: 'table-wrap' }, h('table', { class: 't' },
+          h('thead', null, h('tr', null, ['Ngày báo cáo', 'Nhãn', 'File', 'Số dòng', 'Ngày tải', ''].map((t, i) => h('th', { class: i < 3 ? 'l' : '' }, t)))),
+          h('tbody', null, rows))) : h('p', { class: 'note' }, 'Chưa có mốc nào.')));
+  }
+
+  function importPreview(p, fileName) {
+    const date = h('input', { type: 'date', id: 'imp-date', value: p.report_date || '', required: true });
+    const label = h('input', { type: 'text', id: 'imp-label', maxlength: 120, placeholder: 'Ví dụ: Cập nhật tháng 6' });
+    const dupWarn = h('div', { class: 'alert warn', hidden: true });
+    const checkDup = () => { const s = S.snapshots.find(x => x.report_date === date.value); dupWarn.hidden = !s; dupWarn.textContent = s ? `Đã có mốc ngày ${F.date(s.report_date)}. Lưu tiếp sẽ tạo thêm một mốc cùng ngày (có thể xóa mốc cũ ở bảng bên dưới).` : ''; };
+    date.addEventListener('input', checkDup); checkDup();
+    const tot = DTCP.total(p.lines);
+    const regions = [...DTCP.groupBy(p.lines, 'region').values()];
+    const btn = h('button', { class: 'btn primary', type: 'button' }, 'Lưu mốc dữ liệu');
+    btn.addEventListener('click', () => run(btn, async () => {
+      if (!date.value) throw new Error('Hãy chọn ngày báo cáo.');
+      const r = await api.saveSnapshot({ report_date: date.value, label: label.value.trim(), file_name: fileName, cost_labels: p.cost_labels, company_names: p.company_names, lines: p.lines });
+      S.snap = r.id; S.filters = { company: '', region: '', investor: '', stage: '', project: '', q: '' };
+      toast('Đã lưu mốc dữ liệu ' + F.date(date.value) + '.');
+      await reload(); location.hash = '#/';
+    }));
+    const nInv = new Set(p.lines.map(l => l.investor).filter(Boolean)).size;
+    return h('div', { class: 'card stack', id: 'xem-truoc' },
+      h('h2', null, 'Kiểm tra trước khi lưu'),
+      h('p', { class: 'note' }, `${fileName}${p.sheet ? ' · sheet "' + p.sheet + '"' : ''}: ${F.int(p.lines.length)} dòng số liệu, ${F.int(tot.count)} hợp đồng, ${F.int(new Set(p.lines.map(l => l.project_code)).size)} công trình, ${regions.length} khu vực, ${nInv} chủ đầu tư.`),
+      h('div', { class: 'tiles' }, ['hd', 'dt', 'cp', 'pct'].map(k => h('div', { class: 'tile' }, h('span', { class: 'label' }, T(k)), h('span', { class: 'big' }, fmtM(k, tot[k]))))),
+      p.warnings.length ? h('div', { class: 'alert warn stack' }, h('b', null, `${p.warnings.length} lưu ý về file:`), h('ul', { style: 'margin:0;padding-left:18px' }, p.warnings.map(w => h('li', null, w)))) : h('div', { class: 'alert ok' }, 'File đọc được đầy đủ, không có lưu ý nào.'),
+      h('div', { class: 'table-wrap' }, h('table', { class: 't' },
+        h('thead', null, h('tr', null, h('th', null, T('region')), ['count', 'hd', 'dt', 'cp', 'pct'].map(k => h('th', null, T(k))))),
+        h('tbody', null, regions.map(g => h('tr', null, h('td', { class: 'l' }, g.first.region_name || g.key), h('td', null, F.int(g.count)), h('td', null, F.trieu(g.hd)), h('td', null, F.trieu(g.dt)), h('td', null, F.trieu(g.cp)), h('td', null, F.pct(g.pct))))),
+        h('tfoot', null, h('tr', null, h('td', { class: 'l' }, 'Tổng cộng'), h('td', null, F.int(tot.count)), h('td', null, F.trieu(tot.hd)), h('td', null, F.trieu(tot.dt)), h('td', null, F.trieu(tot.cp)), h('td', null, F.pct(tot.pct)))))),
+      h('p', { class: 'note' }, 'Đơn vị bảng: triệu đồng. Đối chiếu với dòng TỔNG CỘNG trong file trước khi lưu.'),
+      h('div', { class: 'form-grid' }, h('label', { class: 'f' }, 'Ngày báo cáo (lấy từ dòng "Cập nhật" trong file)', date), h('label', { class: 'f' }, 'Nhãn (tùy chọn)', label)),
+      dupWarn,
+      h('div', { class: 'row' }, btn));
+  }
+
+  // ------------------------------------------------------------------
+  // Danh mục (admin): tên hiển thị cho mã công ty, khu vực, chủ đầu tư, giai đoạn, khoản chi phí
+  // ------------------------------------------------------------------
+  function viewCatalog() {
+    const kinds = [['company', T('company')], ['region', T('region')], ['investor', T('investor')], ['stage', T('stage')], ['cost', 'Khoản chi phí']];
+    if (!S.catKind) S.catKind = 'investor';
+    const tabs = h('div', { class: 'tabs', role: 'group' }, kinds.map(([k, t]) => h('button', { type: 'button', class: S.catKind === k ? 'on' : '', onclick: () => { S.catKind = k; render(); } }, t)));
+    const kind = S.catKind;
+    const lines = S.snap ? S.lines.get(S.snap) || [] : [];
+    const usage = new Map();
+    const keyOf = { company: l => l.company, region: l => l.region, investor: l => l.investor, stage: l => l.stage };
+    if (keyOf[kind]) lines.forEach(l => { const k = keyOf[kind](l); if (k) { if (!usage.has(k)) usage.set(k, { n: new Set(), first: l }); usage.get(k).n.add(l.contract_code); } });
+    const cat = S.catalog.get(kind) || new Map();
+    const codes = kind === 'cost' ? DTCP.COST_KEYS : [...new Set([...cat.keys(), ...usage.keys()])].sort((a, b) => catSort(kind, a) - catSort(kind, b) || a.localeCompare(b, 'vi', { numeric: true }));
+    const hint = {
+      company: 'Mã lấy từ cột CÔNG TY (TMN, QN, TN…).', region: 'Mã là số La Mã của nhóm khu vực trong file.',
+      investor: 'Mã chủ đầu tư lấy từ số hợp đồng, ví dụ "12/2026/HĐ/ABC-TMN" → ABC. Đặt tên đầy đủ để báo cáo dễ đọc.',
+      stage: 'Giá trị cột "THỜI ĐIỂM" trong file (1, 2, 3, 5, HDNT…). Đặt tên cho từng giai đoạn/trạng thái, ví dụ 2 → "Đang thi công".',
+      cost: '15 khoản chi phí trực tiếp theo thứ tự cột trong file (K → Y). Dùng dấu " › " để tách nhóm và tên khoản, ví dụ "5. Nhân công › Công nhật".'
+    }[kind];
+    const rows = codes.map((code, i) => {
+      const c = cat.get(code);
+      const def = kind === 'cost' ? costLabel(code) : kind === 'region' && usage.get(code) ? usage.get(code).first.region_name : code;
+      const name = h('input', { type: 'text', id: `cat-${kind}-${code}`, value: c ? c.name : '', placeholder: def, maxlength: 160, 'aria-label': 'Tên' });
+      const sort = h('input', { type: 'number', class: 'num num-sm', id: `cat-sort-${kind}-${code}`, value: String(c ? c.sort : i + 1), 'aria-label': 'Thứ tự' });
+      const save = h('button', { class: 'btn sm', type: 'button' }, 'Lưu');
+      save.addEventListener('click', async () => {
+        const ok = await run(save, () => api.saveCatalog(kind, code, name.value.trim() || def, +sort.value || 0));
+        if (ok) { toast('Đã lưu tên cho ' + code + '.'); await reload(); }
+      });
+      const u = usage.get(code);
+      return h('tr', null, h('td', { class: 'l' }, h('code', null, kind === 'cost' ? 'Cột ' + 'KLMNOPQRSTUVWXY'[i] : code)), h('td', null, name), h('td', null, sort),
+        h('td', null, kind === 'cost' ? '' : u ? F.int(u.n.size) : '0'), h('td', { class: 'actions' }, save));
+    });
+    return h('div', { class: 'stack', style: 'gap:18px' },
+      h('div', null, h('h1', { class: 'page-head' }, 'Danh mục'), h('p', { class: 'lead' }, 'Đặt tên hiển thị cho các mã trong file. Mã mới xuất hiện khi tải file sẽ tự được thêm vào đây với tên bằng mã.')),
+      tabs,
+      h('div', { class: 'card' }, h('p', { class: 'note' }, hint),
+        codes.length ? h('div', { class: 'table-wrap' }, h('table', { class: 't' },
+          h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Mã'), h('th', null, 'Tên hiển thị'), h('th', null, 'Thứ tự'), h('th', null, kind === 'cost' ? '' : 'Số HĐ (mốc đang xem)'), h('th', null, ''))),
+          h('tbody', null, rows))) : h('p', { class: 'note' }, 'Chưa có mã nào. Hãy tải file DT-CP ở trang Dữ liệu.')));
+  }
+
+  // ------------------------------------------------------------------
+  // Tùy biến dashboard (admin): tiêu đề, tên gọi, các thẻ biểu đồ. Sửa trên bản nháp, bấm Lưu mới áp dụng.
   // ------------------------------------------------------------------
   function viewCustomize() {
     if (!S.custom) S.custom = { draft: clone(dashConfig()), editId: null };
     const D = S.custom.draft;
+    if (!D.terms) D.terms = {};
     const saved = JSON.stringify(D) === JSON.stringify(dashConfig());
     const status = h('span', { class: 'chip ' + (saved ? 'viewer' : 'pending') }, saved ? 'Đã lưu' : 'Có thay đổi chưa lưu');
     const markDirty = () => { status.className = 'chip pending'; status.textContent = 'Có thay đổi chưa lưu'; };
-
     const saveBtn = h('button', { class: 'btn primary', type: 'button' }, 'Lưu thay đổi');
     saveBtn.addEventListener('click', async () => {
       const ok = await run(saveBtn, async () => { S.dashboard = await api.saveDashboard(D); });
@@ -538,7 +874,7 @@
     });
     const head = h('div', { class: 'page-head' },
       h('div', null, h('h1', null, 'Tùy biến dashboard'),
-        h('p', { class: 'lead' }, 'Đổi tiêu đề, ô chỉ số và từng biểu đồ. Thay đổi chỉ áp dụng cho mọi người sau khi bấm "Lưu thay đổi".')),
+        h('p', { class: 'lead' }, 'Đổi tiêu đề, tên gọi và từng biểu đồ trên trang Tổng quan. Thay đổi chỉ áp dụng cho mọi người sau khi bấm "Lưu thay đổi".')),
       h('div', { class: 'row' }, status,
         h('a', { class: 'btn', href: '#/' }, 'Xem dashboard'),
         h('button', { class: 'btn', type: 'button', onclick: () => { S.custom = { draft: clone(dashConfig()), editId: null }; toast('Đã bỏ các thay đổi chưa lưu.'); render(); } }, 'Bỏ thay đổi'),
@@ -548,55 +884,30 @@
           toast('Đã khôi phục dashboard mặc định.'); render();
         }, ''),
         saveBtn));
-
-    // Tiêu đề trang
-    const titleIn = h('input', { type: 'text', id: 'cfg-title', maxlength: 80, value: D.title || '' });
+    const titleIn = h('input', { type: 'text', id: 'cfg-title', maxlength: 80, value: D.title || '', placeholder: DEFAULT_DASH.title });
     titleIn.addEventListener('input', () => { D.title = titleIn.value; markDirty(); });
     const pageCard = h('div', { class: 'card' }, h('h2', null, 'Tiêu đề trang'), h('label', { class: 'f' }, 'Hiện ở đầu trang Tổng quan', titleIn));
-
-    // Tên gọi: đổi chữ dùng khắp web cho hợp ngành
-    if (!D.terms) D.terms = {};
-    const termsCard = h('div', { class: 'card', id: 'ten-goi' },
-      h('h2', null, 'Tên gọi'),
-      h('p', { class: 'note' }, 'Đổi tên các chỉ số và nhóm cho hợp với ngành của bạn, ví dụ "Kênh bán" → "Nguồn doanh thu", "Khoản mục chi phí" → "Hạng mục chi phí". Tên mới dùng khắp web: dashboard, bảng, form nhập liệu, trang Danh mục. Để trống để dùng tên mặc định. ',
-        'Từng mục trong nhóm (thêm, bớt, đổi tên, ẩn) sửa ở ', h('a', { href: '#/danh-muc' }, 'trang Danh mục'), '.'),
+    const termsCard = h('div', { class: 'card wide', id: 'ten-goi' }, h('h2', null, 'Tên gọi'),
+      h('p', { class: 'note' }, 'Đổi tên các chỉ số và nhóm dùng khắp web (dashboard, so sánh, bảng, xuất Excel). Để trống để dùng tên mặc định. Tên của từng mã (chủ đầu tư, giai đoạn…) đặt ở ', h('a', { href: '#/danh-muc' }, 'trang Danh mục'), '.'),
       h('div', { class: 'form-grid' }, Object.keys(DEFAULT_TERMS).map(k => {
         const inp = h('input', { type: 'text', id: 'term-' + k, maxlength: 60, value: D.terms[k] || '', placeholder: DEFAULT_TERMS[k] });
         inp.addEventListener('input', () => { D.terms[k] = inp.value; markDirty(); });
         inp.addEventListener('change', () => render());
         return h('label', { class: 'f' }, TERM_HELP[k], inp);
       })));
-
-    // Ô chỉ số
-    const choices = metricChoices({ pct: true, selected: D.tiles.map(x => x.metric) });
-    const tileRows = D.tiles.map((t, i) => {
-      const lab = h('input', { type: 'text', id: 'tile-label-' + i, maxlength: 60, value: t.label || '', placeholder: (metricInfo(t.metric) || {}).name || '', 'aria-label': 'Tên ô' });
-      lab.addEventListener('input', () => { t.label = lab.value; markDirty(); });
-      const met = h('select', { id: 'tile-metric-' + i, 'aria-label': 'Chỉ số' }, choices.map(c => h('option', { value: c.key }, c.name)));
-      met.value = t.metric;
-      met.addEventListener('change', () => { const was = (metricInfo(t.metric) || {}).name; t.metric = met.value; if (t.label === was) t.label = ''; render(); });
-      return h('tr', null, h('td', null, lab), h('td', { class: 'l' }, met), h('td', { class: 'actions' }, moveBtns(D.tiles, i), h('button', { class: 'btn sm danger', type: 'button', onclick: () => { D.tiles.splice(i, 1); render(); } }, 'Xóa')));
-    });
-    const tileCardEl = h('div', { class: 'card' },
-      h('div', { class: 'card-head' }, h('h2', null, 'Ô chỉ số'),
-        h('button', { class: 'btn sm', type: 'button', disabled: D.tiles.length >= 8, onclick: () => { D.tiles.push({ metric: 'doanh_thu', label: '' }); render(); } }, '+ Thêm ô')),
-      h('p', { class: 'note' }, 'Mỗi ô hiện giá trị tháng gần nhất và thay đổi so với tháng trước. Tối đa 8 ô.'),
-      D.tiles.length ? h('div', { class: 'table-wrap' }, h('table', { class: 't' },
-        h('thead', null, h('tr', null, h('th', null, 'Tên hiển thị'), h('th', { class: 'l' }, 'Chỉ số'), h('th', null, ''))), h('tbody', null, tileRows)))
-        : h('p', { class: 'note' }, 'Chưa có ô chỉ số nào.'));
-
-    // Danh sách biểu đồ
-    const has = type => D.cards.some(c => c.type === type);
-    const addType = h('select', { id: 'add-type', 'aria-label': 'Loại biểu đồ mới' },
-      Object.entries(CARD_TYPES).map(([k, v]) => h('option', { value: k, disabled: (k === 'table' || k === 'notes') && has(k) }, v)));
+    const addType = h('select', { id: 'add-type', 'aria-label': 'Loại biểu đồ mới' }, Object.entries(CARD_TYPES).map(([k, v]) => h('option', { value: k }, v)));
     const addBtn = h('button', { class: 'btn primary', type: 'button', disabled: D.cards.length >= 24 }, '+ Thêm biểu đồ');
+    const toEditor = () => setTimeout(() => { const e = document.getElementById('editor-card'); if (e) e.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50);
     addBtn.addEventListener('click', () => {
       const type = addType.value;
-      if ((type === 'table' || type === 'notes') && has(type)) return toast('Dashboard chỉ có một ' + CARD_TYPES[type].toLowerCase() + '.', true);
-      const c = { id: 'c' + Date.now().toString(36), type, title: '', note: '', metrics: type === 'columns' || type === 'line' ? ['doanh_thu'] : [], lines: [], group: type === 'stacked' || type === 'breakdown' ? 'exp' : null, width: 'full', hidden: false };
-      D.cards.push(c); S.custom.editId = c.id; render();
-      setTimeout(() => { const e = document.getElementById('editor-card'); if (e) e.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50);
+      const c = { id: 'c' + Date.now().toString(36), type, title: '', note: '', dim: 'region', metrics: type === 'group' ? ['dt', 'cp'] : type === 'kpis' ? ['count', 'dt', 'cp', 'pct'] : [], top: 12, detail: false, width: type === 'group' || type === 'costs' ? 'half' : 'full', hidden: false };
+      D.cards.push(c); S.custom.editId = c.id; render(); toEditor();
     });
+    const moveBtns = (list, i) => {
+      const mv = d => () => { const j = i + d; if (j < 0 || j >= list.length) return; [list[i], list[j]] = [list[j], list[i]]; render(); };
+      return [h('button', { class: 'btn sm', type: 'button', title: 'Lên', 'aria-label': 'Lên', disabled: i === 0, onclick: mv(-1) }, '↑'),
+        h('button', { class: 'btn sm', type: 'button', title: 'Xuống', 'aria-label': 'Xuống', disabled: i === list.length - 1, onclick: mv(1) }, '↓')];
+    };
     const cardRows = D.cards.map((c, i) => {
       const vis = h('input', { type: 'checkbox', id: 'vis-' + c.id, checked: !c.hidden, 'aria-label': 'Hiện biểu đồ' });
       vis.addEventListener('change', () => { c.hidden = !vis.checked; render(); });
@@ -604,399 +915,73 @@
         h('td', { class: 'l' }, c.title || h('span', { class: 'muted' }, autoTitle(c) + ' (tự động)')), h('td', { class: 'l' }, CARD_TYPES[c.type]), h('td', { class: 'l' }, c.width === 'full' ? 'Cả hàng' : 'Nửa hàng'),
         h('td', { class: 'l' }, vis),
         h('td', { class: 'actions' }, moveBtns(D.cards, i),
-          h('button', { class: 'btn sm', type: 'button', onclick: () => { S.custom.editId = c.id; render(); setTimeout(() => { const e = document.getElementById('editor-card'); if (e) e.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50); } }, 'Sửa'),
+          h('button', { class: 'btn sm', type: 'button', onclick: () => { S.custom.editId = c.id; render(); toEditor(); } }, 'Sửa'),
           h('button', { class: 'btn sm danger', type: 'button', onclick: () => { D.cards.splice(i, 1); if (S.custom.editId === c.id) S.custom.editId = null; render(); } }, 'Xóa')));
     });
-    const listCard = h('div', { class: 'card' },
+    const listCard = h('div', { class: 'card wide' },
       h('div', { class: 'card-head' }, h('h2', null, 'Biểu đồ'), h('div', { class: 'row' }, addType, addBtn)),
       h('p', { class: 'note' }, 'Thứ tự trong bảng là thứ tự trên dashboard. Bỏ chọn "Hiện" để ẩn mà không xóa.'),
       h('div', { class: 'table-wrap' }, h('table', { class: 't' },
         h('thead', null, h('tr', null, h('th', null, 'Tiêu đề'), h('th', { class: 'l' }, 'Loại'), h('th', { class: 'l' }, 'Độ rộng'), h('th', { class: 'l' }, 'Hiện'), h('th', null, ''))),
         h('tbody', null, cardRows.length ? cardRows : h('tr', null, h('td', { colspan: 5, class: 'muted' }, 'Chưa có biểu đồ nào.'))))));
-
     const editing = D.cards.find(c => c.id === S.custom.editId);
-    return h('div', { class: 'stack', style: 'gap:22px' }, head,
-      h('div', { class: 'grid' }, pageCard, termsCard),
-      tileCardEl,
-      listCard,
-      editing ? cardEditor(editing, markDirty) : null);
+    return h('div', { class: 'stack', style: 'gap:18px' }, head, h('div', { class: 'grid' }, pageCard, termsCard, listCard, editing ? cardEditor(editing, markDirty) : null));
   }
 
-  function moveBtns(list, i) {
-    const mv = d => () => { const j = i + d; if (j < 0 || j >= list.length) return; [list[i], list[j]] = [list[j], list[i]]; render(); };
-    return [h('button', { class: 'btn sm', type: 'button', title: 'Lên', 'aria-label': 'Lên', disabled: i === 0, onclick: mv(-1) }, '↑'),
-      h('button', { class: 'btn sm', type: 'button', title: 'Xuống', 'aria-label': 'Xuống', disabled: i === list.length - 1, onclick: mv(1) }, '↓')];
-  }
-
-  // Khung sửa một biểu đồ, có xem trước với số liệu 12 tháng gần nhất.
   function cardEditor(c, markDirty) {
     const previewHost = h('div', { class: 'grid preview' });
     const drawPreview = () => {
-      const all = buildModel();
-      if (!all.length) { previewHost.replaceChildren(h('p', { class: 'note' }, 'Chưa có số liệu để xem trước.')); return; }
-      const rows = periodRows(all, '12m');
-      const ctx = { all, rows, months: rows.map(r => r.month), draws: [], preview: true };
-      previewHost.replaceChildren(renderCard(c, ctx));
+      const all = S.snap ? S.lines.get(S.snap) : null;
+      if (!all) { previewHost.replaceChildren(h('p', { class: 'note' }, 'Chưa có dữ liệu để xem trước.')); return; }
+      const prev = prevSnap(S.snap), pl = prev ? S.lines.get(prev.id) : null;
+      const ctx = { lines: all, tot: DTCP.total(all), ptot: pl ? DTCP.total(pl) : null, prev, draws: [], preview: true };
+      previewHost.replaceChildren(renderCard(Object.assign({}, c, { width: 'full' }), ctx));
       drawAll(ctx.draws);
     };
-    const title = h('input', { type: 'text', id: 'ed-title', maxlength: 120, value: c.title || '', placeholder: autoTitle(c) + ' (để trống: tự đặt theo dữ liệu)' });
+    const title = h('input', { type: 'text', id: 'ed-title', maxlength: 120, value: c.title || '', placeholder: autoTitle(c) + ' (để trống: tự đặt)' });
     title.addEventListener('input', () => { c.title = title.value; markDirty(); drawPreview(); });
-    const note = h('textarea', { id: 'ed-note', maxlength: 400, rows: 2 }, c.note);
+    const note = h('textarea', { id: 'ed-note', maxlength: 400, rows: 2 });
     note.value = c.note || '';
     note.addEventListener('input', () => { c.note = note.value; markDirty(); drawPreview(); });
-    const type = h('select', { id: 'ed-type' }, Object.entries(CARD_TYPES).map(([k, v]) => h('option', { value: k, disabled: (k === 'table' || k === 'notes') && k !== c.type && S.custom.draft.cards.some(x => x.type === k) }, v)));
+    const type = h('select', { id: 'ed-type' }, Object.entries(CARD_TYPES).map(([k, v]) => h('option', { value: k }, v)));
     type.value = c.type;
-    type.addEventListener('change', () => {
-      c.type = type.value;
-      if ((c.type === 'stacked' || c.type === 'breakdown') && !c.group) c.group = 'exp';
-      if ((c.type === 'columns' || c.type === 'line') && !c.metrics.length) c.metrics = ['doanh_thu'];
-      if (c.type === 'columns') c.metrics = c.metrics.filter(k => k !== 'bien_ln');
-      render();
-    });
+    type.addEventListener('change', () => { c.type = type.value; if (c.type === 'group' && !c.metrics.length) c.metrics = ['dt', 'cp']; if (c.type === 'kpis' && !c.metrics.length) c.metrics = ['count', 'dt', 'cp', 'pct']; render(); });
     const width = h('select', { id: 'ed-width' }, h('option', { value: 'full' }, 'Cả hàng'), h('option', { value: 'half' }, 'Nửa hàng'));
     width.value = c.width;
     width.addEventListener('change', () => { c.width = width.value; render(); });
-
-    const checks = (field, opts, note2) => {
-      const box = h('div', { class: 'check-grid' }, opts.map(o => {
-        const cb = h('input', { type: 'checkbox', id: `ed-${field}-${o.key.replace(/\W/g, '_')}`, checked: c[field].includes(o.key) });
-        cb.addEventListener('change', () => {
-          let arr = c[field].filter(k => k !== o.key);
-          if (cb.checked) {
-            arr.push(o.key);
-            if (c.type === 'line') arr = o.key === 'bien_ln' ? ['bien_ln'] : arr.filter(k => k !== 'bien_ln');
-            if (field === 'metrics' && c.type === 'columns') c.lines = c.lines.filter(k => k !== o.key);
-            if (field === 'lines') c.metrics = c.metrics.filter(k => k !== o.key);
-          }
-          c[field] = arr; render();
-        });
-        return h('label', { class: 'check' }, cb, o.name);
-      }));
-      return [note2 ? h('p', { class: 'note' }, note2) : null, box];
-    };
+    const checks = (opts, single) => h('div', { class: 'check-grid' }, opts.map(k => {
+      const cb = h('input', { type: 'checkbox', id: 'ed-m-' + k, checked: c.metrics.includes(k) });
+      cb.addEventListener('change', () => {
+        let arr = c.metrics.filter(x => x !== k);
+        if (cb.checked) { arr.push(k); if (single && (k === 'pct' || k === 'count')) arr = [k]; else if (single) arr = arr.filter(x => x !== 'pct' && x !== 'count'); }
+        c.metrics = METRICS.filter(x => arr.includes(x)); render();
+      });
+      return h('label', { class: 'check' }, cb, T(k));
+    }));
     let data = null;
-    if (c.type === 'columns') {
-      data = [h('p', { class: 'section-label' }, 'Dữ liệu dạng cột'), checks('metrics', metricChoices({ groups: true, selected: c.metrics })),
-        h('p', { class: 'section-label' }, 'Dữ liệu dạng đường (vẽ chồng lên cột)'), checks('lines', metricChoices({ selected: c.lines }))];
-    } else if (c.type === 'line') {
-      data = [h('p', { class: 'section-label' }, 'Dữ liệu'), checks('metrics', metricChoices({ pct: true, groups: true, selected: c.metrics }), 'Biên lợi nhuận (%) khác đơn vị với số tiền nên được vẽ riêng: chọn nó sẽ bỏ các dữ liệu khác.')];
-    } else if (c.type === 'stacked' || c.type === 'breakdown') {
-      const g = h('select', { id: 'ed-group' }, Object.entries(groups()).map(([k, v]) => h('option', { value: k }, v)));
-      g.value = c.group || 'exp';
-      g.addEventListener('change', () => { c.group = g.value; render(); });
-      data = [h('label', { class: 'f' }, 'Dữ liệu', g)];
-    } else {
-      data = [h('p', { class: 'note' }, c.type === 'table' ? 'Bảng lãi lỗ luôn có: tháng, doanh thu, từng khoản chi phí, tổng chi phí, lợi nhuận, biên.' : 'Khung ghi chú cho phép mọi người viết ghi chú theo tháng.')];
-    }
-    const el = h('div', { class: 'card stack', id: 'editor-card' },
+    if (c.type === 'kpis') data = [h('p', { class: 'section-label' }, 'Các ô chỉ số'), checks(METRICS, false), h('p', { class: 'note' }, 'Mỗi ô hiện giá trị của mốc đang xem và thay đổi so với mốc liền trước.')];
+    else if (c.type === 'group') {
+      const dim = h('select', { id: 'ed-dim' }, DIMS.map(k => h('option', { value: k }, T(k))));
+      dim.value = c.dim; dim.addEventListener('change', () => { c.dim = dim.value; render(); });
+      const top = h('input', { type: 'number', id: 'ed-top', min: 3, max: 50, value: String(c.top || 12), class: 'num num-sm' });
+      top.addEventListener('change', () => { c.top = Math.max(3, Math.min(50, +top.value || 12)); render(); });
+      data = [h('div', { class: 'form-grid' }, h('label', { class: 'f' }, 'Nhóm theo', dim), h('label', { class: 'f' }, 'Số nhóm hiện tối đa (còn lại gộp "Khác")', top)),
+        h('p', { class: 'section-label' }, 'Dữ liệu'), checks(METRICS, true),
+        h('p', { class: 'note' }, `${T('pct')} và ${lc(T('count'))} khác đơn vị với số tiền nên được vẽ riêng: chọn chúng sẽ bỏ các dữ liệu khác.`)];
+    } else if (c.type === 'costs') {
+      const det = h('input', { type: 'checkbox', id: 'ed-detail', checked: !!c.detail });
+      det.addEventListener('change', () => { c.detail = det.checked; render(); });
+      data = [h('label', { class: 'check' }, det, 'Hiện đủ 15 khoản (bỏ chọn: gộp theo 7 nhóm chi phí)')];
+    } else data = [h('p', { class: 'note' }, 'Bảng luôn có: ' + [T('region'), T('project'), T('contract'), T('investor'), T('stage'), T('hd'), T('dt'), T('cp'), T('pct')].join(', ') + '.')];
+    const el = h('div', { class: 'card wide stack', id: 'editor-card' },
       h('div', { class: 'card-head' }, h('h2', null, 'Sửa biểu đồ'), h('button', { class: 'btn sm', type: 'button', onclick: () => { S.custom.editId = null; render(); } }, 'Đóng')),
-      h('div', { class: 'form-grid' }, h('label', { class: 'f' }, 'Tiêu đề', title), h('label', { class: 'f' }, 'Loại biểu đồ', type), h('label', { class: 'f' }, 'Độ rộng', width)),
+      h('div', { class: 'form-grid' }, h('label', { class: 'f' }, 'Tiêu đề', title), h('label', { class: 'f' }, 'Loại', type), h('label', { class: 'f' }, 'Độ rộng', width)),
       h('label', { class: 'f' }, 'Mô tả (hiện dưới tiêu đề, để trống nếu không cần)', note),
       data,
-      (c.type === 'table' || c.type === 'notes') ? null : h('p', { class: 'note' }, 'Danh sách trên lấy từ ', h('a', { href: '#/danh-muc' }, 'trang Danh mục'),
-        ' (thêm, bớt, đổi tên, ẩn từng mục) và mục ', h('a', { href: '#ten-goi', onclick: e => { e.preventDefault(); document.getElementById('ten-goi').scrollIntoView({ behavior: 'smooth' }); } }, 'Tên gọi'), ' ở trên (đổi tên nhóm và chỉ số).'),
-      h('p', { class: 'section-label' }, 'Xem trước (12 tháng gần nhất)'),
+      h('p', { class: 'section-label' }, 'Xem trước (mốc đang xem, chưa lọc)'),
       previewHost);
     S.redraw = drawPreview;
     return el;
-  }
-
-  // ------------------------------------------------------------------
-  // Nhập số liệu theo tháng
-  // ------------------------------------------------------------------
-  function viewEntry() {
-    const all = buildModel();
-    const next = all.length ? addMonth(all[all.length - 1].month.slice(0, 7), 1) : ymNow();
-    const head = h('div', { class: 'page-head' },
-      h('div', null, h('h1', null, 'Nhập số liệu'), h('p', { class: 'lead' }, `Mỗi tháng gồm số liệu từng mục của nhóm "${T('rev_group')}" và "${T('exp_group')}", đơn vị triệu đồng.`)),
-      h('button', { class: 'btn primary', type: 'button', onclick: () => { S.editMonth = next + '-01'; render(); } }, '+ Thêm tháng'));
-    const list = all.length ? h('div', { class: 'table-wrap' }, h('table', { class: 't' },
-      h('thead', null, h('tr', null, ['Tháng', T('doanh_thu'), T('tong_chi_phi'), T('loi_nhuan'), T('bien_ln'), ''].map(t => h('th', null, t)))),
-      h('tbody', null, all.slice().reverse().map(r => h('tr', { class: S.editMonth === r.month ? 'sel' : '' },
-        h('td', null, F.mLong(r.month)), h('td', null, F.tr(r.doanh_thu)), h('td', null, F.tr(r.tong_chi_phi)),
-        h('td', { class: r.loi_nhuan < 0 ? 'is-bad' : '' }, F.tr(r.loi_nhuan)), h('td', null, F.pct(r.bien_ln)),
-        h('td', { class: 'actions' },
-          h('button', { class: 'btn sm', type: 'button', onclick: () => { S.editMonth = r.month; render(); window.scrollTo({ top: 0, behavior: 'smooth' }); } }, 'Sửa'),
-          confirmBtn('Xóa', async () => { await api.deleteMonth(r.month); if (S.editMonth === r.month) S.editMonth = null; toast('Đã xóa số liệu ' + F.mLong(r.month) + '.'); await reload(); })))))))
-      : h('p', { class: 'note' }, 'Chưa có tháng nào. Bấm "+ Thêm tháng" để bắt đầu.');
-    return h('div', { class: 'stack', style: 'gap:22px' }, head,
-      S.editMonth ? editor(S.editMonth, all) : null,
-      h('div', { class: 'card' }, h('h2', null, 'Các tháng đã nhập'), list));
-  }
-
-  function editor(month, all) {
-    const existing = ym => all.find(r => r.month === ym + '-01');
-    const hasCat = !S.channels.length || !S.categories.length;
-    const monthIn = h('input', { type: 'month', id: 'ed-month', value: month.slice(0, 7), required: true });
-    const warn = h('div', { class: 'alert warn', hidden: true });
-    const totals = h('div', { class: 'totals' });
-    const fields = [];
-    const field = (kind, c, val) => {
-      const inp = h('input', { class: 'num', type: 'text', inputmode: 'decimal', id: kind + '-' + c.id, autocomplete: 'off', value: val != null ? F.num(val) : '', placeholder: '0', oninput: update });
-      fields.push({ kind, id: c.id, inp });
-      return h('label', { class: 'f' }, h('span', null, c.name, c.active ? '' : ' (đang ẩn)'), inp);
-    };
-    function shown(list, key, rec) { return list.filter(c => c.active || (rec && rec[key][c.id] != null)); }
-    const rec0 = existing(month.slice(0, 7));
-    const revBox = h('div', { class: 'form-grid' }, shown(S.channels, 'rev', rec0).map(c => field('rev', c, rec0 && rec0.rev[c.id])));
-    const expBox = h('div', { class: 'form-grid' }, shown(S.categories, 'exp', rec0).map(c => field('exp', c, rec0 && rec0.exp[c.id])));
-    function values() {
-      let bad = false;
-      const out = { rev: [], exp: [] };
-      fields.forEach(f => {
-        const n = F.parse(f.inp.value);
-        const invalid = n !== null && (!isFinite(n) || n < 0);
-        f.inp.classList.toggle('invalid', invalid);
-        if (invalid) bad = true;
-        out[f.kind].push(f.kind === 'rev' ? { channel_id: f.id, amount: n || 0 } : { category_id: f.id, amount: n || 0 });
-      });
-      return { bad, out };
-    }
-    function update() {
-      const { out } = values();
-      const dt = d3.sum(out.rev, r => r.amount), cp = d3.sum(out.exp, r => r.amount), ln = dt - cp;
-      totals.replaceChildren(
-        h('span', null, T('doanh_thu'), h('b', null, F.num(dt))), h('span', null, T('tong_chi_phi'), h('b', null, F.num(cp))),
-        h('span', null, T('loi_nhuan'), h('b', { class: ln < 0 ? 'is-bad' : '' }, F.num(ln))), h('span', null, T('bien_ln'), h('b', null, F.pct(dt ? ln / dt : NaN))));
-    }
-    function checkMonth(fill) {
-      const ym = monthIn.value;
-      const rec = ym && existing(ym);
-      warn.hidden = !(rec && ym + '-01' !== month);
-      warn.textContent = rec ? `${F.mLong(ym + '-01')} đã có số liệu. Các ô bên dưới đã được điền theo số liệu đang lưu; bấm Lưu sẽ cập nhật.` : '';
-      if (fill && rec) fields.forEach(f => { const v = rec[f.kind][f.id]; f.inp.value = v != null ? F.num(v) : ''; });
-      update();
-    }
-    monthIn.addEventListener('change', () => checkMonth(true));
-    const saveBtn = h('button', { class: 'btn primary', type: 'submit' }, 'Lưu số liệu');
-    const form = h('form', {
-      class: 'card stack', id: 'editor', onsubmit: async ev => {
-        ev.preventDefault();
-        if (!/^\d{4}-\d{2}$/.test(monthIn.value)) return toast('Hãy chọn tháng.', true);
-        const { bad, out } = values();
-        if (bad) return toast('Có ô không phải số hợp lệ (đã tô đỏ). Ví dụ đúng: 1.234 hoặc 1.234,5', true);
-        const m = monthIn.value + '-01';
-        const ok = await run(saveBtn, () => api.saveMonth(m, out.rev, out.exp));
-        if (ok) { S.editMonth = null; toast('Đã lưu số liệu ' + F.mLong(m) + '.'); await reload(); }
-      }
-    },
-    h('div', { class: 'card-head' }, h('h2', null, rec0 ? 'Sửa số liệu ' + F.mLong(month) : 'Thêm số liệu tháng'),
-      h('button', { class: 'btn sm', type: 'button', onclick: () => { S.editMonth = null; render(); } }, 'Đóng')),
-    h('div', { class: 'row' }, h('label', { class: 'f' }, 'Tháng', monthIn)),
-    warn,
-    hasCat ? h('div', { class: 'alert warn' }, `Cần có ít nhất một mục trong "${T('rev_group')}" và một mục trong "${T('exp_group')}". `, h('a', { href: '#/danh-muc' }, 'Mở trang Danh mục')) : null,
-    h('p', { class: 'section-label' }, h('span', null, T('rev_group')), h('a', { href: '#/danh-muc' }, 'Sửa danh mục')), revBox,
-    h('p', { class: 'section-label' }, h('span', null, T('exp_group'))), expBox,
-    totals,
-    h('p', { class: 'note' }, 'Gõ số theo kiểu Việt Nam: dấu chấm ngăn hàng nghìn, dấu phẩy cho phần thập phân (1.234,5). Ô để trống được tính là 0.'),
-    h('div', { class: 'row' }, saveBtn, h('button', { class: 'btn', type: 'button', onclick: () => { S.editMonth = null; render(); } }, 'Hủy')));
-    checkMonth(false);
-    return form;
-  }
-
-  // ------------------------------------------------------------------
-  // Danh mục: kênh bán & khoản mục chi phí
-  // ------------------------------------------------------------------
-  function viewCategories() {
-    return h('div', { class: 'stack', style: 'gap:22px' },
-      h('div', null, h('h1', { class: 'page-head' }, 'Danh mục'), h('p', { class: 'lead' }, `Thêm, đổi tên, sắp xếp các mục của "${T('rev_group')}" và "${T('exp_group')}". Muốn đổi tên hai nhóm này, vào Tùy biến → Tên gọi. Mục đã có số liệu không xóa được; hãy bỏ chọn "Đang dùng" để ẩn khỏi form nhập tháng mới (số liệu cũ vẫn giữ trên báo cáo).`)),
-      h('div', { class: 'grid' },
-        catCard(T('rev_group') + ' (doanh thu)', 'kenh', S.channels, S.revenue, 'channel_id', c => api.saveChannel(c), id => api.deleteChannel(id)),
-        catCard(T('exp_group') + ' (chi phí)', 'chiphi', S.categories, S.expenses, 'category_id', c => api.saveCategory(c), id => api.deleteCategory(id))));
-  }
-  function catCard(title, key, list, entries, fk, save, del) {
-    const used = new Set(entries.map(e => e[fk]));
-    const rows = list.map(c => {
-      const name = h('input', { type: 'text', id: `${key}-name-${c.id}`, value: c.name, 'aria-label': 'Tên' });
-      const ord = h('input', { type: 'number', class: 'num num-sm', id: `${key}-ord-${c.id}`, value: String(c.sort_order), 'aria-label': 'Thứ tự' });
-      const act = h('input', { type: 'checkbox', id: `${key}-act-${c.id}`, checked: c.active, 'aria-label': 'Đang dùng' });
-      const sv = h('button', { class: 'btn sm', type: 'button' }, 'Lưu');
-      sv.addEventListener('click', async () => {
-        const ok = await run(sv, () => save({ id: c.id, name: name.value, sort_order: +ord.value || 0, active: act.checked }));
-        if (ok) { toast('Đã lưu "' + name.value.trim() + '".'); await reload(); }
-      });
-      return h('tr', null, h('td', null, name), h('td', null, ord), h('td', { class: 'l' }, act), h('td', { class: 'actions' }, sv,
-        used.has(c.id) ? h('span', { class: 'chip', title: 'Đã có số liệu nên không xóa được' }, 'Có số liệu') : confirmBtn('Xóa', async () => { await del(c.id); toast('Đã xóa.'); await reload(); })));
-    });
-    const newName = h('input', { type: 'text', id: `${key}-new`, placeholder: 'Tên mới', required: true });
-    const addBtn = h('button', { class: 'btn primary', type: 'submit' }, 'Thêm');
-    return h('div', { class: 'card', id: key },
-      h('h2', null, title),
-      h('div', { class: 'table-wrap' }, h('table', { class: 't' },
-        h('thead', null, h('tr', null, h('th', null, 'Tên'), h('th', null, 'Thứ tự'), h('th', { class: 'l' }, 'Đang dùng'), h('th', null, ''))),
-        h('tbody', null, rows.length ? rows : h('tr', null, h('td', { colspan: 4, class: 'muted' }, 'Chưa có mục nào.'))))),
-      h('form', {
-        class: 'row', onsubmit: async ev => {
-          ev.preventDefault();
-          const ok = await run(addBtn, () => save({ name: newName.value, sort_order: (d3.max(list, c => c.sort_order) || 0) + 1, active: true }));
-          if (ok) { toast('Đã thêm "' + newName.value.trim() + '".'); await reload(); }
-        }
-      }, h('label', { class: 'f', style: 'flex:1;min-width:12rem' }, 'Thêm mục mới', newName), addBtn));
-  }
-
-  // ------------------------------------------------------------------
-  // Nhập từ file Excel / CSV
-  // ------------------------------------------------------------------
-  let xlsxLoading = null;
-  function loadXLSX() {
-    if (window.XLSX) return Promise.resolve();
-    if (!xlsxLoading) xlsxLoading = new Promise((res, rej) => {
-      const s = document.createElement('script'); s.src = 'js/vendor/xlsx.full.min.js'; s.onload = res; s.onerror = () => rej(new Error('Không tải được thư viện đọc Excel.'));
-      document.head.append(s);
-    });
-    return xlsxLoading;
-  }
-  function parseMonth(v) {
-    const fmt = (y, m) => (y >= 1990 && y <= 2100 && m >= 1 && m <= 12 ? y + '-' + String(m).padStart(2, '0') + '-01' : null);
-    if (v instanceof Date && !isNaN(v)) { const d = new Date(v.getTime() + 12 * 3600e3); return fmt(d.getFullYear(), d.getMonth() + 1); }
-    if (typeof v === 'number') { if (v > 20000 && v < 80000) { const d = XLSX.SSF.parse_date_code(v); return fmt(d.y, d.m); } return null; }
-    const s = String(v).trim();
-    let m = s.match(/^(\d{4})[-/.](\d{1,2})(?:[-/.]\d{1,2})?$/);
-    if (m) return fmt(+m[1], +m[2]);
-    m = s.match(/^(?:T|Tháng\s*)?(\d{1,2})[-/.](\d{4})$/i);
-    if (m) return fmt(+m[2], +m[1]);
-    return null;
-  }
-  async function parseFile(file) {
-    await loadXLSX();
-    const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
-    const ws = wb.Sheets[wb.SheetNames[0]];
-    const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
-    const isMonthHdr = c => /^(tháng|thang|month|kỳ)$/i.test(String(c).trim());
-    const hi = aoa.findIndex(r => r.some(isMonthHdr));
-    if (hi < 0) throw new Error('Không tìm thấy cột "Tháng" ở dòng tiêu đề. Hãy dùng file mẫu.');
-    const hdr = aoa[hi].map(c => String(c).trim());
-    const mi = hdr.findIndex(isMonthHdr);
-    const cols = [], ignored = [];
-    hdr.forEach((c, i) => {
-      if (i === mi || !c) return;
-      const m = c.match(/^(DT|CP)\s*[:\-–]\s*(.+)$/i);
-      if (!m) { ignored.push(c); return; }
-      cols.push({ i, kind: m[1].toUpperCase() === 'DT' ? 'rev' : 'exp', name: m[2].trim(), header: c });
-    });
-    if (!cols.length) throw new Error('Không có cột số liệu nào. Tiêu đề cột cần bắt đầu bằng "DT:" (doanh thu) hoặc "CP:" (chi phí).');
-    const byMonth = new Map(), errors = [];
-    aoa.slice(hi + 1).forEach((r, k) => {
-      const line = hi + k + 2;
-      if (r.every(c => c === '' || c == null)) return;
-      const m = parseMonth(r[mi]);
-      if (!m) { errors.push(`Dòng ${line}: không đọc được tháng "${r[mi]}". Dùng dạng 2026-09 hoặc 09/2026.`); return; }
-      const rec = byMonth.get(m) || { month: m, vals: new Map() };
-      cols.forEach(c => {
-        const v = r[c.i];
-        if (v === '' || v == null) return;
-        const n = F.parse(v);
-        if (!isFinite(n) || n < 0) { errors.push(`Dòng ${line}, cột "${c.header}": "${v}" không phải số hợp lệ.`); return; }
-        rec.vals.set(c.kind + '|' + c.name.toLowerCase(), { kind: c.kind, name: c.name, v: n });
-      });
-      byMonth.set(m, rec);
-    });
-    return { cols, ignored, months: [...byMonth.values()].sort((a, b) => (a.month < b.month ? -1 : 1)), errors };
-  }
-  async function downloadXlsx(withData) {
-    await loadXLSX();
-    const model = buildModel();
-    const used = (list, key) => list.filter(c => c.active || (withData && model.some(r => r[key][c.id] != null)));
-    const chs = used(S.channels, 'rev'), cats = used(S.categories, 'exp');
-    const header = ['Tháng', ...chs.map(c => 'DT: ' + c.name), ...cats.map(c => 'CP: ' + c.name)];
-    const body = withData
-      ? model.map(r => [r.month.slice(0, 7), ...chs.map(c => r.rev[c.id] ?? ''), ...cats.map(c => r.exp[c.id] ?? '')])
-      : [[(model.length ? addMonth(model[model.length - 1].month.slice(0, 7), 1) : ymNow()), ...header.slice(1).map(() => '')]];
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.aoa_to_sheet([header, ...body]);
-    ws['!cols'] = header.map((t, i) => ({ wch: i ? Math.max(12, t.length + 2) : 10 }));
-    XLSX.utils.book_append_sheet(wb, ws, 'So lieu');
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
-      ['Hướng dẫn'],
-      ['Mỗi dòng là một tháng. Cột "Tháng" ghi dạng 2026-09 (hoặc 09/2026).'],
-      [`Cột bắt đầu bằng "DT:" là mục doanh thu (${lc(T('rev_group'))}); "CP:" là mục chi phí (${lc(T('exp_group'))}).`],
-      ['Đơn vị: triệu đồng. Ô để trống thì giữ nguyên số liệu đang có.'],
-      ['Có thể thêm cột mới, ví dụ "CP: Thuê mặt bằng"; khi nhập web sẽ hỏi có tạo danh mục mới không.']
-    ]), 'Huong dan');
-    XLSX.writeFile(wb, withData ? `so-lieu-doanh-thu-chi-phi-${ymNow()}.xlsx` : 'mau-nhap-lieu.xlsx');
-  }
-
-  function viewImport() {
-    const out = h('div', { class: 'stack' });
-    const file = h('input', { type: 'file', id: 'import-file', accept: '.xlsx,.xls,.csv' });
-    file.addEventListener('change', async () => {
-      const f = file.files[0];
-      if (!f) return;
-      out.replaceChildren(h('div', { class: 'skeleton', style: 'height:120px' }));
-      try { out.replaceChildren(preview(await parseFile(f), f.name)); }
-      catch (e) { out.replaceChildren(h('div', { class: 'alert err' }, e.message || String(e))); }
-    });
-    return h('div', { class: 'stack', style: 'gap:22px' },
-      h('div', null, h('h1', { class: 'page-head' }, 'Nhập từ file'), h('p', { class: 'lead' }, 'Tải lên file Excel (.xlsx) hoặc CSV để nhập nhiều tháng cùng lúc.')),
-      h('div', { class: 'grid' },
-        h('div', { class: 'card' }, h('h2', null, '1. Chuẩn bị file'),
-          h('p', { class: 'note' }, `Dòng đầu là tiêu đề: cột "Tháng", các cột "DT: <tên mục ${lc(T('rev_group'))}>" và "CP: <tên mục ${lc(T('exp_group'))}>".`+' Mỗi dòng sau là một tháng, đơn vị triệu đồng. Ô trống thì giữ nguyên số liệu đang có.'),
-          h('div', { class: 'row' },
-            h('button', { class: 'btn', type: 'button', onclick: e => run(e.currentTarget, () => downloadXlsx(false)) }, 'Tải file mẫu (.xlsx)'),
-            h('button', { class: 'btn', type: 'button', onclick: e => run(e.currentTarget, () => downloadXlsx(true)) }, 'Xuất toàn bộ số liệu (.xlsx)'))),
-        h('div', { class: 'card' }, h('h2', null, '2. Chọn file'), h('label', { class: 'f' }, 'File .xlsx, .xls hoặc .csv', file),
-          h('p', { class: 'note' }, 'Web sẽ hiện bản xem trước để bạn kiểm tra rồi mới ghi vào dữ liệu.'))),
-      out);
-  }
-
-  function preview(p, fileName) {
-    const chMap = byName(S.channels), catMap = byName(S.categories);
-    const newCats = { rev: [], exp: [] };
-    p.cols.forEach(c => {
-      const map = c.kind === 'rev' ? chMap : catMap;
-      if (!map.has(c.name.toLowerCase()) && !newCats[c.kind].some(n => n.toLowerCase() === c.name.toLowerCase())) newCats[c.kind].push(c.name);
-    });
-    const hasNew = newCats.rev.length + newCats.exp.length > 0;
-    const createNew = h('input', { type: 'checkbox', id: 'create-new', checked: true });
-    const existing = new Set(buildModel().map(r => r.month));
-    const btn = h('button', { class: 'btn primary', type: 'button' }, `Nhập ${p.months.length} tháng`);
-    const status = h('div', { class: 'alert', hidden: true });
-    btn.disabled = !p.months.length;
-    btn.addEventListener('click', () => run(btn, async () => {
-      status.hidden = false; status.className = 'alert'; status.textContent = 'Đang nhập…';
-      if (hasNew && createNew.checked) {
-        let o1 = d3.max(S.channels, c => c.sort_order) || 0, o2 = d3.max(S.categories, c => c.sort_order) || 0;
-        for (const n of newCats.rev) await api.saveChannel({ name: n, sort_order: ++o1, active: true });
-        for (const n of newCats.exp) await api.saveCategory({ name: n, sort_order: ++o2, active: true });
-      }
-      const fresh = await api.loadData();
-      const chs = fresh.channels, cats = fresh.categories;
-      const cm = byName(chs), km = byName(cats);
-      let i = 0, skipped = 0;
-      for (const m of p.months) {
-        const rev = [], exp = [];
-        m.vals.forEach(v => {
-          const c = (v.kind === 'rev' ? cm : km).get(v.name.toLowerCase());
-          if (!c) { skipped++; return; }
-          if (v.kind === 'rev') rev.push({ channel_id: c.id, amount: v.v }); else exp.push({ category_id: c.id, amount: v.v });
-        });
-        await api.saveMonth(m.month, rev, exp);
-        status.textContent = `Đang nhập… ${++i}/${p.months.length} tháng`;
-      }
-      await loadAll();
-      status.className = 'alert ok';
-      status.replaceChildren(`Đã nhập ${p.months.length} tháng từ ${fileName}.` + (skipped ? ` Bỏ qua ${skipped} ô thuộc danh mục chưa tạo.` : '') + ' ', h('a', { href: '#/' }, 'Xem tổng quan'));
-      btn.disabled = true;
-      toast('Nhập file xong.');
-    }));
-    return h('div', { class: 'card stack', id: 'xem-truoc' },
-      h('h2', null, '3. Kiểm tra và nhập'),
-      h('p', { class: 'note' }, `${fileName}: ${p.months.length} tháng, ${p.cols.filter(c => c.kind === 'rev').length} cột doanh thu, ${p.cols.filter(c => c.kind === 'exp').length} cột chi phí.`),
-      p.errors.length ? h('div', { class: 'alert err stack' }, h('b', null, `${p.errors.length} lỗi, các ô/dòng này sẽ bị bỏ qua:`), h('ul', { style: 'margin:0;padding-left:18px' }, p.errors.slice(0, 20).map(e => h('li', null, e))), p.errors.length > 20 ? h('span', null, `…và ${p.errors.length - 20} lỗi khác.`) : null) : null,
-      p.ignored.length ? h('div', { class: 'alert warn' }, 'Bỏ qua các cột không có tiền tố "DT:" hoặc "CP:": ' + p.ignored.join(', ')) : null,
-      hasNew ? h('div', { class: 'alert warn stack' },
-        h('span', null, 'Các danh mục chưa có trên web:'),
-        h('div', { class: 'row' }, newCats.rev.map(n => h('span', { class: 'chip new' }, T('rev_group') + ': ' + n)), newCats.exp.map(n => h('span', { class: 'chip new' }, T('exp_group') + ': ' + n))),
-        h('label', { class: 'row', style: 'align-items:center' }, createNew, 'Tạo các danh mục mới này (bỏ chọn thì bỏ qua các cột đó)')) : null,
-      p.months.length ? h('div', { class: 'table-wrap' }, h('table', { class: 't' },
-        h('thead', null, h('tr', null, ['Tháng', 'Trạng thái', T('doanh_thu'), T('tong_chi_phi'), 'Số ô'].map(t => h('th', null, t)))),
-        h('tbody', null, p.months.map(m => {
-          const vs = [...m.vals.values()];
-          return h('tr', null, h('td', null, F.mLong(m.month)),
-            h('td', null, existing.has(m.month) ? h('span', { class: 'chip over' }, 'Cập nhật') : h('span', { class: 'chip new' }, 'Mới')),
-            h('td', null, F.num(d3.sum(vs.filter(v => v.kind === 'rev'), v => v.v))), h('td', null, F.num(d3.sum(vs.filter(v => v.kind === 'exp'), v => v.v))), h('td', null, vs.length));
-        })))) : h('p', { class: 'note' }, 'Không có dòng số liệu hợp lệ nào.'),
-      h('div', { class: 'row' }, btn), status);
   }
 
   // ------------------------------------------------------------------
@@ -1097,7 +1082,7 @@
   // Khởi động
   // ------------------------------------------------------------------
   window.addEventListener('auth-expired', () => { if (S.profile) { S.profile = null; toast('Phiên đăng nhập đã hết. Hãy đăng nhập lại.', true); render(); } });
-  window.addEventListener('hashchange', () => { if (route() !== 'nhap-lieu') S.editMonth = null; render(); window.scrollTo(0, 0); });
+  window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
   let rt = 0, lastW = window.innerWidth;
   window.addEventListener('resize', () => {
     if (window.innerWidth === lastW) return;

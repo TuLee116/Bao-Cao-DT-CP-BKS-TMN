@@ -94,7 +94,7 @@
             title="3–50 ký tự: chữ không dấu, số, dấu . _ -"></label>
           <label>Họ tên *<input name="full_name" required maxlength="100"></label>
           <label>Quyền<select name="role"></select></label>
-          <label><span id="u-pass-label">Mật khẩu *</span><input name="password" type="password" autocomplete="new-password"></label>
+          <label><span id="u-pass-label">Mật khẩu *</span><input name="password" type="password" required autocomplete="new-password"></label>
           <label class="check"><input name="active" type="checkbox" checked> Đang hoạt động</label>
           <div class="actions">
             <button type="submit" class="primary">Lưu</button>
@@ -144,7 +144,7 @@
           <label>Mật khẩu hiện tại<input name="current_password" type="password" required autocomplete="current-password"></label>
           <label>Mật khẩu mới<input name="new_password" type="password" required minlength="8" autocomplete="new-password"></label>
           <label>Nhập lại mật khẩu mới<input name="new_password2" type="password" required minlength="8" autocomplete="new-password"></label>
-          <p class="muted small">Tối thiểu 8 ký tự, có cả chữ và số. Các thiết bị khác sẽ bị đăng xuất.</p>
+          <p class="muted small">Sau khi đổi, các thiết bị khác đang đăng nhập sẽ bị đăng xuất.</p>
           <div class="actions"><button type="submit" class="primary">Đổi mật khẩu</button></div>
           <div id="pw-msg" class="msg" role="alert"></div>
         </form>

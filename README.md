@@ -21,6 +21,14 @@ Web quản lý dự án xây dựng có đăng nhập, phân quyền, khởi t�
 | Nhập liệu | ✔ | ✔ | |
 | Chỉ xem | ✔ | | |
 
+### Quy tắc mật khẩu
+Áp dụng khi khởi tạo, tạo tài khoản, đặt lại và đổi mật khẩu. Máy chủ kiểm tra bắt buộc; giao diện hiện danh sách điều kiện ✓/✗ ngay khi gõ.
+- Tối thiểu 8 ký tự (tối đa 128), không có khoảng trắng
+- Có chữ viết hoa, chữ viết thường, chữ số và ký tự đặc biệt
+- Không chứa tên đăng nhập; mật khẩu mới phải khác mật khẩu hiện tại
+
+Mật khẩu cũ đặt theo quy tắc trước vẫn đăng nhập được; quy tắc mới áp dụng từ lần đổi mật khẩu kế tiếp.
+
 Các ràng buộc an toàn:
 - Luôn phải còn ít nhất 1 Quản trị đang hoạt động.
 - Không ai tự hạ quyền, tự khóa hoặc tự xóa tài khoản của chính mình.

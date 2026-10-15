@@ -151,7 +151,8 @@ api.post('/auth/change-password', wrap(async (req, res) => {
   const { current_password, new_password } = req.body || {};
   const hash = await store.getPasswordHash(req.user.id);
   if (!(await auth.verifyPassword(current_password || '', hash))) return bad(res, 'Mật khẩu hiện tại không đúng');
-  const errors = passwordErrors(new_password);
+  if (String(new_password) === String(current_password)) return bad(res, 'Mật khẩu mới phải khác mật khẩu hiện tại');
+  const errors = passwordErrors(new_password, req.user.username);
   if (errors.length) return bad(res, errors);
   await store.updateUser(req.user.id, { password_hash: await auth.hashPassword(new_password) });
   await store.deleteUserSessions(req.user.id, req.sessionHash); // đăng xuất các thiết bị khác
@@ -185,7 +186,7 @@ users.put('/:id', wrap(async (req, res) => {
   if (!id) return bad(res, 'ID không hợp lệ');
   const target = await store.getUserById(id);
   if (!target) return bad(res, 'Không tìm thấy tài khoản', 404);
-  const { data, errors } = validateUser(req.body || {}, false);
+  const { data, errors } = validateUser(req.body || {}, false, target.username);
   if (errors.length) return bad(res, errors);
 
   const isSelf = id === req.user.id;

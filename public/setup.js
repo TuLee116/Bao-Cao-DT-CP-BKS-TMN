@@ -1,3 +1,5 @@
+attachPwChecklist($('[name=password]'));
+
 (async () => {
   try {
     const meta = await api('/api/meta');

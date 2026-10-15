@@ -47,13 +47,13 @@ function applyBranding(s) {
 // =====================================================================
 // Tab
 // =====================================================================
-const loaders = { projects: loadProjects, users: loadUsers, settings: loadSettings, profile: () => {} };
+const loaders = { projects: loadProjects, users: loadUsers, settings: loadSettings, profile: async () => {} };
 
 function showTab(name) {
   $$('#tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
   $$('.tab-panel').forEach((p) => (p.hidden = p.id !== 'tab-' + name));
   try { localStorage.setItem('tab', name); } catch {}
-  loaders[name]().catch((err) => alert(err.message));
+  Promise.resolve(loaders[name]()).catch((err) => alert(err.message));
 }
 $('#tabs').addEventListener('click', (e) => e.target.dataset.tab && showTab(e.target.dataset.tab));
 
@@ -165,6 +165,7 @@ $('#p-csv').addEventListener('click', () => {
 // TÀI KHOẢN (Quản trị)
 // =====================================================================
 const uForm = $('#u-form');
+attachPwChecklist(uForm?.elements.password);
 
 async function loadUsers() {
   users = await api('/api/users');
@@ -187,6 +188,7 @@ function resetUserForm() {
   uForm.elements.id.value = '';
   uForm.elements.username.disabled = false;
   uForm.elements.password.required = true;
+  uForm.elements.password.dispatchEvent(new Event('input'));
   $('#u-pass-label').textContent = 'Mật khẩu *';
   $('#u-form-title').textContent = 'Thêm tài khoản';
 }
@@ -225,6 +227,7 @@ $('#u-tbody')?.addEventListener('click', async (e) => {
     uForm.elements.active.checked = u.active;
     uForm.elements.password.value = '';
     uForm.elements.password.required = false;
+    uForm.elements.password.dispatchEvent(new Event('input'));
     $('#u-pass-label').textContent = 'Mật khẩu mới (để trống nếu không đổi)';
     $('#u-form-title').textContent = 'Sửa tài khoản ' + u.username;
     uForm.scrollIntoView({ behavior: 'smooth' });
@@ -269,6 +272,8 @@ sForm?.addEventListener('submit', async (e) => {
 // =====================================================================
 // CÁ NHÂN – đổi mật khẩu
 // =====================================================================
+attachPwChecklist($('#pw-form [name=new_password]'));
+
 $('#pw-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const d = formData(e.target);

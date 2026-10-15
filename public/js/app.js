@@ -163,7 +163,8 @@
       h('header', { class: 'topbar' }, h('div', { class: 'topbar-in' },
         h('a', { class: 'logo-full', href: '#/', title: 'Về trang Tổng quan' },
           h('img', { src: 'img/logo-ngang.png', alt: 'Tân Minh Nhân Corporation', width: 228, height: 56 })),
-        h('div', { class: 'topbar-main' }, h('div', { class: 'topbar-row' }, h('span', { class: 'brand' }, APP), who), nav))),
+        h('div', { class: 'topbar-main' }, h('div', { class: 'topbar-row' }, h('span', { class: 'brand' }, APP), who),
+          h('div', { class: 'topbar-row nav-row' }, nav, h('span', { class: 'credit' }, 'Produced by Supervisory Board of Tan Minh Nhan Corporation®'))))),
       demoBar(),
       h('main', { class: 'wrap' }, content),
       h('footer', { class: 'wrap foot' }, 'Đơn vị số tiền: triệu đồng. Lợi nhuận tính trước thuế TNDN.'));

@@ -64,6 +64,9 @@ main.wrap { padding-block: 24px 48px; display: flex; flex-direction: column; gap
 .brand svg { flex: none; }
 .nav { display: flex; gap: 8px; overflow-x: auto; min-width: 0; scrollbar-width: none; padding: 1px; }
 .who { margin-left: auto; }
+.nav-row { flex-wrap: nowrap; }
+.credit { margin-left: auto; flex: none; font-size: .75rem; font-style: italic; letter-spacing: .01em; color: var(--topbar-muted); white-space: nowrap; }
+@media (max-width: 1440px) { .nav-row { flex-wrap: wrap; } .credit { margin-left: 0; flex-basis: 100%; white-space: normal; } }
 .nav a { padding: 6px 14px; border: 1px solid var(--topbar-outline); border-radius: 8px; color: var(--topbar-fg); text-decoration: none; white-space: nowrap; font-size: .875rem; display: inline-flex; align-items: center; gap: 6px; }
 .nav a:hover { background: var(--topbar-hover); border-color: var(--topbar-outline-strong); }
 .nav a.on { background: var(--topbar-active-bg); border-color: var(--topbar-active-bg); color: var(--topbar-active-fg); font-weight: 600; }

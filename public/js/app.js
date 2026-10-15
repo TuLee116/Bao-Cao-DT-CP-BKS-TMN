@@ -77,6 +77,7 @@
     const [ch, ca, rv, ex, no] = [d.channels, d.categories, d.revenue, d.expenses, d.notes];
     const norm = r => Object.assign({}, r, { month: String(r.month).slice(0, 7) + '-01', amount: Number(r.amount) || 0 });
     Object.assign(S, { channels: ch, categories: ca, revenue: rv.map(norm), expenses: ex.map(norm), notes: no.map(n => Object.assign({}, n, { month: String(n.month).slice(0, 7) + '-01' })) });
+    S.dashboard = d.dashboard || null;
     S.users = isAdmin() ? await api.listUsers() : [];
     S.loaded = true;
   }
@@ -129,10 +130,10 @@
     if (!S.loaded) return mount(shell(h('div', { class: 'skeleton', style: 'height:320px' })), '');
     const views = {
       '': [viewDashboard, 'Tổng quan'], 'nhap-lieu': [viewEntry, 'Nhập số liệu'], 'danh-muc': [viewCategories, 'Danh mục'],
-      'nhap-file': [viewImport, 'Nhập từ file'], 'nguoi-dung': [viewUsers, 'Người dùng'], 'tai-khoan': [viewAccount, 'Tài khoản']
+      'nhap-file': [viewImport, 'Nhập từ file'], 'nguoi-dung': [viewUsers, 'Người dùng'], 'tuy-bien': [viewCustomize, 'Tùy biến'], 'tai-khoan': [viewAccount, 'Tài khoản']
     };
     let r = route();
-    if (!views[r] || (['nhap-lieu', 'danh-muc', 'nhap-file', 'nguoi-dung'].includes(r) && !isAdmin())) r = '';
+    if (!views[r] || (['nhap-lieu', 'danh-muc', 'nhap-file', 'nguoi-dung', 'tuy-bien'].includes(r) && !isAdmin())) r = '';
     mount(shell(views[r][0]()), views[r][1]);
     if (S.redraw) S.redraw();
   }
@@ -150,7 +151,7 @@
 
   function shell(content) {
     const r = route();
-    const items = [['', 'Tổng quan'], ['nhap-lieu', 'Nhập số liệu', 1], ['danh-muc', 'Danh mục', 1], ['nhap-file', 'Nhập từ file', 1], ['nguoi-dung', 'Người dùng', 1]];
+    const items = [['', 'Tổng quan'], ['nhap-lieu', 'Nhập số liệu', 1], ['danh-muc', 'Danh mục', 1], ['nhap-file', 'Nhập từ file', 1], ['tuy-bien', 'Tùy biến', 1], ['nguoi-dung', 'Người dùng', 1]];
     const nav = h('nav', { class: 'nav', 'aria-label': 'Chức năng' },
       items.filter(i => !i[2] || isAdmin()).map(([k, t]) => h('a', { href: '#/' + k, class: (r === k || (k === '' && !items.some(i => i[0] === r) && r !== 'tai-khoan')) ? 'on' : '' }, t)));
     const who = h('div', { class: 'who' },
@@ -218,10 +219,83 @@
   }
 
   // ------------------------------------------------------------------
-  // Tổng quan (dashboard)
+  // Tổng quan (dashboard): vẽ theo cấu hình. Admin chỉnh cấu hình ở trang "Tùy biến".
   // ------------------------------------------------------------------
+  const DEFAULT_DASH = {
+    title: 'Tổng quan',
+    tiles: [
+      { metric: 'doanh_thu', label: 'Doanh thu' }, { metric: 'tong_chi_phi', label: 'Tổng chi phí' },
+      { metric: 'loi_nhuan', label: 'Lợi nhuận trước thuế' }, { metric: 'bien_ln', label: 'Biên lợi nhuận' }
+    ],
+    cards: [
+      { id: 'dt-cp', type: 'columns', title: 'Doanh thu, chi phí và lợi nhuận theo tháng', note: 'Bấm vào một tháng để xem ghi chú của tháng đó.', metrics: ['doanh_thu', 'tong_chi_phi'], lines: ['loi_nhuan'], group: null, width: 'full', hidden: false },
+      { id: 'bien', type: 'line', title: 'Biên lợi nhuận', note: 'Lợi nhuận trước thuế chia cho doanh thu.', metrics: ['bien_ln'], lines: [], group: null, width: 'half', hidden: false },
+      { id: 'co-cau', type: 'breakdown', title: 'Cơ cấu chi phí', note: 'Tổng từng khoản trong kỳ và tỷ trọng trên tổng chi phí.', metrics: [], lines: [], group: 'exp', width: 'half', hidden: false },
+      { id: 'kenh', type: 'line', title: 'Doanh thu theo kênh bán', note: 'Doanh thu hằng tháng của từng kênh, triệu đồng.', metrics: ['rev:*'], lines: [], group: null, width: 'full', hidden: false },
+      { id: 'bang', type: 'table', title: 'Bảng lãi lỗ theo tháng', note: 'Tháng mới nhất ở trên cùng. Bấm một dòng để xem và thêm ghi chú.', metrics: [], lines: [], group: null, width: 'full', hidden: false },
+      { id: 'ghi-chu', type: 'notes', title: 'Ghi chú theo tháng', note: '', metrics: [], lines: [], group: null, width: 'full', hidden: false }
+    ]
+  };
+  const CARD_TYPES = {
+    columns: 'Cột theo tháng', line: 'Đường theo tháng', stacked: 'Cột chồng theo tháng',
+    breakdown: 'Thanh ngang tỷ trọng', table: 'Bảng lãi lỗ', notes: 'Ghi chú theo tháng'
+  };
+  const GROUPS = { rev: 'Doanh thu theo kênh bán', exp: 'Chi phí theo khoản mục' };
+  const clone = x => JSON.parse(JSON.stringify(x));
+  const dashConfig = () => S.dashboard || DEFAULT_DASH;
+
+  // Chỉ số: tổng hợp, từng kênh (rev:<id>), từng khoản chi phí (exp:<id>); rev:* / exp:* = tất cả.
+  function metricInfo(k) {
+    const base = {
+      doanh_thu: ['Doanh thu', 'money', r => r.doanh_thu], tong_chi_phi: ['Tổng chi phí', 'money', r => r.tong_chi_phi],
+      loi_nhuan: ['Lợi nhuận', 'money', r => r.loi_nhuan], bien_ln: ['Biên lợi nhuận', 'pct', r => r.bien_ln]
+    };
+    if (base[k]) return { key: k, name: base[k][0], kind: base[k][1], get: base[k][2], lowerIsBetter: k === 'tong_chi_phi' };
+    const [g, id] = String(k).split(':');
+    const c = (g === 'rev' ? S.channels : S.categories).find(x => String(x.id) === id);
+    if (!c) return null;
+    return { key: k, name: c.name, kind: 'money', lowerIsBetter: g === 'exp', get: r => { const v = (g === 'rev' ? r.rev : r.exp)[c.id]; return v == null ? null : v; } };
+  }
+  function metricChoices(opts) {
+    const o = opts || {};
+    const out = [{ key: 'doanh_thu', name: 'Doanh thu' }, { key: 'tong_chi_phi', name: 'Tổng chi phí' }, { key: 'loi_nhuan', name: 'Lợi nhuận trước thuế' }];
+    if (o.pct) out.push({ key: 'bien_ln', name: 'Biên lợi nhuận (%)' });
+    if (o.groups) out.push({ key: 'rev:*', name: 'Tất cả kênh bán' });
+    S.channels.forEach(c => out.push({ key: 'rev:' + c.id, name: 'Kênh: ' + c.name }));
+    if (o.groups) out.push({ key: 'exp:*', name: 'Tất cả khoản chi phí' });
+    S.categories.forEach(c => out.push({ key: 'exp:' + c.id, name: 'Chi phí: ' + c.name }));
+    return out;
+  }
+  // Màu đi theo chỉ số (không theo thứ tự): doanh thu, chi phí, lợi nhuận cố định; kênh và khoản mục nối tiếp.
+  function colorIndex(k) {
+    const fixed = { doanh_thu: 0, tong_chi_phi: 1, loi_nhuan: 2, bien_ln: 2 };
+    if (k in fixed) return fixed[k];
+    const [g, id] = k.split(':');
+    if (g === 'rev') return (3 + Math.max(0, S.channels.findIndex(c => String(c.id) === id))) % 8;
+    return (3 + S.channels.length + Math.max(0, S.categories.findIndex(c => String(c.id) === id))) % 8;
+  }
+  function resolve(keys, used) {
+    used = used || new Set();
+    const flat = [];
+    (keys || []).forEach(k => {
+      if (k === 'rev:*') S.channels.forEach(c => flat.push('rev:' + c.id));
+      else if (k === 'exp:*') S.categories.forEach(c => flat.push('exp:' + c.id));
+      else flat.push(k);
+    });
+    return [...new Set(flat)].map(k => {
+      const m = metricInfo(k);
+      if (!m) return null;
+      let ci = colorIndex(k);
+      if (used.has(ci)) { const free = [0, 1, 2, 3, 4, 5, 6, 7].find(i => !used.has(i)); if (free != null) ci = free; }
+      used.add(ci);
+      return Object.assign(m, { color: C[ci] });
+    }).filter(Boolean);
+  }
+
   function viewDashboard() {
+    const cfg = dashConfig();
     const all = buildModel();
+    const customize = isAdmin() ? h('a', { class: 'btn', href: '#/tuy-bien', onclick: () => { S.custom = S.custom || { draft: clone(cfg), editId: null }; } }, 'Tùy biến dashboard') : null;
     if (!all.length) {
       return h('div', { class: 'card empty' },
         h('h2', null, 'Chưa có số liệu'),
@@ -248,78 +322,138 @@
 
     const last = rows[rows.length - 1];
     const prev = all[all.indexOf(last) - 1];
-    const tile = (label, k, sign) => {
-      const v = last[k];
-      let delta = null;
-      if (prev) {
-        const d = k === 'bien_ln' ? v - prev[k] : (prev[k] ? (v - prev[k]) / Math.abs(prev[k]) : NaN);
-        const cls = !isFinite(d) || d === 0 ? '' : (d * sign > 0 ? 'is-good' : 'is-bad');
-        delta = h('span', { class: 'delta' }, h('b', { class: cls }, k === 'bien_ln' ? F.pt(d) : F.spct(d)), ' so với ' + F.mLong(prev.month));
-      }
-      return h('div', { class: 'card tile' },
-        h('span', { class: 'label' }, label + ' · ' + F.mLong(last.month)),
-        h('span', { class: 'big' + (k === 'loi_nhuan' && v < 0 ? ' is-bad' : '') }, k === 'bien_ln' ? F.pct(v) : F.money(v)),
-        delta || h('span', { class: 'delta' }, 'Chưa có tháng trước để so sánh'));
-    };
+    const tiles = cfg.tiles.map(t => tileCard(t, last, prev)).filter(Boolean);
 
-    // Cơ cấu chi phí và doanh thu theo kênh trong kỳ
-    const catName = new Map(S.categories.map(c => [c.id, c.name]));
-    const chName = new Map(S.channels.map(c => [c.id, c.name]));
-    const catIds = [...new Set(rows.flatMap(r => Object.keys(r.exp).map(Number)))];
-    const costItems = catIds.map(id => ({ id, name: catName.get(id) || 'Khoản mục #' + id, value: d3.sum(rows, r => r.exp[id] || 0) }))
-      .filter(x => x.value > 0).sort((a, b) => b.value - a.value);
-    const costTotal = d3.sum(costItems, x => x.value) || 1;
-    costItems.forEach(x => { x.share = x.value / costTotal; });
-    const order = new Map(S.channels.map((c, i) => [c.id, i]));
-    const chIds = [...new Set(rows.flatMap(r => Object.keys(r.rev).map(Number)))].sort((a, b) => (order.get(a) ?? 1e9) - (order.get(b) ?? 1e9));
-    const series = chIds.map(id => ({ name: chName.get(id) || 'Kênh #' + id, values: rows.map(r => ({ month: r.month, v: r.rev[id] != null ? r.rev[id] : null })) }));
-
-    const hostDtCp = h('div', { class: 'chart' }), hostBien = h('div', { class: 'chart sm' }), hostCost = h('div', { class: 'bars' });
-    const hostCh = h('div', { class: 'chart md' }), legendCh = h('div', { class: 'legend' });
-    const notes = notesCard(all);
-    S.redraw = () => {
-      Charts.revenueCost(hostDtCp, rows, m => notes.open(m));
-      Charts.margin(hostBien, rows);
-      Charts.costBars(hostCost, costItems);
-      Charts.channels(hostCh, legendCh, rows.map(r => r.month), series);
-    };
-
-    // Bảng lãi lỗ
-    const costCols = costItems.slice().sort((a, b) => (S.categories.findIndex(c => c.id === a.id)) - (S.categories.findIndex(c => c.id === b.id)));
-    const table = h('table', { class: 't' },
-      h('thead', null, h('tr', null, h('th', null, 'Tháng'), h('th', null, 'Doanh thu'), costCols.map(c => h('th', null, c.name)),
-        h('th', { class: 'sum' }, 'Tổng chi phí'), h('th', null, 'Lợi nhuận'), h('th', null, 'Biên LN'), h('th', null, 'Ghi chú'))),
-      h('tbody', null, rows.slice().reverse().map(r => h('tr', {
-        class: 'click' + (S.noteMonth === r.month ? ' sel' : ''), tabindex: '0', title: 'Xem ghi chú tháng này',
-        onclick: () => notes.open(r.month), onkeydown: e => { if (e.key === 'Enter') notes.open(r.month); }
-      },
-      h('td', null, F.mLong(r.month)), h('td', null, F.tr(r.doanh_thu)), costCols.map(c => h('td', null, r.exp[c.id] != null ? F.tr(r.exp[c.id]) : '–')),
-      h('td', { class: 'sum' }, F.tr(r.tong_chi_phi)), h('td', { class: r.loi_nhuan < 0 ? 'is-bad' : '' }, F.tr(r.loi_nhuan)), h('td', null, F.pct(r.bien_ln)),
-      h('td', null, r.notes ? r.notes + ' ✎' : '')))));
+    const ctx = { all, rows, months: rows.map(r => r.month), draws: [] };
+    const visible = cfg.cards.filter(c => !c.hidden);
+    if (visible.some(c => c.type === 'notes')) ctx.notes = notesCard(all, visible.find(c => c.type === 'notes'));
+    const cards = visible.map(c => renderCard(c, ctx));
+    S.redraw = () => drawAll(ctx.draws);
 
     return h('div', { class: 'stack', style: 'gap:22px' },
-      h('div', null, h('div', { class: 'page-head' }, h('h1', null, 'Tổng quan'), h('label', { class: 'f' }, 'Kỳ báo cáo', sel)), lead),
-      h('section', { class: 'tiles', 'aria-label': 'Chỉ số tháng gần nhất' },
-        tile('Doanh thu', 'doanh_thu', 1), tile('Tổng chi phí', 'tong_chi_phi', -1), tile('Lợi nhuận trước thuế', 'loi_nhuan', 1), tile('Biên lợi nhuận', 'bien_ln', 1)),
-      h('section', { class: 'grid' },
-        h('div', { class: 'card wide', id: 'dt-cp' },
-          h('h2', null, 'Doanh thu, chi phí và lợi nhuận theo tháng'),
-          h('p', { class: 'note' }, 'Bấm vào một tháng để xem ghi chú của tháng đó.'),
-          h('div', { class: 'legend' }, h('span', null, sw(C[0]), 'Doanh thu'), h('span', null, sw(C[1]), 'Tổng chi phí'), h('span', null, sw(C[2], true), 'Lợi nhuận')),
-          h('div', { class: 'chart-box' }, hostDtCp)),
-        h('div', { class: 'card', id: 'bien' }, h('h2', null, 'Biên lợi nhuận'), h('p', { class: 'note' }, 'Lợi nhuận trước thuế chia cho doanh thu.'), h('div', { class: 'chart-box' }, hostBien)),
-        h('div', { class: 'card', id: 'co-cau' }, h('h2', null, 'Cơ cấu chi phí'), h('p', { class: 'note' }, 'Tổng từng khoản trong kỳ và tỷ trọng trên tổng chi phí.'), hostCost),
-        h('div', { class: 'card wide', id: 'kenh' }, h('h2', null, 'Doanh thu theo kênh bán'), legendCh, h('div', { class: 'chart-box' }, hostCh)),
-        h('div', { class: 'card wide', id: 'bang' }, h('h2', null, 'Bảng lãi lỗ theo tháng'), h('p', { class: 'note' }, 'Tháng mới nhất ở trên cùng. Bấm một dòng để xem và thêm ghi chú.'), h('div', { class: 'table-wrap' }, table)),
-        notes.card));
+      h('div', null, h('div', { class: 'page-head' }, h('h1', null, cfg.title || 'Tổng quan'),
+        h('div', { class: 'row' }, customize, h('label', { class: 'f' }, 'Kỳ báo cáo', sel))), lead),
+      tiles.length ? h('section', { class: 'tiles', 'aria-label': 'Chỉ số tháng gần nhất' }, tiles) : null,
+      h('section', { class: 'grid' }, cards));
+  }
+
+  function tileCard(t, last, prev) {
+    const m = metricInfo(t.metric);
+    if (!m) return null;
+    const v = m.get(last), pv = prev ? m.get(prev) : null;
+    const pct = m.kind === 'pct';
+    let delta = h('span', { class: 'delta' }, 'Chưa có tháng trước để so sánh');
+    if (prev && v != null && pv != null) {
+      const d = pct ? v - pv : (pv ? (v - pv) / Math.abs(pv) : NaN);
+      const good = m.lowerIsBetter ? d < 0 : d > 0;
+      const cls = !isFinite(d) || d === 0 ? '' : (good ? 'is-good' : 'is-bad');
+      delta = h('span', { class: 'delta' }, h('b', { class: cls }, pct ? F.pt(d) : F.spct(d)), ' so với ' + F.mLong(prev.month));
+    }
+    return h('div', { class: 'card tile' },
+      h('span', { class: 'label' }, (t.label || m.name) + ' · ' + F.mLong(last.month)),
+      h('span', { class: 'big' + (v != null && v < 0 ? ' is-bad' : '') }, v == null ? '–' : pct ? F.pct(v) : F.money(v)),
+      delta);
+  }
+
+  // Vẽ từng biểu đồ độc lập: một biểu đồ lỗi không làm hỏng các biểu đồ khác.
+  function drawAll(draws) {
+    draws.forEach(f => { try { f(); } catch (e) { console.error(e); } });
   }
   function sw(color, line) { const s = h('i', { class: 'sw' + (line ? ' line' : '') }); s.style.background = color; return s; }
+  function legend(bars, lines) {
+    return h('div', { class: 'legend' }, bars.map(s => h('span', null, sw(s.color), s.name)), (lines || []).map(s => h('span', null, sw(s.color, true), s.name)));
+  }
+
+  // Một thẻ biểu đồ. ctx: {all, rows, months, draws, notes, preview}
+  function renderCard(card, ctx) {
+    const editBtn = isAdmin() && !ctx.preview
+      ? h('button', { class: 'btn sm card-edit', type: 'button', title: 'Sửa biểu đồ này', onclick: () => {
+        S.custom = S.custom || { draft: clone(dashConfig()), editId: null };
+        S.custom.editId = card.id; location.hash = '#/tuy-bien';
+      } }, 'Sửa') : null;
+    if (card.type === 'notes') {
+      const n = ctx.notes || notesCard(ctx.all, card);
+      n.setEdit(editBtn);
+      if (card.width !== 'full') n.card.classList.remove('wide');
+      return n.card;
+    }
+    const body = [];
+    const empty = msg => h('p', { class: 'note empty-chart' }, msg);
+    const months = ctx.months, rows = ctx.rows;
+    const vals = s => rows.map(r => s.get(r));
+    if (card.type === 'columns') {
+      const used = new Set();
+      const bars = resolve(card.metrics, used).filter(s => s.kind === 'money');
+      const lines = resolve(card.lines, used).filter(s => s.kind === 'money');
+      if (!bars.length && !lines.length) body.push(empty('Chưa chọn dữ liệu cho biểu đồ này.'));
+      else {
+        const host = h('div', { class: 'chart' });
+        body.push(legend(bars, lines), h('div', { class: 'chart-box' }, host));
+        ctx.draws.push(() => Charts.columns(host, months, bars.map(s => ({ name: s.name, color: s.color, values: vals(s) })), lines.map(s => ({ name: s.name, color: s.color, values: vals(s) })),
+          { onPick: ctx.notes ? m => ctx.notes.open(m) : null, head: m => { const r = rows.find(x => x.month === m); return F.mLong(m) + (r && r.notes ? ` · ${r.notes} ghi chú` : ''); } }));
+      }
+    } else if (card.type === 'line') {
+      let series = resolve(card.metrics);
+      const pct = series.length && series.every(s => s.kind === 'pct');
+      series = series.filter(s => (s.kind === 'pct') === !!pct);
+      if (!series.length) body.push(empty('Chưa chọn dữ liệu cho biểu đồ này.'));
+      else {
+        const host = h('div', { class: 'chart md' });
+        if (series.length > 1) body.push(legend([], series));
+        body.push(h('div', { class: 'chart-box' }, host));
+        ctx.draws.push(() => Charts.lines(host, months, series.map(s => ({ name: s.name, color: s.color, values: vals(s) })),
+          pct ? { fmt: F.pct, axisFmt: d3.format('.0%') } : {}));
+      }
+    } else if (card.type === 'stacked') {
+      const series = resolve([(card.group || 'exp') + ':*']);
+      if (!series.length) body.push(empty('Chưa có danh mục nào.'));
+      else {
+        const host = h('div', { class: 'chart' });
+        body.push(legend(series), h('div', { class: 'chart-box' }, host));
+        ctx.draws.push(() => Charts.stacked(host, months, series.map(s => ({ name: s.name, color: s.color, values: vals(s) }))));
+      }
+    } else if (card.type === 'breakdown') {
+      const series = resolve([(card.group || 'exp') + ':*']);
+      const items = series.map(s => ({ name: s.name, value: d3.sum(rows, r => s.get(r) || 0) })).filter(x => x.value > 0).sort((a, b) => b.value - a.value);
+      const total = d3.sum(items, x => x.value) || 1;
+      items.forEach(x => { x.share = x.value / total; });
+      if (!items.length) body.push(empty('Chưa có số liệu trong kỳ này.'));
+      else {
+        const host = h('div', { class: 'bars' });
+        body.push(host);
+        ctx.draws.push(() => Charts.breakdown(host, items, C[card.group === 'rev' ? 0 : 1]));
+      }
+    } else if (card.type === 'table') {
+      body.push(h('div', { class: 'table-wrap' }, plTable(rows, ctx.notes)));
+    }
+    return h('div', { class: 'card' + (card.width === 'full' ? ' wide' : ''), id: 'card-' + card.id, 'data-type': card.type },
+      h('div', { class: 'card-head' }, h('h2', null, card.title || CARD_TYPES[card.type]), editBtn),
+      card.note ? h('p', { class: 'note' }, card.note) : null,
+      body);
+  }
+
+  function plTable(rows, notes) {
+    const used = new Set(rows.flatMap(r => Object.keys(r.exp).map(Number)));
+    const costCols = S.categories.filter(c => used.has(c.id));
+    return h('table', { class: 't pl-table' },
+      h('thead', null, h('tr', null, h('th', null, 'Tháng'), h('th', null, 'Doanh thu'), costCols.map(c => h('th', null, c.name)),
+        h('th', { class: 'sum' }, 'Tổng chi phí'), h('th', null, 'Lợi nhuận'), h('th', null, 'Biên LN'), notes ? h('th', null, 'Ghi chú') : null)),
+      h('tbody', null, rows.slice().reverse().map(r => h('tr', notes ? {
+        class: 'click' + (S.noteMonth === r.month ? ' sel' : ''), tabindex: '0', title: 'Xem ghi chú tháng này', 'data-month': r.month,
+        onclick: () => notes.open(r.month), onkeydown: e => { if (e.key === 'Enter') notes.open(r.month); }
+      } : { 'data-month': r.month },
+      h('td', null, F.mLong(r.month)), h('td', null, F.tr(r.doanh_thu)), costCols.map(c => h('td', null, r.exp[c.id] != null ? F.tr(r.exp[c.id]) : '–')),
+      h('td', { class: 'sum' }, F.tr(r.tong_chi_phi)), h('td', { class: r.loi_nhuan < 0 ? 'is-bad' : '' }, F.tr(r.loi_nhuan)), h('td', null, F.pct(r.bien_ln)),
+      notes ? h('td', null, r.notes ? r.notes + ' ✎' : '') : null))));
+  }
 
   // Ghi chú theo tháng: ai đã được duyệt cũng viết được; xóa ghi chú của mình, admin xóa mọi ghi chú.
-  function notesCard(all) {
+  function notesCard(all, cardCfg) {
+    const c = cardCfg || {};
     const months = [...new Set(all.map(r => r.month).concat(S.notes.map(n => n.month)))].sort().reverse();
     if (!S.noteMonth || !months.includes(S.noteMonth)) S.noteMonth = months[0];
-    const card = h('div', { class: 'card wide', id: 'ghi-chu' });
+    const card = h('div', { class: 'card wide', id: 'card-' + (c.id || 'ghi-chu'), 'data-type': 'notes' });
+    let edit = null;
     function draw() {
       const m = S.noteMonth;
       const sel = h('select', { id: 'note-month', 'aria-label': 'Tháng', onchange: e => { S.noteMonth = e.target.value; draw(); markRow(); } },
@@ -328,8 +462,9 @@
       const list = S.notes.filter(n => n.month === m).sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
       const ta = h('textarea', { id: 'note-text', placeholder: 'Ví dụ: chi phí nhân sự tăng do thưởng Tết…', maxlength: 4000, required: true });
       const add = h('button', { class: 'btn primary', type: 'submit' }, 'Thêm ghi chú');
-      card.replaceChildren(
-        h('div', { class: 'card-head' }, h('h2', null, 'Ghi chú theo tháng'), sel),
+      card.replaceChildren(...[
+        h('div', { class: 'card-head' }, h('h2', null, c.title || 'Ghi chú theo tháng'), h('div', { class: 'row' }, sel, edit)),
+        c.note ? h('p', { class: 'note' }, c.note) : null,
         list.length ? h('div', { class: 'notes' }, list.map(n => h('div', { class: 'note-item' },
           h('p', null, n.content),
           h('div', { class: 'note-meta' },
@@ -344,16 +479,181 @@
             const ok = await run(add, () => api.addNote(m, text));
             if (ok) { toast('Đã thêm ghi chú.'); await reload(); }
           }
-        }, h('label', { class: 'f' }, 'Ghi chú mới cho ' + F.mLong(m), ta), h('div', { class: 'row' }, add)));
+        }, h('label', { class: 'f' }, 'Ghi chú mới cho ' + F.mLong(m), ta), h('div', { class: 'row' }, add))].filter(Boolean));
     }
     function markRow() {
-      document.querySelectorAll('#bang tbody tr').forEach((tr, i, arr) => tr.classList.toggle('sel', tr.firstChild.textContent === F.mLong(S.noteMonth)));
+      document.querySelectorAll('.pl-table tbody tr').forEach(tr => tr.classList.toggle('sel', tr.dataset.month === S.noteMonth));
     }
     draw();
     return {
       card,
+      setEdit(btn) { edit = btn; draw(); },
       open(m) { S.noteMonth = m; draw(); markRow(); card.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); card.querySelector('textarea').focus({ preventScroll: true }); }
     };
+  }
+
+  // ------------------------------------------------------------------
+  // Tùy biến dashboard (admin): tiêu đề, ô chỉ số, biểu đồ. Sửa trên bản nháp, bấm Lưu mới áp dụng cho mọi người.
+  // ------------------------------------------------------------------
+  function viewCustomize() {
+    if (!S.custom) S.custom = { draft: clone(dashConfig()), editId: null };
+    const D = S.custom.draft;
+    const saved = JSON.stringify(D) === JSON.stringify(dashConfig());
+    const status = h('span', { class: 'chip ' + (saved ? 'viewer' : 'pending') }, saved ? 'Đã lưu' : 'Có thay đổi chưa lưu');
+    const markDirty = () => { status.className = 'chip pending'; status.textContent = 'Có thay đổi chưa lưu'; };
+
+    const saveBtn = h('button', { class: 'btn primary', type: 'button' }, 'Lưu thay đổi');
+    saveBtn.addEventListener('click', async () => {
+      const ok = await run(saveBtn, async () => { S.dashboard = await api.saveDashboard(D); });
+      if (ok) { S.custom.draft = clone(S.dashboard); toast('Đã lưu. Mọi người sẽ thấy dashboard mới.'); render(); }
+    });
+    const head = h('div', { class: 'page-head' },
+      h('div', null, h('h1', null, 'Tùy biến dashboard'),
+        h('p', { class: 'lead' }, 'Đổi tiêu đề, ô chỉ số và từng biểu đồ. Thay đổi chỉ áp dụng cho mọi người sau khi bấm "Lưu thay đổi".')),
+      h('div', { class: 'row' }, status,
+        h('a', { class: 'btn', href: '#/' }, 'Xem dashboard'),
+        h('button', { class: 'btn', type: 'button', onclick: () => { S.custom = { draft: clone(dashConfig()), editId: null }; toast('Đã bỏ các thay đổi chưa lưu.'); render(); } }, 'Bỏ thay đổi'),
+        confirmBtn('Khôi phục mặc định', async () => {
+          S.dashboard = await api.resetDashboard();
+          S.custom = { draft: clone(DEFAULT_DASH), editId: null };
+          toast('Đã khôi phục dashboard mặc định.'); render();
+        }, ''),
+        saveBtn));
+
+    // Tiêu đề trang
+    const titleIn = h('input', { type: 'text', id: 'cfg-title', maxlength: 80, value: D.title || '' });
+    titleIn.addEventListener('input', () => { D.title = titleIn.value; markDirty(); });
+    const pageCard = h('div', { class: 'card' }, h('h2', null, 'Tiêu đề trang'), h('label', { class: 'f' }, 'Hiện ở đầu trang Tổng quan', titleIn));
+
+    // Ô chỉ số
+    const choices = metricChoices({ pct: true });
+    const tileRows = D.tiles.map((t, i) => {
+      const lab = h('input', { type: 'text', id: 'tile-label-' + i, maxlength: 60, value: t.label, 'aria-label': 'Tên ô' });
+      lab.addEventListener('input', () => { t.label = lab.value; markDirty(); });
+      const met = h('select', { id: 'tile-metric-' + i, 'aria-label': 'Chỉ số' }, choices.map(c => h('option', { value: c.key }, c.name)));
+      met.value = t.metric;
+      met.addEventListener('change', () => { const was = (metricInfo(t.metric) || {}).name; t.metric = met.value; if (!t.label || t.label === was) t.label = (metricInfo(met.value) || {}).name || ''; render(); });
+      return h('tr', null, h('td', null, lab), h('td', { class: 'l' }, met), h('td', { class: 'actions' }, moveBtns(D.tiles, i), h('button', { class: 'btn sm danger', type: 'button', onclick: () => { D.tiles.splice(i, 1); render(); } }, 'Xóa')));
+    });
+    const tileCardEl = h('div', { class: 'card' },
+      h('div', { class: 'card-head' }, h('h2', null, 'Ô chỉ số'),
+        h('button', { class: 'btn sm', type: 'button', disabled: D.tiles.length >= 8, onclick: () => { D.tiles.push({ metric: 'doanh_thu', label: 'Doanh thu' }); render(); } }, '+ Thêm ô')),
+      h('p', { class: 'note' }, 'Mỗi ô hiện giá trị tháng gần nhất và thay đổi so với tháng trước. Tối đa 8 ô.'),
+      D.tiles.length ? h('div', { class: 'table-wrap' }, h('table', { class: 't' },
+        h('thead', null, h('tr', null, h('th', null, 'Tên hiển thị'), h('th', { class: 'l' }, 'Chỉ số'), h('th', null, ''))), h('tbody', null, tileRows)))
+        : h('p', { class: 'note' }, 'Chưa có ô chỉ số nào.'));
+
+    // Danh sách biểu đồ
+    const has = type => D.cards.some(c => c.type === type);
+    const addType = h('select', { id: 'add-type', 'aria-label': 'Loại biểu đồ mới' },
+      Object.entries(CARD_TYPES).map(([k, v]) => h('option', { value: k, disabled: (k === 'table' || k === 'notes') && has(k) }, v)));
+    const addBtn = h('button', { class: 'btn primary', type: 'button', disabled: D.cards.length >= 24 }, '+ Thêm biểu đồ');
+    addBtn.addEventListener('click', () => {
+      const type = addType.value;
+      if ((type === 'table' || type === 'notes') && has(type)) return toast('Dashboard chỉ có một ' + CARD_TYPES[type].toLowerCase() + '.', true);
+      const c = { id: 'c' + Date.now().toString(36), type, title: CARD_TYPES[type], note: '', metrics: type === 'columns' || type === 'line' ? ['doanh_thu'] : [], lines: [], group: type === 'stacked' || type === 'breakdown' ? 'exp' : null, width: 'full', hidden: false };
+      D.cards.push(c); S.custom.editId = c.id; render();
+      setTimeout(() => { const e = document.getElementById('editor-card'); if (e) e.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50);
+    });
+    const cardRows = D.cards.map((c, i) => {
+      const vis = h('input', { type: 'checkbox', id: 'vis-' + c.id, checked: !c.hidden, 'aria-label': 'Hiện biểu đồ' });
+      vis.addEventListener('change', () => { c.hidden = !vis.checked; render(); });
+      return h('tr', { class: S.custom.editId === c.id ? 'sel' : '' },
+        h('td', { class: 'l' }, c.title || CARD_TYPES[c.type]), h('td', { class: 'l' }, CARD_TYPES[c.type]), h('td', { class: 'l' }, c.width === 'full' ? 'Cả hàng' : 'Nửa hàng'),
+        h('td', { class: 'l' }, vis),
+        h('td', { class: 'actions' }, moveBtns(D.cards, i),
+          h('button', { class: 'btn sm', type: 'button', onclick: () => { S.custom.editId = c.id; render(); setTimeout(() => { const e = document.getElementById('editor-card'); if (e) e.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50); } }, 'Sửa'),
+          h('button', { class: 'btn sm danger', type: 'button', onclick: () => { D.cards.splice(i, 1); if (S.custom.editId === c.id) S.custom.editId = null; render(); } }, 'Xóa')));
+    });
+    const listCard = h('div', { class: 'card' },
+      h('div', { class: 'card-head' }, h('h2', null, 'Biểu đồ'), h('div', { class: 'row' }, addType, addBtn)),
+      h('p', { class: 'note' }, 'Thứ tự trong bảng là thứ tự trên dashboard. Bỏ chọn "Hiện" để ẩn mà không xóa.'),
+      h('div', { class: 'table-wrap' }, h('table', { class: 't' },
+        h('thead', null, h('tr', null, h('th', null, 'Tiêu đề'), h('th', { class: 'l' }, 'Loại'), h('th', { class: 'l' }, 'Độ rộng'), h('th', { class: 'l' }, 'Hiện'), h('th', null, ''))),
+        h('tbody', null, cardRows.length ? cardRows : h('tr', null, h('td', { colspan: 5, class: 'muted' }, 'Chưa có biểu đồ nào.'))))));
+
+    const editing = D.cards.find(c => c.id === S.custom.editId);
+    return h('div', { class: 'stack', style: 'gap:22px' }, head,
+      h('div', { class: 'grid' }, pageCard, tileCardEl),
+      listCard,
+      editing ? cardEditor(editing, markDirty) : null);
+  }
+
+  function moveBtns(list, i) {
+    const mv = d => () => { const j = i + d; if (j < 0 || j >= list.length) return; [list[i], list[j]] = [list[j], list[i]]; render(); };
+    return [h('button', { class: 'btn sm', type: 'button', title: 'Lên', 'aria-label': 'Lên', disabled: i === 0, onclick: mv(-1) }, '↑'),
+      h('button', { class: 'btn sm', type: 'button', title: 'Xuống', 'aria-label': 'Xuống', disabled: i === list.length - 1, onclick: mv(1) }, '↓')];
+  }
+
+  // Khung sửa một biểu đồ, có xem trước với số liệu 12 tháng gần nhất.
+  function cardEditor(c, markDirty) {
+    const previewHost = h('div', { class: 'grid preview' });
+    const drawPreview = () => {
+      const all = buildModel();
+      if (!all.length) { previewHost.replaceChildren(h('p', { class: 'note' }, 'Chưa có số liệu để xem trước.')); return; }
+      const rows = periodRows(all, '12m');
+      const ctx = { all, rows, months: rows.map(r => r.month), draws: [], preview: true };
+      previewHost.replaceChildren(renderCard(c, ctx));
+      drawAll(ctx.draws);
+    };
+    const title = h('input', { type: 'text', id: 'ed-title', maxlength: 120, value: c.title });
+    title.addEventListener('input', () => { c.title = title.value; markDirty(); drawPreview(); });
+    const note = h('textarea', { id: 'ed-note', maxlength: 400, rows: 2 }, c.note);
+    note.value = c.note || '';
+    note.addEventListener('input', () => { c.note = note.value; markDirty(); drawPreview(); });
+    const type = h('select', { id: 'ed-type' }, Object.entries(CARD_TYPES).map(([k, v]) => h('option', { value: k, disabled: (k === 'table' || k === 'notes') && k !== c.type && S.custom.draft.cards.some(x => x.type === k) }, v)));
+    type.value = c.type;
+    type.addEventListener('change', () => {
+      c.type = type.value;
+      if ((c.type === 'stacked' || c.type === 'breakdown') && !c.group) c.group = 'exp';
+      if ((c.type === 'columns' || c.type === 'line') && !c.metrics.length) c.metrics = ['doanh_thu'];
+      if (c.type === 'columns') c.metrics = c.metrics.filter(k => k !== 'bien_ln');
+      render();
+    });
+    const width = h('select', { id: 'ed-width' }, h('option', { value: 'full' }, 'Cả hàng'), h('option', { value: 'half' }, 'Nửa hàng'));
+    width.value = c.width;
+    width.addEventListener('change', () => { c.width = width.value; render(); });
+
+    const checks = (field, opts, note2) => {
+      const box = h('div', { class: 'check-grid' }, opts.map(o => {
+        const cb = h('input', { type: 'checkbox', id: `ed-${field}-${o.key.replace(/\W/g, '_')}`, checked: c[field].includes(o.key) });
+        cb.addEventListener('change', () => {
+          let arr = c[field].filter(k => k !== o.key);
+          if (cb.checked) {
+            arr.push(o.key);
+            if (c.type === 'line') arr = o.key === 'bien_ln' ? ['bien_ln'] : arr.filter(k => k !== 'bien_ln');
+            if (field === 'metrics' && c.type === 'columns') c.lines = c.lines.filter(k => k !== o.key);
+            if (field === 'lines') c.metrics = c.metrics.filter(k => k !== o.key);
+          }
+          c[field] = arr; render();
+        });
+        return h('label', { class: 'check' }, cb, o.name);
+      }));
+      return [note2 ? h('p', { class: 'note' }, note2) : null, box];
+    };
+    let data = null;
+    if (c.type === 'columns') {
+      data = [h('p', { class: 'section-label' }, 'Dữ liệu dạng cột'), checks('metrics', metricChoices({ groups: true })),
+        h('p', { class: 'section-label' }, 'Dữ liệu dạng đường (vẽ chồng lên cột)'), checks('lines', metricChoices({}))];
+    } else if (c.type === 'line') {
+      data = [h('p', { class: 'section-label' }, 'Dữ liệu'), checks('metrics', metricChoices({ pct: true, groups: true }), 'Biên lợi nhuận (%) khác đơn vị với số tiền nên được vẽ riêng: chọn nó sẽ bỏ các dữ liệu khác.')];
+    } else if (c.type === 'stacked' || c.type === 'breakdown') {
+      const g = h('select', { id: 'ed-group' }, Object.entries(GROUPS).map(([k, v]) => h('option', { value: k }, v)));
+      g.value = c.group || 'exp';
+      g.addEventListener('change', () => { c.group = g.value; render(); });
+      data = [h('label', { class: 'f' }, 'Dữ liệu', g)];
+    } else {
+      data = [h('p', { class: 'note' }, c.type === 'table' ? 'Bảng lãi lỗ luôn có: tháng, doanh thu, từng khoản chi phí, tổng chi phí, lợi nhuận, biên.' : 'Khung ghi chú cho phép mọi người viết ghi chú theo tháng.')];
+    }
+    const el = h('div', { class: 'card stack', id: 'editor-card' },
+      h('div', { class: 'card-head' }, h('h2', null, 'Sửa biểu đồ'), h('button', { class: 'btn sm', type: 'button', onclick: () => { S.custom.editId = null; render(); } }, 'Đóng')),
+      h('div', { class: 'form-grid' }, h('label', { class: 'f' }, 'Tiêu đề', title), h('label', { class: 'f' }, 'Loại biểu đồ', type), h('label', { class: 'f' }, 'Độ rộng', width)),
+      h('label', { class: 'f' }, 'Mô tả (hiện dưới tiêu đề, để trống nếu không cần)', note),
+      data,
+      h('p', { class: 'section-label' }, 'Xem trước (12 tháng gần nhất)'),
+      previewHost);
+    S.redraw = drawPreview;
+    return el;
   }
 
   // ------------------------------------------------------------------

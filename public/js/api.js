@@ -47,6 +47,9 @@
     addNote: (month, content) => call('POST', 'notes', { month, content }),
     deleteNote: id => call('DELETE', 'notes/' + id),
 
+    saveDashboard: cfg => call('PUT', 'settings/dashboard', cfg).then(r => r.dashboard),
+    resetDashboard: () => call('PUT', 'settings/dashboard', { reset: true }).then(r => r.dashboard),
+
     listUsers: () => call('GET', 'users'),
     createUser: u => call('POST', 'users', u),
     updateUser: (id, patch) => call('PUT', 'users/' + id, patch)
@@ -56,7 +59,7 @@
   // Demo (localStorage). Không kiểm tra mật khẩu: chỉ để xem thử giao diện.
   // ------------------------------------------------------------------
   function demoApi() {
-    const KEY = 'bc-dtcp-demo-v2';
+    const KEY = 'bc-dtcp-demo-v3';
     let db = load();
     function load() {
       try { const s = localStorage.getItem(KEY); if (s) return JSON.parse(s); } catch (e) { /* bỏ qua */ }
@@ -112,7 +115,7 @@
       async loadData() {
         need();
         const sort = l => clone(l).sort((a, b) => a.sort_order - b.sort_order || a.id - b.id);
-        return { channels: sort(db.channels), categories: sort(db.categories), revenue: clone(db.revenue), expenses: clone(db.expenses), notes: clone(db.notes) };
+        return { channels: sort(db.channels), categories: sort(db.categories), revenue: clone(db.revenue), expenses: clone(db.expenses), notes: clone(db.notes), dashboard: db.dashboard ? clone(db.dashboard) : null };
       },
       async saveChannel(c) { need('admin'); saveCat(db.channels, c); },
       async deleteChannel(id) {
@@ -149,6 +152,9 @@
         if (n && n.author_id !== u.id && u.role !== 'admin') throw new Error('Bạn chỉ xóa được ghi chú của mình.');
         db.notes = db.notes.filter(x => x.id !== id); save();
       },
+
+      async saveDashboard(cfg) { need('admin'); await tick(); db.dashboard = clone(cfg); save(); return clone(cfg); },
+      async resetDashboard() { need('admin'); db.dashboard = null; save(); return null; },
 
       async listUsers() { need('admin'); return clone(db.users); },
       async createUser(u) {

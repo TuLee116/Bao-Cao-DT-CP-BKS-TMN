@@ -200,3 +200,13 @@ input.invalid { border-color: var(--bad); }
 @keyframes pulse { 50% { opacity: .55; } }
 @media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
 .foot { color: var(--muted); font-size: var(--cap); padding-bottom: 28px; }
+
+/* ---------- Tùy biến dashboard ---------- */
+.card-head h2 { min-width: 0; }
+.card-edit { color: var(--muted); }
+.card-edit:hover { color: var(--fg); }
+.check-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr)); gap: 6px 16px; }
+.check { display: flex; align-items: center; gap: 8px; font-size: .875rem; padding: 4px 0; cursor: pointer; }
+.check input { width: 16px; height: 16px; accent-color: var(--teal); flex: none; }
+.preview { padding: 14px; border: 1px dashed var(--line); border-radius: var(--radius); background: var(--bg); }
+.empty-chart { padding: 28px 0; text-align: center; }

@@ -65,4 +65,12 @@ create table if not exists month_notes (
   created_at   timestamptz not null default now()
 );
 create index if not exists month_notes_month_idx on month_notes (month);
+
+-- Cấu hình dùng chung (ví dụ bố cục dashboard do admin tùy biến), lưu dạng JSON.
+create table if not exists app_settings (
+  key         text primary key,
+  value       jsonb not null,
+  updated_at  timestamptz not null default now(),
+  updated_by  integer references users(id) on delete set null
+);
 `;

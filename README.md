@@ -8,6 +8,7 @@ Web theo dõi doanh thu, chi phí và lợi nhuận theo tháng, có đăng nh�
 - **Danh mục** (admin): thêm, đổi tên, sắp xếp, ẩn kênh bán và khoản mục chi phí.
 - **Nhập từ file** (admin): tải lên Excel/CSV nhiều tháng, xem trước rồi mới ghi; tải file mẫu, xuất toàn bộ số liệu ra Excel.
 - **Người dùng** (admin): tạo tài khoản, đổi vai trò, khóa/mở khóa, đặt lại mật khẩu.
+- **Tùy biến** (admin): đổi tiêu đề trang, ô chỉ số và từng biểu đồ (tiêu đề, mô tả, loại biểu đồ, dữ liệu, độ rộng, ẩn/hiện, thứ tự), thêm/xóa biểu đồ, có xem trước; lưu trên máy chủ nên mọi người thấy giống nhau, có nút khôi phục mặc định.
 
 Đơn vị số tiền: **triệu đồng**. Lợi nhuận = doanh thu − tổng chi phí (trước thuế TNDN).
 

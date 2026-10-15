@@ -172,14 +172,72 @@ api.post('/me/password', need('member'), wrap(async (req, res) => {
 // Số liệu
 // ---------------------------------------------------------------------
 api.get('/data', need('member'), wrap(async (req, res) => {
-  const [ch, ca, rv, ex, no] = await Promise.all([
+  const [ch, ca, rv, ex, no, dash] = await Promise.all([
     query('select id, name, sort_order, active from channels order by sort_order, id'),
     query('select id, name, sort_order, active from expense_categories order by sort_order, id'),
     query('select month, channel_id, amount from revenue_entries order by month, channel_id'),
     query('select month, category_id, amount from expense_entries order by month, category_id'),
-    query('select id, month, content, author_id, author_name, created_at from month_notes order by created_at')
+    query('select id, month, content, author_id, author_name, created_at from month_notes order by created_at'),
+    query(`select value from app_settings where key = 'dashboard'`)
   ]);
-  res.json({ channels: ch.rows, categories: ca.rows, revenue: rv.rows, expenses: ex.rows, notes: no.rows });
+  res.json({ channels: ch.rows, categories: ca.rows, revenue: rv.rows, expenses: ex.rows, notes: no.rows, dashboard: (dash.rows[0] || {}).value || null });
+}));
+
+// ---------------------------------------------------------------------
+// Bố cục dashboard (admin tùy biến). Chỉ nhận đúng cấu trúc đã biết.
+// ---------------------------------------------------------------------
+const METRIC = /^(doanh_thu|tong_chi_phi|loi_nhuan|bien_ln|rev:(\d{1,9}|\*)|exp:(\d{1,9}|\*))$/;
+const CARD_TYPES = ['columns', 'line', 'stacked', 'breakdown', 'table', 'notes'];
+function dashboardConfig(v) {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) fail(400, 'Cấu hình dashboard không hợp lệ.');
+  const text = (s, field, max) => str(typeof s === 'string' ? s : '', field, 0, max);
+  const metrics = (a, max) => {
+    if (a == null) return [];
+    if (!Array.isArray(a) || a.length > max || !a.every(m => typeof m === 'string' && METRIC.test(m))) fail(400, 'Danh sách dữ liệu của biểu đồ không hợp lệ.');
+    return [...new Set(a)];
+  };
+  const tiles = Array.isArray(v.tiles) ? v.tiles : [];
+  const cards = Array.isArray(v.cards) ? v.cards : [];
+  if (tiles.length > 8) fail(400, 'Tối đa 8 ô chỉ số.');
+  if (cards.length > 24) fail(400, 'Tối đa 24 biểu đồ.');
+  const ids = new Set();
+  return {
+    title: text(v.title, 'Tiêu đề trang', 80),
+    tiles: tiles.map(x => {
+      const m = metrics([x && x.metric], 1)[0];
+      if (!m || m.endsWith('*')) fail(400, 'Ô chỉ số cần chọn một chỉ số cụ thể.');
+      return { metric: m, label: text(x.label, 'Tên ô chỉ số', 60) };
+    }),
+    cards: cards.map(c => {
+      if (!c || typeof c !== 'object') fail(400, 'Biểu đồ không hợp lệ.');
+      const id = String(c.id || '');
+      if (!/^[A-Za-z0-9_-]{1,24}$/.test(id) || ids.has(id)) fail(400, 'Mã biểu đồ không hợp lệ.');
+      ids.add(id);
+      if (!CARD_TYPES.includes(c.type)) fail(400, 'Loại biểu đồ không hợp lệ.');
+      return {
+        id, type: c.type,
+        title: text(c.title, 'Tiêu đề biểu đồ', 120),
+        note: text(c.note, 'Mô tả biểu đồ', 400),
+        metrics: metrics(c.metrics, 12),
+        lines: metrics(c.lines, 6),
+        group: c.group === 'rev' || c.group === 'exp' ? c.group : null,
+        width: c.width === 'half' ? 'half' : 'full',
+        hidden: c.hidden === true
+      };
+    })
+  };
+}
+
+api.put('/settings/dashboard', need('admin'), wrap(async (req, res) => {
+  if (req.body && req.body.reset === true) {
+    await query(`delete from app_settings where key = 'dashboard'`);
+    return res.json({ dashboard: null });
+  }
+  const value = dashboardConfig(req.body);
+  if (JSON.stringify(value).length > 60000) fail(400, 'Cấu hình dashboard quá lớn.');
+  await query(`insert into app_settings (key, value, updated_by) values ('dashboard', $1, $2)
+    on conflict (key) do update set value = excluded.value, updated_at = now(), updated_by = excluded.updated_by`, [JSON.stringify(value), req.user.id]);
+  res.json({ dashboard: value });
 }));
 
 // Danh mục: kênh bán và khoản mục chi phí dùng chung một bộ route.

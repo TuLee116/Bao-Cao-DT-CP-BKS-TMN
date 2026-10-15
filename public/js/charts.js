@@ -13,6 +13,8 @@
     vnd: v => (!isFinite(v) ? '—' : Math.abs(v) >= 1e9 ? loc.format(',.2f')(v / 1e9) + ' tỷ' : Math.abs(v) >= 1e6 ? loc.format(',.0f')(v / 1e6) + ' tr' : loc.format(',.0f')(v) + ' đ'),
     trieu: v => (isFinite(v) ? loc.format(',.0f')(v / 1e6) : '—'),
     tyAxis: v => loc.format(',~f')(v / 1e9),
+    // Số tỷ gọn để ghi trên đầu cột: 113,7 · 9,14 · 0,85
+    tyShort: v => (!isFinite(v) ? '' : loc.format(Math.abs(v) >= 1e11 ? ',.0f' : Math.abs(v) >= 1e10 ? ',.1f' : ',.2f')(v / 1e9)),
     svnd: v => (isFinite(v) ? (v > 0 ? '+' : v < 0 ? '−' : '') + F.vnd(Math.abs(v)) : '—'),
     int: loc.format(','),
     date: d => (d ? d.slice(8, 10) + '/' + d.slice(5, 7) + '/' + d.slice(0, 4) : ''),
@@ -296,6 +298,80 @@
       .on('click', (ev, c) => { if (o.onPick) o.onPick(c.key); });
   }
 
+  // Cột nhóm theo hạng mục (ví dụ các thời điểm): mỗi nhóm có một cột cho từng series, cùng một trục.
+  // cats: [{key, label, sub, values: [số theo từng series], extra}]; series: [{name, color}].
+  // Nhãn giá trị ghi trên đầu cột khi đủ chỗ; dòng sub (ví dụ %CPTT/DT) ghi dưới tên nhóm thay cho trục thứ hai.
+  function groupCols(host, cats, series, o) {
+    o = o || {};
+    const tip = tipFor(host);
+    const n = Math.max(1, series.length), gap = 2, hasSub = cats.some(c => c.sub);
+    const h0 = o.height || 300;
+    let { svg, w } = newSvg(host, h0);
+    // Tên nhóm: xuống dòng theo từ khi hẹp (tối đa 2 dòng), quá dài thì cắt có dấu …
+    const avail = Math.max(40, (w - 60) / Math.max(1, cats.length) - 6);
+    const probeC = svg.append('text').attr('class', 'ax col-cat');
+    const tw = t => { probeC.text(t); return probeC.node().getComputedTextLength(); };
+    const clip = t => { if (tw(t) <= avail) return t; let a = t; while (a.length > 1 && tw(a + '…') > avail) a = a.slice(0, -1); return a + '…'; };
+    const wrapLab = t => {
+      if (tw(t) <= avail) return [t];
+      const ws = t.split(' ');
+      for (let i = ws.length - 1; i > 0; i--) { const a = ws.slice(0, i).join(' '); if (tw(a) <= avail) return [a, clip(ws.slice(i).join(' '))]; }
+      return [clip(t)];
+    };
+    const catLines = cats.map(c => wrapLab(c.label));
+    const subLines = cats.map(c => (c.sub ? c.sub.split(' · ').reduce((acc, part) => { const last = acc[acc.length - 1]; if (last != null && tw(last + ' · ' + part) <= avail) acc[acc.length - 1] = last + ' · ' + part; else acc.push(part); return acc; }, []).map(clip) : []));
+    probeC.remove();
+    const nCat = Math.max(1, ...catLines.map(x => x.length)), nSub = hasSub ? Math.max(...subLines.map(x => x.length)) : 0;
+    const extraH = (nCat - 1) * 16 + Math.max(0, nSub - 1) * 14;
+    const h = h0 + extraH, mt = 22, mr = 8, mb = 28 + (nCat - 1) * 16 + nSub * 15;
+    if (extraH) svg.attr('height', h).attr('viewBox', `0 0 ${w} ${h}`);
+    const vals = cats.flatMap(c => c.values.filter(finite));
+    const y = d3.scaleLinear([Math.min(0, d3.min(vals) ?? 0), Math.max(0, (d3.max(vals) ?? 1) * 1.04) || 1], [h - mb, mt]).nice();
+    const ml = yAxis(svg, y, w, mr, o.axisFmt || F.tyAxis, 5);
+    const keys = cats.map(c => c.key);
+    const x0 = d3.scaleBand(keys, [ml, w - mr]).paddingInner(0.28).paddingOuter(0.14);
+    const bw = Math.max(2, Math.min(56, (x0.bandwidth() - gap * (n - 1)) / n));
+    const off = (x0.bandwidth() - (bw * n + gap * (n - 1))) / 2;
+    const fmt = o.fmt || F.vnd, lab = o.labelFmt || fmt;
+    const hl = svg.append('rect').attr('y', mt - 18).attr('height', h - mb - mt + 18).attr('rx', 6).style('fill', 'var(--chart-grid)').attr('opacity', 0);
+    const g = svg.append('g');
+    // Đo nhãn để chỉ ghi khi vừa độ rộng cột (tránh chữ đè nhau)
+    const probe = svg.append('text').attr('class', 'ptl col-val');
+    const fits = s => { probe.text(s); return probe.node().getComputedTextLength() <= bw + gap + 2; };
+    const showLab = o.labels !== false && cats.every(c => c.values.every(v => !finite(v) || fits(lab(v))));
+    probe.remove();
+    cats.forEach(c => series.forEach((s, i) => {
+      const v = c.values[i];
+      if (!finite(v)) return;
+      const x = x0(c.key) + off + i * (bw + gap), top = y(Math.max(0, v)), bot = y(Math.min(0, v));
+      const r = Math.min(4, bw / 2, Math.max(0, bot - top));
+      // Bo tròn 4px ở đầu cột, chân cột vuông trên đường gốc
+      const hh = Math.max(0, bot - top);
+      g.append('path').attr('d', v >= 0
+        ? `M${x},${bot}V${top + r}Q${x},${top} ${x + r},${top}H${x + bw - r}Q${x + bw},${top} ${x + bw},${top + r}V${bot}Z`
+        : `M${x},${top}V${bot - r}Q${x},${bot} ${x + r},${bot}H${x + bw - r}Q${x + bw},${bot} ${x + bw},${bot - r}V${top}Z`)
+        .style('fill', s.color).attr('data-h', hh);
+      if (showLab && v !== 0) g.append('text').attr('class', 'ptl col-val').attr('x', x + bw / 2).attr('y', v >= 0 ? top - 5 : bot + 12).attr('text-anchor', 'middle').text(lab(v));
+    }));
+    baseline(svg, ml, w - mr, y(0));
+    const ax = svg.append('g');
+    cats.forEach(c => {
+      const cx = x0(c.key) + x0.bandwidth() / 2;
+      const i = cats.indexOf(c);
+      catLines[i].forEach((t, k) => ax.append('text').attr('class', 'ax col-cat').attr('x', cx).attr('y', h - mb + 17 + k * 16).attr('text-anchor', 'middle').text(t));
+      subLines[i].forEach((t, k) => ax.append('text').attr('class', 'ax col-sub').attr('x', cx).attr('y', h - mb + 17 + nCat * 16 + k * 14).attr('text-anchor', 'middle').text(t));
+    });
+    svg.append('g').selectAll('rect').data(cats).join('rect')
+      .attr('x', c => x0(c.key) - (x0.step() - x0.bandwidth()) / 2).attr('width', x0.step()).attr('y', 0).attr('height', h)
+      .style('fill', 'transparent').style('cursor', o.onPick ? 'pointer' : 'default')
+      .on('pointerenter pointermove', (ev, c) => {
+        hl.attr('x', x0(c.key) - 6).attr('width', x0.bandwidth() + 12).attr('opacity', 0.7);
+        tip.show(ev, c.label, series.map((s, j) => [s.color, s.name, finite(c.values[j]) ? fmt(c.values[j]) : '–']).concat(c.extra || []));
+      })
+      .on('pointerleave', () => { hl.attr('opacity', 0); tip.hide(); })
+      .on('click', (ev, c) => { if (o.onPick) o.onPick(c.key); });
+  }
+
   window.F = F;
-  window.Charts = { C, columns, lines, stacked, breakdown, hbars };
+  window.Charts = { C, columns, lines, stacked, breakdown, hbars, groupCols };
 })();

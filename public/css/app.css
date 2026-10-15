@@ -275,3 +275,7 @@ input.invalid { border-color: var(--bad); }
 .metric-pick .tabs { flex-wrap: wrap; border-bottom: 0; }
 .metric-pick .tabs button { border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; margin: 0; }
 .metric-pick .tabs button.on { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+/* Biểu đồ cột nhóm */
+.col-val { font-size: .6875rem; font-weight: 600; }
+.ax.col-cat { fill: var(--fg); font-size: .8125rem; font-weight: 500; }
+.ax.col-sub { font-size: .6875rem; }

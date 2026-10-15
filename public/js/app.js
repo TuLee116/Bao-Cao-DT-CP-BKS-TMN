@@ -815,6 +815,8 @@
     return h('span', { class: 'sub ' + (good === null ? '' : good ? 'is-good' : 'is-bad') }, k === 'pct' ? F.pt(d) : (d > 0 ? '+' : '') + F.trieu(d));
   }
   const DET_METRICS = ['dt', 'cp', 'pct', 'hd', 'sl', 'tv'];
+  // Màu cố định theo chỉ số cho biểu đồ cột nhóm (thứ tự HĐ, DT, CP, SL/TV đã kiểm tra phân biệt được, kể cả người mù màu).
+  const DET_COLOR = { hd: C[2], dt: C[0], cp: C[1], sl: C[3], tv: C[3], pct: C[2] };
 
   function viewDetail() {
     if (!S.snapshots.length) return emptyData();
@@ -852,16 +854,27 @@
     const aggCols = ['count', 'hd', 'sl', 'dt', 'tv', 'cp', 'pct'].filter(k => k !== 'tv' || tot.tv || agg.some(a => a.tv)).filter(k => k !== 'sl' || tot.sl || agg.some(a => a.sl));
     const aggCell = (a, k) => (k === 'count' ? F.int(a.count) : fmtCell(k, a[k]));
     const host = h('div', { class: 'chart-hb' });
-    // Biểu đồ theo chỉ số đang chọn; doanh thu/chi phí vẽ cạnh nhau để so sánh.
-    const pair = m === 'dt' || m === 'cp';
-    const cSeries = pair ? [{ name: T('dt'), color: C[0] }, { name: T('cp'), color: C[1] }] : [{ name: T(m), color: METRIC_COLOR[m] }];
-    const draws = [() => Charts.hbars(host, agg.map(a => ({ key: a.stage, label: nameOf('stage', a.stage), values: pair ? [a.dt, a.cp] : [mval(a, m)], extra: [[null, T('count'), F.int(a.count)], [null, T('pct'), F.pct(a.pct)]] })),
-      cSeries, { fmt: m === 'pct' ? F.pct : F.vnd, axisFmt: m === 'pct' ? d3.format('.0%') : F.tyAxis, onPick: key => { S.filters.stage = key; render(); } })];
+    // Biểu đồ cột nhóm theo thời điểm: luôn có giá trị HĐ, doanh thu, chi phí (thêm sản lượng/tiền về khi chọn);
+    // %CPTT/DT ghi dưới tên thời điểm (không dùng trục thứ hai). Chọn %CPTT/DT thì vẽ riêng chỉ số đó.
+    const pair = m !== 'pct';
+    const cKeys = m === 'pct' ? ['pct'] : ['hd', 'dt', 'cp'].concat(['sl', 'tv'].includes(m) ? [m] : []);
+    const cSeries = cKeys.map(k => ({ name: T(k), color: DET_COLOR[k] }));
+    const lastRow = Object.assign({ stage: '__latest' }, tot);
+    const chartRows = agg.concat(agg.length > 1 || (agg[0] && agg[0].count !== items.length) ? [lastRow] : []);
+    const draws = [() => Charts.groupCols(host, chartRows.map(a => ({
+      key: a.stage, label: a === lastRow ? 'Mới nhất ' + F.dateShort(ls.report_date) : nameOf('stage', a.stage),
+      sub: m === 'pct' ? `${F.int(a.count)} HĐ` : `${T('pct')} ${F.pct(a.pct)} · ${F.int(a.count)} HĐ`,
+      values: cKeys.map(k => mval(a, k)),
+      extra: [[null, T('pct'), F.pct(a.pct)], [null, T('count'), F.int(a.count)]]
+    })), cSeries, {
+      fmt: m === 'pct' ? F.pct : F.vnd, labelFmt: m === 'pct' ? F.pct : F.tyShort, axisFmt: m === 'pct' ? d3.format('.0%') : F.tyAxis,
+      onPick: key => { if (key !== '__latest') { S.filters.stage = key; render(); } }
+    })];
     S.redraw = () => drawAll(draws);
-    const sumCard = h('div', { class: 'card wide' }, h('h2', null, `${pair ? T('dt') + ' & ' + lc(T('cp')) : T(m)} theo ${lc(T('stage'))}`), metricTabs(),
+    const sumCard = h('div', { class: 'card wide' }, h('h2', null, `${pair ? cKeys.map(T).join(', ') : T(m)} theo ${lc(T('stage'))}`), metricTabs(),
       h('p', { class: 'note' }, `${F.int(items.length)} ${lc(T('contract'))} đang lọc. Mỗi ${lc(T('stage'))} cộng số liệu của các hợp đồng đã qua ${lc(T('stage'))} đó (tại tháng cuối của ${lc(T('stage'))}). Dòng "Mới nhất" là mốc ${F.date(ls.report_date)}. Đơn vị: triệu đồng.`),
       h('div', { class: 'legend' }, cSeries.map(x => h('span', null, sw(x.color), x.name))),
-      h('div', { class: 'chart-box' }, host), h('p', { class: 'note axis-note' }, `Trục: ${m === 'pct' ? '%' : 'tỷ đồng'}. Bấm vào một ${lc(T('stage'))} để lọc các hợp đồng đang ở ${lc(T('stage'))} đó.`),
+      h('div', { class: 'chart-box' }, host), h('p', { class: 'note axis-note' }, `Trục và số trên cột: ${m === 'pct' ? '%' : 'tỷ đồng'}. Cột "Mới nhất" là tổng các hợp đồng tại mốc mới nhất. Bấm vào một ${lc(T('stage'))} để lọc các hợp đồng đang ở ${lc(T('stage'))} đó.`),
       h('div', { class: 'table-wrap' }, h('table', { class: 't' },
         h('thead', null, h('tr', null, h('th', null, T('stage')), aggCols.map(k => h('th', { class: k === m ? 'cur' : '' }, T(k))))),
         h('tbody', null, agg.map(a => h('tr', null, h('td', { class: 'l' }, nameOf('stage', a.stage)), aggCols.map(k => h('td', { class: (k === m ? 'cur' : '') + (k === 'pct' && a.pct > 1 ? ' is-bad' : '') }, aggCell(a, k)))))),
@@ -956,12 +969,14 @@
       .map(([k, t]) => ({ k, t, get: r => r[k], m: k }))
       .concat(groups.filter(gn => hs.some(r => gval(r, gn))).map(gn => ({ k: 'g:' + gn, t: gn, get: r => gval(r, gn), m: 'cp', sub: true })));
     const hostS = h('div', { class: 'chart-hb' });
-    if (st.length > 1) draws.push(() => Charts.hbars(hostS, st.map(g => ({ key: g.stage, label: nameOf('stage', g.stage), values: [g.last.dt, g.last.cp], extra: [[null, T('pct'), F.pct(g.last.pct)], [null, 'Mốc', stagePeriod(g)]] })),
-      [{ name: T('dt'), color: C[0] }, { name: T('cp'), color: C[1] }], { fmt: F.vnd, axisFmt: F.tyAxis }));
+    const sKeys = ['hd', 'dt', 'cp'].concat(hs.some(r => r.tv) ? ['tv'] : []);
+    const sSeries = sKeys.map(k => ({ name: T(k), color: DET_COLOR[k] }));
+    draws.push(() => Charts.groupCols(hostS, st.map(g => ({ key: g.stage, label: nameOf('stage', g.stage) + (g.stage === cur ? ' (hiện tại)' : ''), sub: `${T('pct')} ${F.pct(g.last.pct)}`,
+      values: sKeys.map(k => g.last[k]), extra: [[null, T('pct'), F.pct(g.last.pct)], [null, 'Mốc', stagePeriod(g)]] })), sSeries, { fmt: F.vnd, labelFmt: F.tyShort, axisFmt: F.tyAxis, height: 280 }));
     cards.push(h('div', { class: 'card wide' }, h('h2', null, `So sánh DT-CP theo ${lc(T('stage'))}`),
       h('p', { class: 'note' }, `Mỗi cột là số liệu ở tháng cuối cùng hợp đồng nằm ở ${lc(T('stage'))} đó; cột tô màu là ${lc(T('stage'))} hiện tại (= số liệu mới nhất). Dòng nhỏ là thay đổi so với ${lc(T('stage'))} liền trước. Đơn vị: triệu đồng.`),
-      st.length > 1 ? [h('div', { class: 'legend' }, h('span', null, sw(C[0]), T('dt')), h('span', null, sw(C[1]), T('cp'))), h('div', { class: 'chart-box' }, hostS), h('p', { class: 'note axis-note' }, 'Trục: tỷ đồng')]
-        : h('p', { class: 'note' }, `Hợp đồng mới có số liệu ở một ${lc(T('stage'))}. Khi file các tháng sau ghi ${lc(T('stage'))} mới, bảng sẽ có thêm cột để so sánh.`),
+      h('div', { class: 'legend' }, sSeries.map(x => h('span', null, sw(x.color), x.name))), h('div', { class: 'chart-box' }, hostS), h('p', { class: 'note axis-note' }, 'Trục và số trên cột: tỷ đồng'),
+      st.length > 1 ? null : h('p', { class: 'note' }, `Hợp đồng mới có số liệu ở một ${lc(T('stage'))}. Khi file các tháng sau ghi ${lc(T('stage'))} mới, biểu đồ và bảng sẽ có thêm cột để so sánh.`),
       h('div', { class: 'table-wrap' }, h('table', { class: 't nosort' },
         h('thead', null, h('tr', null, h('th', null, 'Chỉ số'), st.map(g => h('th', { class: g.stage === cur ? 'cur' : '' }, nameOf('stage', g.stage) + (g.stage === cur ? ' (hiện tại)' : ''), h('span', { class: 'sub' }, stagePeriod(g)))))),
         h('tbody', null, rowsDef.map(d => h('tr', { class: d.sub ? 'subrow' : '' }, h('td', { class: 'l' + (d.sub ? ' indent' : '') }, d.t),

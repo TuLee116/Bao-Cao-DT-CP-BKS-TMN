@@ -1482,6 +1482,52 @@
   // ------------------------------------------------------------------
   // Tài khoản
   // ------------------------------------------------------------------
+  // Mã QR đăng nhập trên điện thoại (iPhone: quét bằng Camera). Mã dùng một lần, hết hạn sau 2 phút.
+  let qrLoading = null, qrTimer = 0;
+  function loadQR() {
+    if (window.qrcode) return Promise.resolve();
+    if (!qrLoading) qrLoading = new Promise((res, rej) => {
+      const s = document.createElement('script'); s.src = 'js/vendor/qrcode.min.js'; s.onload = res; s.onerror = () => { qrLoading = null; rej(new Error('Không tải được thư viện tạo mã QR.')); };
+      document.head.append(s);
+    });
+    return qrLoading;
+  }
+  function qrCard() {
+    const box = h('div', { class: 'qr-box', hidden: true });
+    const btn = h('button', { class: 'btn primary', type: 'button' }, 'Tạo mã QR');
+    btn.addEventListener('click', () => run(btn, async () => {
+      await loadQR();
+      const r = await api.newLoginQr();
+      const url = location.origin + location.pathname + '#/qr/' + r.token;
+      const qr = window.qrcode(0, 'M');
+      qr.addData(url); qr.make();
+      const img = h('div', { class: 'qr-img', role: 'img', 'aria-label': 'Mã QR đăng nhập' });
+      img.innerHTML = qr.createSvgTag({ cellSize: 6, margin: 24, scalable: true });
+      const left = h('b', null, ''), status = h('p', { class: 'note' }, 'Còn ', left, ' giây. Mã chỉ dùng được một lần.');
+      box.replaceChildren(img, status);
+      box.hidden = false;
+      btn.textContent = 'Tạo mã mới';
+      const end = Date.now() + r.expires_in * 1000;
+      clearInterval(qrTimer);
+      const tick = () => {
+        const sec = Math.max(0, Math.round((end - Date.now()) / 1000));
+        if (!box.isConnected) return clearInterval(qrTimer);
+        left.textContent = sec;
+        if (!sec) { clearInterval(qrTimer); box.classList.add('expired'); status.replaceChildren('Mã đã hết hạn. Bấm "Tạo mã mới" để tạo lại.'); }
+      };
+      tick(); qrTimer = setInterval(tick, 1000);
+    }));
+    return h('div', { class: 'card stack', id: 'dang-nhap-qr' }, h('h2', null, 'Đăng nhập trên điện thoại bằng mã QR'),
+      h('p', { class: 'note' }, 'Dùng khi đang đăng nhập trên máy tính và muốn mở web trên iPhone mà không phải gõ mật khẩu.'),
+      h('ol', { class: 'qr-steps' },
+        h('li', null, 'Bấm "Tạo mã QR".'),
+        h('li', null, 'Trên iPhone, mở ứng dụng ', h('b', null, 'Camera'), ' và hướng vào mã (không cần cài thêm ứng dụng).'),
+        h('li', null, 'Bấm vào đường dẫn hiện ra: Safari mở web và tự đăng nhập bằng tài khoản này.'),
+        h('li', null, 'Muốn mở nhanh lần sau: trong Safari bấm nút Chia sẻ → ', h('b', null, 'Thêm vào MH chính'), '.')),
+      h('div', { class: 'alert warn' }, 'Ai quét được mã cũng vào được tài khoản của bạn: không chụp hay gửi mã cho người khác. Mã tự hết hạn sau 2 phút và chỉ dùng được một lần.'),
+      h('div', { class: 'row' }, btn), box);
+  }
+
   function viewAccount() {
     const cur = h('input', { type: 'password', id: 'acc-current', autocomplete: 'current-password', required: true });
     const p1 = h('input', { type: 'password', id: 'acc-pw', autocomplete: 'new-password', minlength: 8, required: true });
@@ -1502,14 +1548,26 @@
             if (ok) { cur.value = p1.value = p2.value = ''; toast(api.mode === 'demo' ? 'Chế độ demo không lưu mật khẩu.' : 'Đã đổi mật khẩu. Các phiên đăng nhập khác đã bị đăng xuất.'); }
           }
         }, h('h2', null, 'Đổi mật khẩu'), h('label', { class: 'f' }, 'Mật khẩu hiện tại', cur),
-        h('label', { class: 'f' }, 'Mật khẩu mới (ít nhất 8 ký tự)', p1), h('label', { class: 'f' }, 'Nhập lại mật khẩu mới', p2), h('div', { class: 'row' }, b))));
+        h('label', { class: 'f' }, 'Mật khẩu mới (ít nhất 8 ký tự)', p1), h('label', { class: 'f' }, 'Nhập lại mật khẩu mới', p2), h('div', { class: 'row' }, b)),
+        qrCard()));
   }
 
   // ------------------------------------------------------------------
   // Khởi động
   // ------------------------------------------------------------------
   window.addEventListener('auth-expired', () => { if (S.profile) { S.profile = null; toast('Phiên đăng nhập đã hết. Hãy đăng nhập lại.', true); render(); } });
-  window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
+  // Mở đường dẫn trong mã QR (#/qr/<mã>): đăng nhập rồi xóa mã khỏi thanh địa chỉ và lịch sử trình duyệt.
+  async function qrFromHash() {
+    const m = location.hash.match(/^#\/qr\/([A-Za-z0-9_-]+)/);
+    if (!m) return false;
+    history.replaceState(null, '', location.pathname + location.search + '#/');
+    try { await api.qrLogin(m[1]); toast('Đã đăng nhập bằng mã QR.'); } catch (e) { toast(e.message, true); }
+    return true;
+  }
+  window.addEventListener('hashchange', async () => {
+    if (api && await qrFromHash()) { await refreshAuth(); return; }
+    render(); window.scrollTo(0, 0);
+  });
   let rt = 0, lastW = window.innerWidth;
   window.addEventListener('resize', () => {
     if (window.innerWidth === lastW) return;
@@ -1517,5 +1575,5 @@
     clearTimeout(rt);
     rt = setTimeout(() => { if (S.redraw) S.redraw(); }, 150);
   });
-  window.apiReady.then(() => { api = window.api; refreshAuth(); });
+  window.apiReady.then(async () => { api = window.api; await qrFromHash(); refreshAuth(); });
 })();

@@ -155,6 +155,33 @@ api.post('/logout', wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// Đăng nhập bằng mã QR: người đang đăng nhập (ví dụ trên máy tính) tạo mã, quét bằng điện thoại để đăng nhập
+// cùng tài khoản. Mã ngẫu nhiên 256 bit, chỉ lưu băm, dùng được một lần, hết hạn sau QR_SECONDS giây; tạo mã mới thì mã cũ mất hiệu lực.
+const QR_SECONDS = 120;
+api.post('/qr-login/new', need('member'), wrap(async (req, res) => {
+  const token = crypto.randomBytes(32).toString('base64url');
+  await tx(async c => {
+    await c.query('delete from login_qr where user_id = $1 or expires_at < now()', [req.user.id]);
+    await c.query(`insert into login_qr (token_hash, user_id, expires_at) values ($1, $2, now() + interval '${QR_SECONDS} seconds')`, [sha256(token), req.user.id]);
+  });
+  res.set('Cache-Control', 'no-store');
+  res.json({ token, expires_in: QR_SECONDS });
+}));
+
+api.post('/qr-login', wrap(async (req, res) => {
+  const token = typeof req.body.token === 'string' ? req.body.token.trim() : '';
+  const t = throttle(req.ip + '|qr');
+  if (!/^[A-Za-z0-9_-]{43}$/.test(token)) { t.failed(); fail(400, 'Mã QR không hợp lệ.'); }
+  // Xóa ngay khi dùng: hai thiết bị quét cùng lúc thì chỉ một thiết bị đăng nhập được.
+  const row = (await query('delete from login_qr where token_hash = $1 returning user_id, expires_at > now() as valid', [sha256(token)])).rows[0];
+  if (!row || !row.valid) { t.failed(); fail(400, 'Mã QR đã hết hạn hoặc đã được dùng. Hãy tạo mã mới trên máy tính.'); }
+  const u = (await query('select id, active from users where id = $1', [row.user_id])).rows[0];
+  if (!u || !u.active) fail(403, 'Tài khoản đã bị khóa. Hãy liên hệ admin.');
+  t.ok();
+  await startSession(req, res, u.id);
+  res.json({ ok: true });
+}));
+
 api.post('/me/password', need('member'), wrap(async (req, res) => {
   const row = (await query('select password_hash from users where id = $1', [req.user.id])).rows[0];
   if (!(await bcrypt.compare(String(req.body.current || ''), row.password_hash))) fail(400, 'Mật khẩu hiện tại không đúng.');
@@ -408,7 +435,7 @@ api.put('/users/:id', need('admin'), wrap(async (req, res) => {
     }
     if (b.active != null) await c.query('update users set active = $1 where id = $2', [!!b.active, id]);
     if (hash) await c.query('update users set password_hash = $1 where id = $2', [hash, id]);
-    if (hash || b.active === false) await c.query('delete from sessions where user_id = $1', [id]);
+    if (hash || b.active === false) { await c.query('delete from sessions where user_id = $1', [id]); await c.query('delete from login_qr where user_id = $1', [id]); }
     const admins = (await c.query(`select count(*) as n from users where role = 'admin' and active`)).rows[0].n;
     if (admins < 1) fail(400, 'Phải còn ít nhất một admin đang hoạt động.');
   });

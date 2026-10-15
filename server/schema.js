@@ -20,6 +20,15 @@ create table if not exists sessions (
 );
 create index if not exists sessions_user_idx on sessions (user_id);
 
+-- Mã QR đăng nhập trên điện thoại: tạo từ phiên đang đăng nhập, dùng 1 lần, hết hạn sau 2 phút. Chỉ lưu băm.
+create table if not exists login_qr (
+  token_hash  text primary key,
+  user_id     integer not null references users(id) on delete cascade,
+  expires_at  timestamptz not null,
+  created_at  timestamptz not null default now()
+);
+create index if not exists login_qr_user_idx on login_qr (user_id);
+
 -- Mốc dữ liệu: mỗi lần tải file DT-CP lên là một mốc (ngày cập nhật của file).
 create table if not exists snapshots (
   id           integer generated always as identity primary key,

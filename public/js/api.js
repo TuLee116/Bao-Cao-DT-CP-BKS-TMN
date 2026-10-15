@@ -36,6 +36,8 @@
     signIn: (username, password) => call('POST', 'login', { username, password }),
     signOut: () => call('POST', 'logout', {}),
     changePassword: (current, password) => call('POST', 'me/password', { current, password }),
+    newLoginQr: () => call('POST', 'qr-login/new', {}),
+    qrLogin: token => call('POST', 'qr-login', { token }),
 
     meta: () => call('GET', 'meta'),
     lines: id => call('GET', 'snapshots/' + id + '/lines'),
@@ -101,6 +103,8 @@
       },
       async signOut() { db.session = null; save(); },
       async changePassword() { need(); await tick(); },
+      async newLoginQr() { need(); throw new Error('Chế độ demo không hỗ trợ đăng nhập bằng mã QR. Hãy dùng web đã triển khai trên Railway.'); },
+      async qrLogin() { throw new Error('Chế độ demo không hỗ trợ đăng nhập bằng mã QR.'); },
 
       async meta() {
         need();

@@ -279,3 +279,11 @@ input.invalid { border-color: var(--bad); }
 .col-val { font-size: .6875rem; font-weight: 600; }
 .ax.col-cat { fill: var(--fg); font-size: .8125rem; font-weight: 500; }
 .ax.col-sub { font-size: .6875rem; }
+
+/* Mã QR đăng nhập: luôn nền trắng, chấm đen (kể cả chế độ tối) để điện thoại quét được */
+.qr-steps { margin: 0; padding-left: 20px; font-size: .875rem; display: flex; flex-direction: column; gap: 4px; }
+.qr-box { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.qr-img { width: 232px; max-width: 100%; background: #fff; padding: 6px; border-radius: 10px; border: 1px solid var(--line); line-height: 0; }
+.qr-img svg { width: 100%; height: auto; display: block; }
+.qr-img svg rect[fill="white"], .qr-img svg rect[fill="#ffffff"] { fill: #fff; }
+.qr-box.expired .qr-img { opacity: .2; filter: blur(3px); }

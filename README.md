@@ -21,6 +21,7 @@ Cách tính khớp với dòng TỔNG CỘNG của file: web cộng các dòng H
 
 - Lần đầu mở web (database trống), web hiện form **tạo tài khoản admin đầu tiên**. Hãy làm việc này ngay sau khi triển khai.
 - Không có tự đăng ký. Admin tạo tài khoản ở trang **Người dùng** rồi gửi tên đăng nhập và mật khẩu tạm cho từng người. Người dùng tự đổi mật khẩu ở trang **Tài khoản**.
+- Đăng nhập trên điện thoại (iPhone): đang đăng nhập trên máy tính, vào trang **Tài khoản → Tạo mã QR**, mở Camera iPhone quét mã rồi bấm đường dẫn, Safari tự đăng nhập. Mã dùng một lần, hết hạn sau 2 phút; ai quét được mã đều vào được tài khoản nên không chụp/gửi mã cho người khác.
 - Quên mật khẩu: admin bấm **Đặt lại mật khẩu**, web tạo mật khẩu ngẫu nhiên để gửi lại.
 
 | Vai trò | Xem báo cáo | Viết ghi chú | Sửa số liệu, danh mục, quản lý người dùng |

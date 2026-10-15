@@ -837,9 +837,9 @@
     });
     const stages = [...new Set(items.flatMap(x => x.order))].sort(stageCmp);
     const m = DET_METRICS.includes(det.metric) ? det.metric : 'dt';
-    const mSel = h('select', { id: 'det-metric' }, DET_METRICS.map(k => h('option', { value: k }, T(k))));
-    mSel.value = m; mSel.addEventListener('change', () => { det.metric = mSel.value; render(); });
-    const controls = h('div', { class: 'card filters' }, h('div', { class: 'filter-grid' }, h('label', { class: 'f' }, 'Chỉ số so sánh trong bảng', mSel)));
+    // Nút chọn chỉ số: đổi cùng lúc biểu đồ, cột tô đậm của bảng tổng hợp và bảng từng hợp đồng.
+    const metricTabs = () => h('div', { class: 'row metric-pick' }, h('span', { class: 'note' }, 'Chỉ số so sánh:'),
+      h('div', { class: 'tabs', role: 'group', 'aria-label': 'Chỉ số so sánh' }, DET_METRICS.map(k => h('button', { type: 'button', class: k === m ? 'on' : '', 'aria-pressed': k === m ? 'true' : 'false', onclick: () => { det.metric = k; render(); } }, T(k)))));
     if (!items.length) return h('div', { class: 'stack', style: 'gap:18px' }, head, filterBar(all, { snap: false }), h('div', { class: 'card empty' }, h('p', null, 'Không có hợp đồng nào khớp bộ lọc.')));
     // Tổng theo từng thời điểm (chỉ cộng các hợp đồng đã qua thời điểm đó)
     const agg = stages.map(s => {
@@ -852,17 +852,20 @@
     const aggCols = ['count', 'hd', 'sl', 'dt', 'tv', 'cp', 'pct'].filter(k => k !== 'tv' || tot.tv || agg.some(a => a.tv)).filter(k => k !== 'sl' || tot.sl || agg.some(a => a.sl));
     const aggCell = (a, k) => (k === 'count' ? F.int(a.count) : fmtCell(k, a[k]));
     const host = h('div', { class: 'chart-hb' });
-    const draws = [() => Charts.hbars(host, agg.map(a => ({ key: a.stage, label: nameOf('stage', a.stage), values: [a.dt, a.cp], extra: [[null, T('count'), F.int(a.count)], [null, T('pct'), F.pct(a.pct)]] })),
-      [{ name: T('dt'), color: C[0] }, { name: T('cp'), color: C[1] }], { fmt: F.vnd, axisFmt: F.tyAxis, onPick: key => { S.filters.stage = key; render(); } })];
+    // Biểu đồ theo chỉ số đang chọn; doanh thu/chi phí vẽ cạnh nhau để so sánh.
+    const pair = m === 'dt' || m === 'cp';
+    const cSeries = pair ? [{ name: T('dt'), color: C[0] }, { name: T('cp'), color: C[1] }] : [{ name: T(m), color: METRIC_COLOR[m] }];
+    const draws = [() => Charts.hbars(host, agg.map(a => ({ key: a.stage, label: nameOf('stage', a.stage), values: pair ? [a.dt, a.cp] : [mval(a, m)], extra: [[null, T('count'), F.int(a.count)], [null, T('pct'), F.pct(a.pct)]] })),
+      cSeries, { fmt: m === 'pct' ? F.pct : F.vnd, axisFmt: m === 'pct' ? d3.format('.0%') : F.tyAxis, onPick: key => { S.filters.stage = key; render(); } })];
     S.redraw = () => drawAll(draws);
-    const sumCard = h('div', { class: 'card wide' }, h('h2', null, `Tổng hợp theo ${lc(T('stage'))}`),
+    const sumCard = h('div', { class: 'card wide' }, h('h2', null, `${pair ? T('dt') + ' & ' + lc(T('cp')) : T(m)} theo ${lc(T('stage'))}`), metricTabs(),
       h('p', { class: 'note' }, `${F.int(items.length)} ${lc(T('contract'))} đang lọc. Mỗi ${lc(T('stage'))} cộng số liệu của các hợp đồng đã qua ${lc(T('stage'))} đó (tại tháng cuối của ${lc(T('stage'))}). Dòng "Mới nhất" là mốc ${F.date(ls.report_date)}. Đơn vị: triệu đồng.`),
-      h('div', { class: 'legend' }, h('span', null, sw(C[0]), T('dt')), h('span', null, sw(C[1]), T('cp'))),
-      h('div', { class: 'chart-box' }, host), h('p', { class: 'note axis-note' }, `Trục: tỷ đồng. Bấm vào một ${lc(T('stage'))} để lọc các hợp đồng đang ở ${lc(T('stage'))} đó.`),
+      h('div', { class: 'legend' }, cSeries.map(x => h('span', null, sw(x.color), x.name))),
+      h('div', { class: 'chart-box' }, host), h('p', { class: 'note axis-note' }, `Trục: ${m === 'pct' ? '%' : 'tỷ đồng'}. Bấm vào một ${lc(T('stage'))} để lọc các hợp đồng đang ở ${lc(T('stage'))} đó.`),
       h('div', { class: 'table-wrap' }, h('table', { class: 't' },
-        h('thead', null, h('tr', null, h('th', null, T('stage')), aggCols.map(k => h('th', null, T(k))))),
-        h('tbody', null, agg.map(a => h('tr', null, h('td', { class: 'l' }, nameOf('stage', a.stage)), aggCols.map(k => h('td', { class: k === 'pct' && a.pct > 1 ? 'is-bad' : '' }, aggCell(a, k)))))),
-        h('tfoot', null, h('tr', null, h('td', { class: 'l' }, 'Mới nhất · ' + F.dateShort(ls.report_date)), aggCols.map(k => h('td', null, aggCell(tot, k))))))));
+        h('thead', null, h('tr', null, h('th', null, T('stage')), aggCols.map(k => h('th', { class: k === m ? 'cur' : '' }, T(k))))),
+        h('tbody', null, agg.map(a => h('tr', null, h('td', { class: 'l' }, nameOf('stage', a.stage)), aggCols.map(k => h('td', { class: (k === m ? 'cur' : '') + (k === 'pct' && a.pct > 1 ? ' is-bad' : '') }, aggCell(a, k)))))),
+        h('tfoot', null, h('tr', null, h('td', { class: 'l' }, 'Mới nhất · ' + F.dateShort(ls.report_date)), aggCols.map(k => h('td', { class: k === m ? 'cur' : '' }, aggCell(tot, k))))))));
     // Bảng từng hợp đồng
     items.sort((a, b) => (mval(b.g, m) || 0) - (mval(a.g, m) || 0) || String(a.key).localeCompare(String(b.key), 'vi', { numeric: true }));
     const show = items.slice(0, 3000);
@@ -890,9 +893,10 @@
     const tableCard = h('div', { class: 'card wide' },
       h('div', { class: 'card-head' }, h('h2', null, `${T(m)} của từng hợp đồng theo ${lc(T('stage'))}`),
         h('button', { class: 'btn sm', type: 'button', onclick: e => run(e.currentTarget, () => exportDetail(items, stages, ls)) }, 'Xuất Excel')),
+      metricTabs(),
       h('p', { class: 'note' }, `Đơn vị: ${m === 'pct' ? '%' : 'triệu đồng'}. Ô tô màu là ${lc(T('stage'))} hiện tại; dòng nhỏ dưới mỗi số là thay đổi so với ${lc(T('stage'))} liền trước. Rê chuột vào ô để xem khoảng tháng. Bấm tiêu đề cột để sắp xếp.` +
         (items.length > show.length ? ` Đang hiện ${show.length} hợp đồng đầu; xuất Excel để xem đủ.` : '')), tbl);
-    return h('div', { class: 'stack', style: 'gap:18px' }, head, filterBar(all, { snap: false }), controls, h('div', { class: 'grid' }, sumCard, tableCard));
+    return h('div', { class: 'stack', style: 'gap:18px' }, head, filterBar(all, { snap: false }), h('div', { class: 'grid' }, sumCard, tableCard));
   }
 
   async function exportDetail(items, stages, ls) {

@@ -271,3 +271,7 @@ input.invalid { border-color: var(--bad); }
 .sg-kind { flex: none; font-size: .6875rem; color: var(--muted); min-width: 5.5rem; }
 .sg-label { min-width: 0; overflow-wrap: anywhere; }
 .sg-label small { display: block; color: var(--muted); font-size: .75rem; }
+.metric-pick { align-items: center; gap: 8px 12px; }
+.metric-pick .tabs { flex-wrap: wrap; border-bottom: 0; }
+.metric-pick .tabs button { border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; margin: 0; }
+.metric-pick .tabs button.on { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }

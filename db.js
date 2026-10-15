@@ -117,6 +117,11 @@ function memoryStore() {
   };
 }
 
-const store = process.env.DATABASE_URL ? pgStore(process.env.DATABASE_URL) : memoryStore();
+const DB_URL = (process.env.DATABASE_URL || '').trim();
+if (!DB_URL && process.env.RAILWAY_ENVIRONMENT) {
+  console.warn('CẢNH BÁO: DATABASE_URL đang rỗng -> dùng bộ nhớ tạm, dữ liệu sẽ mất khi khởi động lại. ' +
+    'Hãy thêm service PostgreSQL và đặt DATABASE_URL=${{Postgres.DATABASE_URL}}');
+}
+const store = DB_URL ? pgStore(DB_URL) : memoryStore();
 
 module.exports = { store, validate, TRANG_THAI };

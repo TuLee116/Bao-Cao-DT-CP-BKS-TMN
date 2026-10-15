@@ -80,11 +80,19 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ errors: ['Lỗi máy chủ'] });
 });
 
-store.init()
-  .then(() => {
-    app.listen(PORT, '0.0.0.0', () => console.log(`Server chạy tại cổng ${PORT} (CSDL: ${store.kind})`));
-  })
-  .catch((e) => {
-    console.error('Không khởi tạo được CSDL:', e.message);
-    process.exit(1);
-  });
+// Thử kết nối CSDL tối đa 10 lần (Postgres có thể khởi động chậm hơn web)
+async function start() {
+  for (let i = 1; i <= 10; i++) {
+    try {
+      await store.init();
+      app.listen(PORT, '0.0.0.0', () => console.log(`Server chạy tại cổng ${PORT} (CSDL: ${store.kind})`));
+      return;
+    } catch (e) {
+      console.error(`Kết nối CSDL thất bại (lần ${i}/10): ${e.message}`);
+      await new Promise((r) => setTimeout(r, 3000));
+    }
+  }
+  console.error('Không kết nối được CSDL. Kiểm tra biến DATABASE_URL và service PostgreSQL.');
+  process.exit(1);
+}
+start();

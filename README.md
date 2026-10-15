@@ -1,49 +1,74 @@
-# Web Quản lý dự án xây dựng (Railway + GitHub)
+# Hệ thống Quản lý dự án – BKS
 
-Node.js + Express + PostgreSQL. Có dashboard KPI, thêm/sửa/xóa dự án, tìm kiếm, xuất CSV cho Excel.
+Web quản lý dự án xây dựng có đăng nhập, phân quyền, khởi tạo lần đầu. Chạy trên Railway, deploy tự động từ GitHub.
+
+**Công nghệ:** Node.js 18+ · Express · PostgreSQL. Ngoài `express` và `pg` không dùng thư viện nào khác. Mật khẩu được mã hóa bằng scrypt.
+
+## Chức năng
+| Mục | Mô tả |
+|---|---|
+| **Khởi tạo lần đầu** (`/setup`) | Khi chưa có tài khoản nào: nhập tên công ty, tên hệ thống, tạo tài khoản Quản trị. Sau đó trang này tự khóa. |
+| **Đăng nhập** (`/login`) | Phiên lưu 7 ngày trong CSDL. Sai quá 10 lần trong 15 phút thì bị chặn tạm. |
+| **Dự án** | Dashboard KPI, thêm/sửa/xóa, tìm kiếm không dấu, xuất CSV cho Excel, ghi nhận người cập nhật. |
+| **Tài khoản** (Quản trị) | Tạo / sửa / khóa / xóa tài khoản, đặt lại mật khẩu, phân quyền. |
+| **Cài đặt** (Quản trị) | Đổi tên công ty, tên hệ thống. |
+| **Cá nhân** | Đổi mật khẩu của chính mình. |
+
+### Phân quyền
+| Quyền | Xem dự án | Thêm/sửa/xóa dự án | Quản lý tài khoản & cài đặt |
+|---|:-:|:-:|:-:|
+| Quản trị | ✔ | ✔ | ✔ |
+| Nhập liệu | ✔ | ✔ | |
+| Chỉ xem | ✔ | | |
+
+Các ràng buộc an toàn:
+- Luôn phải còn ít nhất 1 Quản trị đang hoạt động.
+- Không ai tự hạ quyền, tự khóa hoặc tự xóa tài khoản của chính mình.
+- Khi bị khóa, đổi quyền hoặc đặt lại mật khẩu, người dùng bị đăng xuất ngay.
 
 ## Cấu trúc
 ```
-server.js        # Máy chủ + API (/api/du-an), /health, đăng nhập
-db.js            # Kết nối PostgreSQL (hoặc bộ nhớ tạm khi chạy thử)
-public/          # Giao diện: index.html, style.css, app.js
-railway.json     # Cấu hình deploy Railway
-.env.example     # Mẫu biến môi trường
+server.js          # Trang + API
+lib/db.js          # PostgreSQL (tự tạo bảng) / bộ nhớ tạm khi chạy thử
+lib/auth.js        # Mật khẩu, phiên đăng nhập, phân quyền, chống dò mật khẩu
+lib/validate.js    # Kiểm tra dữ liệu
+views/             # index.html, login.html, setup.html
+public/            # CSS + JS giao diện
+railway.json       # Cấu hình deploy
 ```
+
+## Deploy lên Railway
+1. Railway → **New Project → Deploy from GitHub repo** → chọn repo này.
+2. Trong project: **+ Create → Database → PostgreSQL**. Chờ báo *Active*.
+3. Service web → **Variables**:
+   | Biến | Giá trị |
+   |---|---|
+   | `DATABASE_URL` | **New Variable → Add Reference → Postgres → DATABASE_URL**, hoặc dán giá trị copy từ tab Variables của Postgres |
+   | `SETUP_TOKEN` | Một chuỗi bí mật bất kỳ (khuyến nghị) |
+4. **Settings → Networking → Generate Domain**.
+5. Mở domain → trang **Khởi tạo hệ thống** hiện ra → nhập thông tin → xong.
+6. Kiểm tra `https://<domain>/health` → `{"status":"ok","db":"postgres"}`.
+
+> Các biến `APP_USER` / `APP_PASS` của bản cũ không còn dùng, có thể xóa.
+> Nếu web hiện thanh vàng *"chưa kết nối PostgreSQL"* thì `DATABASE_URL` đang rỗng: xem lại bước 2–3.
 
 ## Chạy thử trên máy
 ```bash
 npm install
-npm start        # mở http://localhost:3000
+npm start            # http://localhost:3000 – dùng bộ nhớ tạm
 ```
-Không có `DATABASE_URL` → dữ liệu lưu tạm trong bộ nhớ (mất khi tắt).
-
-## Deploy lên Railway qua GitHub
-1. **Đẩy code lên GitHub**
-   ```bash
-   git remote add origin https://github.com/<tai-khoan>/qlda-web.git
-   git push -u origin main
-   ```
-2. **Railway** → New Project → *Deploy from GitHub repo* → chọn repo `qlda-web`.
-3. Trong project: **+ New → Database → PostgreSQL**.
-4. Vào service web → **Variables**, thêm:
-   | Biến | Giá trị |
-   |---|---|
-   | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` (chọn từ gợi ý) |
-   | `APP_USER` | tên đăng nhập |
-   | `APP_PASS` | mật khẩu mạnh |
-5. **Settings → Networking → Generate Domain** để có link truy cập.
-6. Mỗi lần `git push` lên nhánh `main`, Railway tự build & deploy lại.
-
-Bảng `du_an` được tạo tự động lần chạy đầu. Kiểm tra: `https://<domain>/health` → `{"status":"ok","db":"postgres"}`.
 
 ## API
-| Method | URL | Mô tả |
+| Method | URL | Quyền |
 |---|---|---|
-| GET | `/api/du-an` | Danh sách dự án |
-| POST | `/api/du-an` | Thêm |
-| PUT | `/api/du-an/:id` | Sửa |
-| DELETE | `/api/du-an/:id` | Xóa |
-| GET | `/health` | Kiểm tra hệ thống |
+| GET | `/health` | Công khai |
+| GET | `/api/meta` | Công khai |
+| POST | `/api/setup` | Chỉ khi chưa có tài khoản |
+| POST | `/api/auth/login`, `/api/auth/logout` | Công khai |
+| GET | `/api/auth/me` · POST `/api/auth/change-password` | Đã đăng nhập |
+| GET | `/api/du-an` | Đã đăng nhập |
+| POST/PUT/DELETE | `/api/du-an[/:id]` | Quản trị, Nhập liệu |
+| GET/POST/PUT/DELETE | `/api/users[/:id]` | Quản trị |
+| GET/PUT | `/api/settings` | GET: đã đăng nhập · PUT: Quản trị |
 
-Ràng buộc dữ liệu: bắt buộc mã + tên dự án; mã không trùng; giải ngân ≤ giá trị HĐ; tiến độ 0–100%; ngày kết thúc ≥ ngày bắt đầu.
+Mọi request POST/PUT/DELETE phải có header `X-Requested-With: fetch` (chống CSRF).

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Khởi tạo hệ thống</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="auth-page">
+  <div class="auth-box wide">
+    <div class="auth-brand">
+      <div class="logo">QL</div>
+      <h1>Khởi tạo hệ thống</h1>
+      <p class="muted">Thực hiện một lần duy nhất: nhập thông tin đơn vị và tạo tài khoản Quản trị.</p>
+    </div>
+    <form id="form" class="stack">
+      <fieldset id="token-box" hidden>
+        <legend>Bảo mật</legend>
+        <label>Mã khởi tạo (SETUP_TOKEN)<input name="setup_token" type="password" autocomplete="off"></label>
+      </fieldset>
+      <fieldset>
+        <legend>1. Thông tin đơn vị</legend>
+        <label>Tên công ty / đơn vị *<input name="ten_cong_ty" required maxlength="150"></label>
+        <label>Tên hệ thống<input name="ten_he_thong" maxlength="100" value="Quản lý dự án"></label>
+      </fieldset>
+      <fieldset>
+        <legend>2. Tài khoản Quản trị</legend>
+        <label>Họ tên *<input name="full_name" required maxlength="100"></label>
+        <label>Tên đăng nhập *<input name="username" required pattern="[A-Za-z0-9._\-]{3,50}" autocomplete="username"
+          title="3–50 ký tự: chữ không dấu, số, dấu . _ -"></label>
+        <label>Mật khẩu *<input name="password" type="password" required minlength="8" autocomplete="new-password"></label>
+        <label>Nhập lại mật khẩu *<input name="password2" type="password" required minlength="8" autocomplete="new-password"></label>
+        <p class="muted small">Mật khẩu tối thiểu 8 ký tự, có cả chữ và số.</p>
+      </fieldset>
+      <button type="submit" class="primary block">Khởi tạo &amp; đăng nhập</button>
+      <div id="msg" class="msg" role="alert"></div>
+    </form>
+  </div>
+  <script src="/common.js"></script>
+  <script src="/setup.js"></script>
+</body>
+</html>

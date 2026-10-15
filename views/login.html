@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Đăng nhập</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="auth-page">
+  <div class="auth-box">
+    <div class="auth-brand">
+      <div class="logo">QL</div>
+      <h1 id="sys-name">Quản lý dự án</h1>
+      <p id="company" class="muted"></p>
+    </div>
+    <form id="form" class="stack">
+      <label>Tên đăng nhập<input name="username" autocomplete="username" required autofocus></label>
+      <label>Mật khẩu<input name="password" type="password" autocomplete="current-password" required></label>
+      <button type="submit" class="primary block">Đăng nhập</button>
+      <div id="msg" class="msg" role="alert"></div>
+    </form>
+    <p class="muted small center">Quên mật khẩu? Liên hệ quản trị viên để được cấp lại.</p>
+  </div>
+  <script src="/common.js"></script>
+  <script src="/login.js"></script>
+</body>
+</html>

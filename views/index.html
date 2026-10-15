@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Quản lý dự án</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo sm">QL</div>
+      <div>
+        <div id="sys-name" class="sys-name">Quản lý dự án</div>
+        <div id="company" class="company"></div>
+      </div>
+    </div>
+    <nav id="tabs" class="tabs">
+      <button data-tab="projects" class="active">Dự án</button>
+      <button data-tab="users" data-role="admin">Tài khoản</button>
+      <button data-tab="settings" data-role="admin">Cài đặt</button>
+      <button data-tab="profile">Cá nhân</button>
+    </nav>
+    <div class="user-box">
+      <span id="me-name"></span>
+      <span id="me-role" class="badge"></span>
+      <button id="btn-logout" class="ghost">Đăng xuất</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- ================= DỰ ÁN ================= -->
+    <section id="tab-projects" class="tab-panel">
+      <div class="kpis">
+        <div class="kpi"><div class="label">Số dự án</div><div class="value" id="k-count">0</div></div>
+        <div class="kpi"><div class="label">Tổng giá trị HĐ (VNĐ)</div><div class="value" id="k-hd">0</div></div>
+        <div class="kpi"><div class="label">Đã giải ngân (VNĐ)</div><div class="value" id="k-gn">0</div></div>
+        <div class="kpi"><div class="label">Tỷ lệ giải ngân</div><div class="value" id="k-tl">0%</div></div>
+      </div>
+
+      <div class="card" data-role="admin editor">
+        <h2 id="p-form-title">Thêm dự án</h2>
+        <form id="p-form" class="grid-form">
+          <input type="hidden" name="id">
+          <label>Mã dự án *<input name="ma_du_an" required maxlength="50"></label>
+          <label>Tên dự án *<input name="ten_du_an" required maxlength="255"></label>
+          <label>Chủ đầu tư<input name="chu_dau_tu" maxlength="255"></label>
+          <label>Giá trị HĐ (VNĐ)<input name="gia_tri_hd" type="number" min="0" step="1" value="0"></label>
+          <label>Đã giải ngân (VNĐ)<input name="da_giai_ngan" type="number" min="0" step="1" value="0"></label>
+          <label>Tiến độ (%)<input name="tien_do" type="number" min="0" max="100" step="0.01" value="0"></label>
+          <label>Trạng thái<select name="trang_thai"></select></label>
+          <label>Ngày bắt đầu<input name="ngay_bat_dau" type="date"></label>
+          <label>Ngày kết thúc<input name="ngay_ket_thuc" type="date"></label>
+          <div class="actions">
+            <button type="submit" class="primary">Lưu</button>
+            <button type="button" id="p-cancel">Hủy</button>
+          </div>
+          <div id="p-msg" class="msg" role="alert"></div>
+        </form>
+      </div>
+
+      <div class="card">
+        <div class="toolbar">
+          <h2>Danh sách dự án</h2>
+          <input id="p-search" type="search" placeholder="Tìm mã, tên, chủ đầu tư...">
+          <button id="p-csv">Xuất CSV</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Mã</th><th>Tên dự án</th><th>Chủ đầu tư</th>
+                <th class="num">Giá trị HĐ</th><th class="num">Đã giải ngân</th><th class="num">% GN</th>
+                <th>Tiến độ</th><th>Trạng thái</th><th>Thời gian</th><th>Cập nhật bởi</th><th data-role="admin editor"></th>
+              </tr>
+            </thead>
+            <tbody id="p-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= TÀI KHOẢN ================= -->
+    <section id="tab-users" class="tab-panel" hidden>
+      <div class="card">
+        <h2 id="u-form-title">Thêm tài khoản</h2>
+        <form id="u-form" class="grid-form">
+          <input type="hidden" name="id">
+          <label>Tên đăng nhập *<input name="username" required pattern="[A-Za-z0-9._\-]{3,50}" autocomplete="off"
+            title="3–50 ký tự: chữ không dấu, số, dấu . _ -"></label>
+          <label>Họ tên *<input name="full_name" required maxlength="100"></label>
+          <label>Quyền<select name="role"></select></label>
+          <label><span id="u-pass-label">Mật khẩu *</span><input name="password" type="password" autocomplete="new-password"></label>
+          <label class="check"><input name="active" type="checkbox" checked> Đang hoạt động</label>
+          <div class="actions">
+            <button type="submit" class="primary">Lưu</button>
+            <button type="button" id="u-cancel">Hủy</button>
+          </div>
+          <div id="u-msg" class="msg" role="alert"></div>
+        </form>
+        <p class="muted small">
+          <b>Quản trị</b>: toàn quyền, quản lý tài khoản &amp; cài đặt ·
+          <b>Nhập liệu</b>: thêm/sửa/xóa dự án ·
+          <b>Chỉ xem</b>: xem và xuất báo cáo.
+          Khi sửa, để trống mật khẩu nếu không muốn đổi.
+        </p>
+      </div>
+      <div class="card">
+        <h2>Danh sách tài khoản</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Tên đăng nhập</th><th>Họ tên</th><th>Quyền</th><th>Trạng thái</th><th>Đăng nhập gần nhất</th><th></th></tr></thead>
+            <tbody id="u-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= CÀI ĐẶT ================= -->
+    <section id="tab-settings" class="tab-panel" hidden>
+      <div class="card narrow">
+        <h2>Cài đặt hệ thống</h2>
+        <form id="s-form" class="stack">
+          <label>Tên công ty / đơn vị *<input name="ten_cong_ty" required maxlength="150"></label>
+          <label>Tên hệ thống<input name="ten_he_thong" maxlength="100"></label>
+          <div class="actions"><button type="submit" class="primary">Lưu cài đặt</button></div>
+          <div id="s-msg" class="msg" role="alert"></div>
+        </form>
+        <hr>
+        <h2>Thông tin hệ thống</h2>
+        <div id="sys-info" class="muted"></div>
+      </div>
+    </section>
+
+    <!-- ================= CÁ NHÂN ================= -->
+    <section id="tab-profile" class="tab-panel" hidden>
+      <div class="card narrow">
+        <h2>Đổi mật khẩu</h2>
+        <form id="pw-form" class="stack">
+          <label>Mật khẩu hiện tại<input name="current_password" type="password" required autocomplete="current-password"></label>
+          <label>Mật khẩu mới<input name="new_password" type="password" required minlength="8" autocomplete="new-password"></label>
+          <label>Nhập lại mật khẩu mới<input name="new_password2" type="password" required minlength="8" autocomplete="new-password"></label>
+          <p class="muted small">Tối thiểu 8 ký tự, có cả chữ và số. Các thiết bị khác sẽ bị đăng xuất.</p>
+          <div class="actions"><button type="submit" class="primary">Đổi mật khẩu</button></div>
+          <div id="pw-msg" class="msg" role="alert"></div>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <script src="/common.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

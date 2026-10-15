@@ -188,6 +188,7 @@ api.get('/data', need('member'), wrap(async (req, res) => {
 // ---------------------------------------------------------------------
 const METRIC = /^(doanh_thu|tong_chi_phi|loi_nhuan|bien_ln|rev:(\d{1,9}|\*)|exp:(\d{1,9}|\*))$/;
 const CARD_TYPES = ['columns', 'line', 'stacked', 'breakdown', 'table', 'notes'];
+const TERM_KEYS = ['doanh_thu', 'tong_chi_phi', 'loi_nhuan', 'bien_ln', 'rev_group', 'exp_group'];
 function dashboardConfig(v) {
   if (!v || typeof v !== 'object' || Array.isArray(v)) fail(400, 'Cấu hình dashboard không hợp lệ.');
   const text = (s, field, max) => str(typeof s === 'string' ? s : '', field, 0, max);
@@ -201,8 +202,14 @@ function dashboardConfig(v) {
   if (tiles.length > 8) fail(400, 'Tối đa 8 ô chỉ số.');
   if (cards.length > 24) fail(400, 'Tối đa 24 biểu đồ.');
   const ids = new Set();
+  const terms = {};
+  if (v.terms != null) {
+    if (typeof v.terms !== 'object' || Array.isArray(v.terms)) fail(400, 'Tên gọi không hợp lệ.');
+    for (const k of TERM_KEYS) if (v.terms[k] != null) terms[k] = text(v.terms[k], 'Tên gọi', 60);
+  }
   return {
     title: text(v.title, 'Tiêu đề trang', 80),
+    terms,
     tiles: tiles.map(x => {
       const m = metrics([x && x.metric], 1)[0];
       if (!m || m.endsWith('*')) fail(400, 'Ô chỉ số cần chọn một chỉ số cụ thể.');

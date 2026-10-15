@@ -17,17 +17,36 @@ app.use((_req, res, next) => {
 });
 app.use(express.json({ limit: '1mb' }));
 
-// Health check cho Railway (không cần đăng nhập)
+// Trạng thái kết nối CSDL (web vẫn chạy khi CSDL lỗi để hiển thị nguyên nhân)
+const dbState = { ready: false, error: null, attempts: 0 };
+
+// Health check cho Railway: luôn trả 200 khi web đang chạy, kèm tình trạng CSDL
 app.get('/health', async (_req, res) => {
-  try {
-    await store.ping();
-    res.json({ status: 'ok', db: store.kind });
-  } catch (e) {
-    res.status(503).json({ status: 'error', message: e.message });
+  if (dbState.ready) {
+    try {
+      await store.ping();
+    } catch (e) {
+      return res.json({ status: 'db_error', db: store.kind, target: store.target, error: e.message });
+    }
   }
+  res.json({
+    status: dbState.ready ? 'ok' : 'db_error',
+    db: store.kind,
+    target: store.target,
+    ...(dbState.ready ? {} : { error: dbState.error || 'Đang kết nối...', attempts: dbState.attempts }),
+  });
 });
 
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
+
+// Khi CSDL chưa sẵn sàng: trả trang báo lỗi rõ ràng thay vì 502
+app.use((req, res, next) => {
+  if (dbState.ready) return next();
+  if (req.path.startsWith('/api/')) {
+    return res.status(503).json({ errors: ['Chưa kết nối được cơ sở dữ liệu: ' + (dbState.error || 'đang kết nối...')] });
+  }
+  res.status(503).type('html').send(dbErrorPage());
+});
 app.use(auth.loadUser);
 
 const wrap = (fn) => (req, res, next) => fn(req, res, next).catch(next);
@@ -240,19 +259,53 @@ app.use((err, req, res, _next) => {
   bad(res, 'Lỗi máy chủ', 500);
 });
 
-// Thử kết nối CSDL tối đa 10 lần (Postgres có thể khởi động chậm hơn web)
-async function start() {
-  for (let i = 1; i <= 10; i++) {
+// =====================================================================
+// Chẩn đoán lỗi CSDL
+// =====================================================================
+function dbHint(msg = '') {
+  if (/ENOTFOUND|EAI_AGAIN|getaddrinfo/i.test(msg)) return 'Không tìm thấy máy chủ CSDL. Service PostgreSQL chưa có, sai tên trong ${{...}}, hoặc nằm ở project/môi trường khác.';
+  if (/ECONNREFUSED/i.test(msg)) return 'Máy chủ CSDL từ chối kết nối. Service PostgreSQL chưa chạy xong (chờ 1–2 phút) hoặc đang lỗi.';
+  if (/password authentication|authentication failed/i.test(msg)) return 'Sai mật khẩu CSDL. Hãy dùng tham chiếu ${{Postgres.DATABASE_URL}} thay vì dán tay giá trị cũ.';
+  if (/does not exist/i.test(msg)) return 'Tên database trong DATABASE_URL không tồn tại.';
+  if (/timeout|ETIMEDOUT/i.test(msg)) return 'Hết thời gian chờ kết nối CSDL. Kiểm tra service PostgreSQL có đang Active.';
+  if (/Invalid URL|invalid connection|getaddrinfo .*undefined/i.test(msg)) return 'DATABASE_URL sai định dạng. Phải có dạng postgresql://user:pass@host:5432/db';
+  if (/SSL|certificate/i.test(msg)) return 'Lỗi SSL khi kết nối CSDL.';
+  return 'Kiểm tra biến DATABASE_URL và service PostgreSQL trên Railway.';
+}
+
+function dbErrorPage() {
+  const e = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  return `<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="refresh" content="10"><title>Chưa kết nối CSDL</title><link rel="stylesheet" href="/style.css"></head>
+<body class="auth-page"><div class="auth-box wide"><div class="auth-brand"><div class="logo">!</div>
+<h1>Chưa kết nối được cơ sở dữ liệu</h1><p class="muted">Web đang chạy, đang tự thử kết nối lại (lần ${dbState.attempts}). Trang tự tải lại sau 10 giây.</p></div>
+<div class="stack"><div><b>Nguyên nhân có thể:</b><br>${e(dbHint(dbState.error))}</div>
+<div><b>Lỗi chi tiết:</b><br><code>${e(dbState.error || 'Đang kết nối...')}</code></div>
+<div><b>DATABASE_URL đang trỏ tới:</b><br><code>${e(store.target)}</code></div></div></div></body></html>`;
+}
+
+// =====================================================================
+// Khởi động: mở cổng web NGAY, rồi kết nối CSDL (tự thử lại mãi, không tắt web)
+// =====================================================================
+console.log(`Khởi động... PORT=${PORT} | CSDL: ${store.kind} | DATABASE_URL: ${store.target}`);
+app.listen(PORT, '0.0.0.0', () => console.log(`Server chạy tại cổng ${PORT}`));
+
+(async function connectDb() {
+  for (;;) {
+    dbState.attempts++;
     try {
       await store.init();
-      app.listen(PORT, '0.0.0.0', () => console.log(`Server chạy tại cổng ${PORT} (CSDL: ${store.kind})`));
+      dbState.ready = true;
+      dbState.error = null;
+      console.log(`Đã kết nối CSDL (${store.kind}) sau ${dbState.attempts} lần thử`);
       return;
     } catch (e) {
-      console.error(`Kết nối CSDL thất bại (lần ${i}/10): ${e.message}`);
-      await new Promise((r) => setTimeout(r, 3000));
+      dbState.error = e.message || String(e);
+      console.error(`Kết nối CSDL thất bại (lần ${dbState.attempts}): ${dbState.error} -> ${dbHint(dbState.error)}`);
+      await new Promise((r) => setTimeout(r, Math.min(30000, 3000 * dbState.attempts)));
     }
   }
-  console.error('Không kết nối được CSDL. Kiểm tra biến DATABASE_URL và service PostgreSQL.');
-  process.exit(1);
-}
-start();
+})();
+
+// Không để lỗi bất ngờ làm sập web
+process.on('unhandledRejection', (e) => console.error('Lỗi chưa xử lý:', e));

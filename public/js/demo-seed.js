@@ -64,6 +64,6 @@ window.DEMO_SEED = function () {
     { kind: 'company', code: 'TMN', name: 'Tân Minh Nhân', sort: 1 }, { kind: 'company', code: 'QN', name: 'Quốc Nhân', sort: 2 }, { kind: 'company', code: 'TN', name: 'Thành Nhân', sort: 3 }
   ].concat(regions.map(([c, n], i) => ({ kind: 'region', code: c, name: n, sort: i + 1 })),
     investors.map((c, i) => ({ kind: 'investor', code: c, name: 'Chủ đầu tư mẫu ' + 'ABCDEF'[i], sort: i + 1 })),
-    ['1', '2', '3'].map((c, i) => ({ kind: 'stage', code: c, name: 'Giai đoạn ' + c, sort: i + 1 })));
+    ['1', '2', '3'].map((c, i) => ({ kind: 'stage', code: c, name: 'Thời điểm ' + c, sort: i + 1 })));
   return { snapshots, lines, catalog };
 };

@@ -166,7 +166,7 @@ api.post('/me/password', need('member'), wrap(async (req, res) => {
 
 // ---------------------------------------------------------------------
 // DT-CP công trình: mỗi lần tải file Excel lên là một "mốc" (snapshot).
-// Mỗi dòng = một dòng Hợp đồng/Phụ lục, gắn công ty, khu vực, công trình, hợp đồng (mã DT-CP), chủ đầu tư, giai đoạn.
+// Mỗi dòng = một dòng Hợp đồng/Phụ lục, gắn công ty, khu vực, công trình, hợp đồng (mã DT-CP), chủ đầu tư, thời điểm.
 // vals: hd (giá trị HĐ), sl (sản lượng), slhs (sản lượng hồ sơ), tv (tiền về), dt (doanh thu thời điểm), k..y (15 khoản chi phí trực tiếp). Đơn vị: đồng.
 // ---------------------------------------------------------------------
 const VAL_KEYS = ['hd', 'sl', 'slhs', 'tv', 'dt', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y'];
@@ -239,7 +239,7 @@ api.post('/snapshots', need('admin'), express.json({ limit: '15mb' }), wrap(asyn
     await add('region', ...uniq('region', 'region_name'));
     await add('investor', ...uniq('investor'));
     const st = uniq('stage'); const ps = uniq('project_stage');
-    await add('stage', [...new Set(st[0].concat(ps[0]))], [...new Set(st[0].concat(ps[0]))].map(x => (/^\d+$/.test(x) ? 'Giai đoạn ' + x : x)));
+    await add('stage', [...new Set(st[0].concat(ps[0]))], [...new Set(st[0].concat(ps[0]))].map(x => (/^\d+$/.test(x) ? 'Thời điểm ' + x : x)));
     return s;
   });
   res.json({ id });
@@ -272,7 +272,7 @@ api.get('/contracts/:code/history', need('member'), wrap(async (req, res) => {
 }));
 
 // Ma trận DT-CP gọn: mỗi hợp đồng × mỗi mốc một dòng (đã cộng các dòng HĐ/PL), dạng mảng để giảm dung lượng.
-// rows: [chỉ số mã trong codes, snapshot_id, giai đoạn, hd, sl, slhs, tv, dt, cp]. Đơn vị: đồng.
+// rows: [chỉ số mã trong codes, snapshot_id, thời điểm, hd, sl, slhs, tv, dt, cp]. Đơn vị: đồng.
 const MX_FIELDS = ['hd', 'sl', 'slhs', 'tv', 'dt'];
 api.get('/dtcp/matrix', need('member'), wrap(async (req, res) => {
   const cp = COST_KEYS.map(k => `coalesce((vals->>'${k}')::numeric, 0)`).join(' + ');
@@ -305,7 +305,7 @@ api.delete('/contract-notes/:id', need('member'), wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
-// Danh mục tên hiển thị: công ty, khu vực, chủ đầu tư, giai đoạn, khoản chi phí.
+// Danh mục tên hiển thị: công ty, khu vực, chủ đầu tư, thời điểm, khoản chi phí.
 api.put('/catalog', need('admin'), wrap(async (req, res) => {
   const kind = req.body.kind;
   if (!CATALOG_KINDS.includes(kind)) fail(400, 'Loại danh mục không hợp lệ.');

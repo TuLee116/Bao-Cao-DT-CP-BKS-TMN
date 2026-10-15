@@ -115,7 +115,7 @@
         db.lines[id] = p.lines.map((l, i) => Object.assign({ seq: i + 1 }, l));
         p.lines.forEach(l => {
           catAdd('company', l.company, (p.company_names || {})[l.company]); catAdd('region', l.region, l.region_name);
-          catAdd('investor', l.investor); catAdd('stage', l.stage, /^\d+$/.test(l.stage) ? 'Giai đoạn ' + l.stage : l.stage);
+          catAdd('investor', l.investor); catAdd('stage', l.stage, /^\d+$/.test(l.stage) ? 'Thời điểm ' + l.stage : l.stage);
         });
         save();
         return { id };

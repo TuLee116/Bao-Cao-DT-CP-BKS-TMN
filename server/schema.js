@@ -53,7 +53,7 @@ create table if not exists snapshot_lines (
 );
 create index if not exists snapshot_lines_contract_idx on snapshot_lines (contract_code);
 
--- Tên hiển thị cho mã: công ty, khu vực, chủ đầu tư, giai đoạn, khoản chi phí.
+-- Tên hiển thị cho mã: công ty, khu vực, chủ đầu tư, thời điểm, khoản chi phí.
 create table if not exists catalog (
   kind  text not null,
   code  text not null,
@@ -80,4 +80,14 @@ create table if not exists app_settings (
   updated_at  timestamptz not null default now(),
   updated_by  integer references users(id) on delete set null
 );
+
+-- Đổi từ ngữ "Giai đoạn" → "Thời điểm" (chạy một lần): chỉ đổi tên mặc định "Giai đoạn <mã>" trong danh mục,
+-- tên admin tự đặt khác mẫu này giữ nguyên; đổi chữ trong cấu hình dashboard đã lưu.
+do $$ begin
+  if not exists (select 1 from app_settings where key = 'mig_thoi_diem') then
+    update catalog set name = 'Thời điểm ' || code where kind = 'stage' and name = 'Giai đoạn ' || code;
+    update app_settings set value = replace(replace(value::text, 'Giai đoạn', 'Thời điểm'), 'giai đoạn', 'thời điểm')::jsonb where key = 'dashboard_v2';
+    insert into app_settings (key, value) values ('mig_thoi_diem', 'true');
+  end if;
+end $$;
 `;

@@ -227,7 +227,7 @@
 
   // Tên hiển thị cho mã (danh mục do admin đặt; mặc định là mã trong file)
   function nameOf(kind, code) {
-    if (!code) return { investor: '(Không rõ chủ đầu tư)', stage: '(Chưa ghi giai đoạn)', company: '(Không rõ công ty)', region: '(Không rõ khu vực)' }[kind] || '(Không rõ)';
+    if (!code) return { investor: '(Không rõ chủ đầu tư)', stage: '(Chưa ghi thời điểm)', company: '(Không rõ công ty)', region: '(Không rõ khu vực)' }[kind] || '(Không rõ)';
     const m = S.catalog.get(kind), c = m && m.get(code);
     return c ? c.name : code;
   }
@@ -254,7 +254,7 @@
   const DEFAULT_TERMS = {
     count: 'Số hợp đồng', hd: 'Giá trị hợp đồng', sl: 'Sản lượng', slhs: 'Sản lượng hồ sơ', tv: 'Tiền về', dt: 'Doanh thu',
     cp: 'Chi phí trực tiếp', pct: '%CPTT/DT', company: 'Công ty', region: 'Khu vực', project: 'Công trình', investor: 'Chủ đầu tư',
-    stage: 'Giai đoạn', contract: 'Hợp đồng'
+    stage: 'Thời điểm', contract: 'Hợp đồng'
   };
   const TERM_HELP = {
     count: 'Số hợp đồng (mã DT-CP)', hd: 'Cột Giá trị hợp đồng', sl: 'Cột Giá trị sản lượng', slhs: 'Cột Sản lượng hồ sơ', tv: 'Cột Giá trị tiền về',
@@ -476,10 +476,10 @@
       { id: 'kv', type: 'group', title: '', note: 'Bấm vào một dòng để lọc theo khu vực đó.', dim: 'region', metrics: ['dt', 'cp'], top: 12, detail: false, width: 'half', hidden: false },
       { id: 'cty', type: 'group', title: '', note: 'Bấm vào một dòng để lọc theo công ty đó.', dim: 'company', metrics: ['dt', 'cp'], top: 12, detail: false, width: 'half', hidden: false },
       { id: 'cdt', type: 'group', title: '', note: 'Tỷ lệ chi phí trực tiếp trên doanh thu: thấp hơn là tốt hơn.', dim: 'investor', metrics: ['pct'], top: 12, detail: false, width: 'half', hidden: false },
-      { id: 'gd', type: 'group', title: '', note: 'Bấm vào một giai đoạn để mở Chi tiết DT-CP của các hợp đồng đang ở giai đoạn đó.', dim: 'stage', metrics: ['dt', 'cp'], top: 12, detail: false, width: 'half', hidden: false },
+      { id: 'gd', type: 'group', title: '', note: 'Bấm vào một thời điểm để mở Chi tiết DT-CP của các hợp đồng đang ở thời điểm đó.', dim: 'stage', metrics: ['dt', 'cp'], top: 12, detail: false, width: 'half', hidden: false },
       { id: 'ct', type: 'group', title: '', note: '10 công trình có doanh thu lớn nhất; phần còn lại gộp vào "Khác".', dim: 'project', metrics: ['dt', 'cp'], top: 10, detail: false, width: 'half', hidden: false },
       { id: 'cocau', type: 'costs', title: '', note: 'Tổng từng khoản trong phạm vi đang lọc và tỷ trọng trên tổng chi phí trực tiếp.', dim: 'region', metrics: [], top: 12, detail: false, width: 'half', hidden: false },
-      { id: 'bang', type: 'table', title: '', note: 'Bấm vào một dòng để mở hoặc thu gọn; bấm vào hợp đồng hoặc giai đoạn để mở Chi tiết DT-CP (so sánh qua các giai đoạn và các tháng). Đơn vị: triệu đồng.', dim: 'region', metrics: [], top: 12, detail: false, width: 'full', hidden: false }
+      { id: 'bang', type: 'table', title: '', note: 'Bấm vào một dòng để mở hoặc thu gọn; bấm vào hợp đồng hoặc thời điểm để mở Chi tiết DT-CP (so sánh qua các thời điểm và các tháng). Đơn vị: triệu đồng.', dim: 'region', metrics: [], top: 12, detail: false, width: 'full', hidden: false }
     ]
   };
   const CARD_TYPES = { kpis: 'Ô chỉ số', group: 'Biểu đồ theo nhóm', costs: 'Cơ cấu chi phí', table: 'Bảng chi tiết' };
@@ -572,7 +572,7 @@
           onPick: pickable ? key => {
             if (key == null) return;
             S.filters[card.dim] = key;
-            if (card.dim === 'stage') { location.hash = '#/chi-tiet'; return; } // giai đoạn → Chi tiết DT-CP
+            if (card.dim === 'stage') { location.hash = '#/chi-tiet'; return; } // thời điểm → Chi tiết DT-CP
             render(); window.scrollTo({ top: 0, behavior: 'smooth' });
           } : null
         }));
@@ -763,7 +763,7 @@
   }
 
   // ------------------------------------------------------------------
-  // Chi tiết DT-CP: số liệu mới nhất của từng hợp đồng và so sánh giữa các thời điểm (giai đoạn) 1, 2, 3, 5…
+  // Chi tiết DT-CP: số liệu mới nhất của từng hợp đồng và so sánh giữa các thời điểm 1, 2, 3, 5…
   // Số liệu của một thời điểm = số liệu ở mốc (tháng) cuối cùng hợp đồng còn ở thời điểm đó.
   // Ma trận hợp đồng × mốc tải một lần (đã cộng sẵn ở máy chủ, nén gzip) và giữ trong bộ nhớ tới khi dữ liệu đổi.
   // ------------------------------------------------------------------
@@ -826,7 +826,7 @@
     const ls = latestSnap(), all = linesOf(ls.id), mx = matrix();
     const det = S.det;
     const head = h('div', null, h('div', { class: 'page-head' }, h('h1', null, 'Chi tiết DT-CP')),
-      h('p', { class: 'lead' }, `Số liệu mới nhất theo mốc `, h('b', null, F.date(ls.report_date)), `. Mỗi cột ${lc(T('stage'))} (cột "Thời điểm" của file) là số liệu ở tháng cuối cùng hợp đồng nằm ở ${lc(T('stage'))} đó, để so sánh DT-CP qua từng ${lc(T('stage'))}. Bấm vào một hợp đồng để xem chi tiết và số liệu từng tháng.`));
+      h('p', { class: 'lead' }, `Số liệu mới nhất theo mốc `, h('b', null, F.date(ls.report_date)), `. Mỗi cột ${lc(T('stage'))} là số liệu ở tháng cuối cùng hợp đồng nằm ở ${lc(T('stage'))} đó, để so sánh DT-CP qua từng ${lc(T('stage'))}. Bấm vào một hợp đồng để xem chi tiết và số liệu từng tháng.`));
     if (!all || !mx) return h('div', { class: 'stack', style: 'gap:18px' }, head, skeleton());
     const fl = DTCP.filter(all, S.filters);
     const groups = [...DTCP.groupBy(fl, 'contract').values()];
@@ -994,7 +994,7 @@
   }
 
   // ------------------------------------------------------------------
-  // So sánh: giữa hai mốc, hoặc giữa các giai đoạn trong một mốc
+  // So sánh: giữa hai mốc, hoặc giữa các thời điểm trong một mốc
   // ------------------------------------------------------------------
   function viewCompare() {
     if (!S.snapshots.length) return emptyData();
@@ -1098,7 +1098,7 @@
     await loadXLSX();
     const head = [T(S.cmp.by), 'Trạng thái'].concat(...['hd', 'dt', 'cp', 'tv'].map(k => [T(k) + ' A', T(k) + ' B', T(k) + ' Δ']), [T('pct') + ' A', T('pct') + ' B']);
     const v = (g, k) => (g ? g[k] : 0);
-    const body = rows.map(r => [r.label, { new: 'Mới', gone: 'Không còn', stage: 'Đổi giai đoạn', changed: 'Thay đổi', same: 'Không đổi' }[r.st]]
+    const body = rows.map(r => [r.label, { new: 'Mới', gone: 'Không còn', stage: 'Đổi thời điểm', changed: 'Thay đổi', same: 'Không đổi' }[r.st]]
       .concat(...['hd', 'dt', 'cp', 'tv'].map(k => [v(r.a, k), v(r.b, k), v(r.b, k) - v(r.a, k)]), [r.a && isFinite(r.a.pct) ? r.a.pct : '', r.b && isFinite(r.b.pct) ? r.b.pct : '']));
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([[`So sánh mốc ${snapLabel(sa)} (A) và ${snapLabel(sb)} (B) – đơn vị: đồng`], head].concat(body));
@@ -1223,7 +1223,7 @@
   }
 
   // ------------------------------------------------------------------
-  // Danh mục (admin): tên hiển thị cho mã công ty, khu vực, chủ đầu tư, giai đoạn, khoản chi phí
+  // Danh mục (admin): tên hiển thị cho mã công ty, khu vực, chủ đầu tư, thời điểm, khoản chi phí
   // ------------------------------------------------------------------
   function viewCatalog() {
     const kinds = [['company', T('company')], ['region', T('region')], ['investor', T('investor')], ['stage', T('stage')], ['cost', 'Khoản chi phí']];
@@ -1239,7 +1239,7 @@
     const hint = {
       company: 'Mã lấy từ cột CÔNG TY (TMN, QN, TN…).', region: 'Mã là số La Mã của nhóm khu vực trong file.',
       investor: 'Mã chủ đầu tư lấy từ số hợp đồng, ví dụ "12/2026/HĐ/ABC-TMN" → ABC. Đặt tên đầy đủ để báo cáo dễ đọc.',
-      stage: 'Giá trị cột "THỜI ĐIỂM" trong file (1, 2, 3, 5, HDNT…). Đặt tên cho từng giai đoạn/trạng thái, ví dụ 2 → "Đang thi công".',
+      stage: 'Giá trị cột "THỜI ĐIỂM" trong file (1, 2, 3, 5, HDNT…). Đặt tên cho từng thời điểm/trạng thái, ví dụ 2 → "Đang thi công".',
       cost: '15 khoản chi phí trực tiếp theo thứ tự cột trong file (K → Y). Dùng dấu " › " để tách nhóm và tên khoản, ví dụ "5. Nhân công › Công nhật".'
     }[kind];
     const rows = codes.map((code, i) => {
@@ -1296,7 +1296,7 @@
     titleIn.addEventListener('input', () => { D.title = titleIn.value; markDirty(); });
     const pageCard = h('div', { class: 'card' }, h('h2', null, 'Tiêu đề trang'), h('label', { class: 'f' }, 'Hiện ở đầu trang Tổng quan', titleIn));
     const termsCard = h('div', { class: 'card wide', id: 'ten-goi' }, h('h2', null, 'Tên gọi'),
-      h('p', { class: 'note' }, 'Đổi tên các chỉ số và nhóm dùng khắp web (dashboard, so sánh, bảng, xuất Excel). Để trống để dùng tên mặc định. Tên của từng mã (chủ đầu tư, giai đoạn…) đặt ở ', h('a', { href: '#/danh-muc' }, 'trang Danh mục'), '.'),
+      h('p', { class: 'note' }, 'Đổi tên các chỉ số và nhóm dùng khắp web (dashboard, so sánh, bảng, xuất Excel). Để trống để dùng tên mặc định. Tên của từng mã (chủ đầu tư, thời điểm…) đặt ở ', h('a', { href: '#/danh-muc' }, 'trang Danh mục'), '.'),
       h('div', { class: 'form-grid' }, Object.keys(DEFAULT_TERMS).map(k => {
         const inp = h('input', { type: 'text', id: 'term-' + k, maxlength: 60, value: D.terms[k] || '', placeholder: DEFAULT_TERMS[k] });
         inp.addEventListener('input', () => { D.terms[k] = inp.value; markDirty(); });

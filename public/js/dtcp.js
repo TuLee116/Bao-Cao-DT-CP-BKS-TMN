@@ -1,5 +1,5 @@
 // Mô hình dữ liệu DT-CP công trình: đọc file Excel "Bảng tổng hợp theo dõi doanh thu - chi phí"
-// và tổng hợp số liệu theo công ty / khu vực / công trình / chủ đầu tư / giai đoạn / hợp đồng.
+// và tổng hợp số liệu theo công ty / khu vực / công trình / chủ đầu tư / thời điểm / hợp đồng.
 // Đơn vị số tiền: đồng (như trong file).
 (function (root) {
   'use strict';

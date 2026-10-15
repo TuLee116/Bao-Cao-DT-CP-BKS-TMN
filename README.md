@@ -35,7 +35,7 @@ Chi phí: gói Hobby khoảng 5 USD/tháng (đã gồm 5 USD tài nguyên, đủ
 5. Mở service web → **Settings → Networking → Generate Domain** để có địa chỉ dạng `https://xxx.up.railway.app`.
 6. Mở địa chỉ đó và tạo tài khoản admin đầu tiên.
 
-Railway tự chạy `npm start`, và tự triển khai lại mỗi lần push lên nhánh đã chọn.
+Railway build bằng `Dockerfile` trong repo và tự triển khai lại mỗi lần push lên nhánh đã chọn. `Dockerfile` cũng dùng được cho Coolify hoặc bất kỳ máy chủ nào có Docker.
 
 ## Triển khai lên Vercel
 

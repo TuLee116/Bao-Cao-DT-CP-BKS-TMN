@@ -1,0 +1,8 @@
+node_modules
+.git
+.vercel
+.env
+Dockerfile
+.dockerignore
+api
+vercel.json

@@ -159,15 +159,15 @@
       h('a', { class: 'btn sm', href: '#/tai-khoan' }, 'Tài khoản'),
       h('button', { class: 'btn sm', type: 'button', onclick: e => run(e.currentTarget, async () => { await api.signOut(); location.hash = ''; await refreshAuth(); }) }, 'Đăng xuất'));
     return h('div', null,
-      h('header', { class: 'topbar' }, h('div', { class: 'wrap' },
-        h('a', { class: 'brand', href: '#/' }, logo(), APP), nav, who)),
+      h('header', { class: 'topbar' }, h('div', { class: 'topbar-in' },
+        h('a', { class: 'logo-full', href: '#/', title: 'Về trang Tổng quan' },
+          h('img', { src: 'img/logo-ngang.png', alt: 'Tân Minh Nhân Corporation', width: 228, height: 56 })),
+        h('div', { class: 'topbar-main' }, h('div', { class: 'topbar-row' }, h('span', { class: 'brand' }, APP), who), nav))),
       demoBar(),
       h('main', { class: 'wrap' }, content),
       h('footer', { class: 'wrap foot' }, 'Đơn vị số tiền: triệu đồng. Lợi nhuận tính trước thuế TNDN.'));
   }
-  function logo() {
-    return h('span', { class: 'logo-tile' }, h('img', { src: 'img/logo-mark.png', alt: '', width: 26, height: 26 }));
-  }
+
 
 
   // ---------- Đăng nhập ----------

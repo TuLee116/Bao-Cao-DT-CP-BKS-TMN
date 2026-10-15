@@ -254,3 +254,20 @@ input.invalid { border-color: var(--bad); }
 .t td.cur, .t th.cur { background: var(--accent-soft); }
 .t tr.subrow td { color: var(--muted); }
 .t td.indent { padding-left: 24px; }
+
+/* Sắp xếp bảng */
+.t th.sortable { cursor: pointer; user-select: none; }
+.t th.sortable:hover { color: var(--fg); }
+.t th.sortable::after { content: '↕'; margin-left: 4px; opacity: .35; font-size: .75em; }
+.t th.sortable[aria-sort="ascending"]::after { content: '▲'; opacity: 1; color: var(--link); }
+.t th.sortable[aria-sort="descending"]::after { content: '▼'; opacity: 1; color: var(--link); }
+
+/* Gợi ý ô Tìm */
+.suggest-wrap { position: relative; }
+.suggest-wrap input { width: 100%; }
+.suggest { position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 4px); margin: 0; padding: 4px; list-style: none; background: var(--popover, var(--panel)); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow); max-height: 340px; overflow-y: auto; min-width: min(28rem, 92vw); }
+.suggest li { display: flex; gap: 10px; align-items: baseline; padding: 7px 10px; border-radius: 6px; cursor: pointer; color: var(--fg); font-size: .875rem; }
+.suggest li:hover, .suggest li.on { background: var(--panel-2); }
+.sg-kind { flex: none; font-size: .6875rem; color: var(--muted); min-width: 5.5rem; }
+.sg-label { min-width: 0; overflow-wrap: anywhere; }
+.sg-label small { display: block; color: var(--muted); font-size: .75rem; }

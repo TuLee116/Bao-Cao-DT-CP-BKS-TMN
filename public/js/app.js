@@ -12,7 +12,7 @@
     snapshots: [], catalog: new Map(), dashboard: null, lines: new Map(), loading: new Set(), snap: null,
     filters: { company: '', region: '', investor: '', stage: '', project: '', q: '' },
     cmp: { mode: 'snap', a: null, b: null, by: 'contract', metric: 'dt', only: false },
-    det: { metric: 'dt', months: false }, mx: null,
+    det: { metric: 'dt', months: false }, mx: null, treeSort: null, sugOpen: false,
     open: new Set(), hist: null, catKind: null, custom: null, redraw: null
   };
 
@@ -105,6 +105,7 @@
     let r = route();
     if (!views[r] || (['du-lieu', 'danh-muc', 'nguoi-dung', 'tuy-bien'].includes(r) && !isAdmin())) r = '';
     mount(shell(views[r][0]()), views[r][1]);
+    applySorts();
     if (S.redraw) S.redraw();
   }
   // Vẽ lại trang mà vẫn giữ ô đang gõ (ví dụ ô tìm kiếm) và vị trí con trỏ.
@@ -298,8 +299,6 @@
       sel.addEventListener('change', () => { f[field] = sel.value; render(); });
       return h('label', { class: 'f' }, T(dim), sel);
     };
-    const q = h('input', { type: 'search', id: 'f-q', placeholder: 'Mã DT-CP, số HĐ, tên công trình…', value: f.q || '' });
-    q.addEventListener('input', () => { clearTimeout(qTimer); qTimer = setTimeout(() => { f.q = q.value; render(); }, 300); });
     const any = Object.values(f).some(Boolean);
     let snapSel = null;
     if (o.snap) {
@@ -311,9 +310,159 @@
       h('div', { class: 'filter-grid' },
         snapSel ? h('label', { class: 'f' }, 'Mốc dữ liệu', snapSel) : null,
         opt('company', 'company'), opt('region', 'region'), opt('investor', 'investor'), opt('stage', 'stage'), opt('project', 'project'),
-        h('label', { class: 'f grow' }, 'Tìm', q)),
+        h('label', { class: 'f grow' }, 'Tìm', searchBox(lines))),
       any ? h('div', { class: 'row' }, h('span', { class: 'note' }, 'Đang lọc dữ liệu.'),
         h('button', { class: 'btn sm', type: 'button', onclick: () => { S.filters = { company: '', region: '', investor: '', stage: '', project: '', q: '' }; render(); } }, 'Bỏ lọc')) : null);
+  }
+
+  // Gợi ý cho ô Tìm: hợp đồng, công trình, chủ đầu tư. Không phân biệt hoa/thường, có dấu/không dấu,
+  // gõ chữ cái đầu cũng được ("tchtkb" → "Thi công hoàn thiện khu BOH").
+  const sugCache = new WeakMap();
+  function suggestIndex(lines) {
+    if (sugCache.has(lines)) return sugCache.get(lines);
+    const out = [], seen = new Set();
+    const add = (kind, label, sub, apply) => {
+      const k = kind + '|' + label;
+      if (seen.has(k)) return;
+      seen.add(k);
+      const text = DTCP.fold(label + ' ' + (sub || ''));
+      out.push({ kind, label, sub, apply, text, lab: DTCP.fold(label), ini: text.split(/[^a-z0-9]+/).filter(Boolean).map(w => w[0]).join('') });
+    };
+    lines.forEach(l => {
+      add(T('contract'), `${l.contract_code} · ${l.contract_no}`, l.contract_title, { q: l.contract_code });
+      if (l.project_code) add(T('project'), `${l.project_code} – ${l.project_name}`, '', { project: l.project_code });
+      if (l.investor) add(T('investor'), nameOf('investor', l.investor), l.investor, { investor: l.investor });
+    });
+    sugCache.set(lines, out);
+    return out;
+  }
+  function matchSuggest(index, v) {
+    const words = v.split(' ').filter(Boolean), one = words.length === 1 && v.length >= 2;
+    const hits = [];
+    index.forEach(it => {
+      let score = -1;
+      if (it.lab.startsWith(v)) score = 0;
+      else if (words.every(w => it.text.includes(w))) score = (' ' + it.text).includes(' ' + words[0]) ? 1 : 2;
+      else if (one && it.ini.includes(v)) score = 3;
+      if (score >= 0) hits.push([score, it]);
+    });
+    hits.sort((a, b) => a[0] - b[0] || a[1].label.localeCompare(b[1].label, 'vi', { numeric: true }));
+    return hits.slice(0, 10).map(x => x[1]);
+  }
+  function searchBox(lines) {
+    const f = S.filters;
+    const q = h('input', { type: 'search', id: 'f-q', placeholder: 'Mã DT-CP, số HĐ, công trình, chủ đầu tư…', value: f.q || '', autocomplete: 'off',
+      role: 'combobox', 'aria-autocomplete': 'list', 'aria-controls': 'f-q-list', 'aria-expanded': 'false' });
+    const list = h('ul', { class: 'suggest', id: 'f-q-list', role: 'listbox', hidden: true });
+    let items = [], idx = -1;
+    const choose = it => {
+      if (it.apply.q != null) f.q = it.apply.q;
+      else { Object.assign(f, it.apply); f.q = ''; }
+      S.sugOpen = false; clearTimeout(qTimer); render();
+    };
+    const draw = () => {
+      const v = DTCP.fold(q.value);
+      items = v ? matchSuggest(suggestIndex(lines), v) : [];
+      if (idx >= items.length) idx = -1;
+      list.replaceChildren(...items.map((it, i) => h('li', { role: 'option', class: i === idx ? 'on' : '', 'aria-selected': i === idx ? 'true' : 'false', onmousedown: e => { e.preventDefault(); choose(it); } },
+        h('span', { class: 'sg-kind' }, it.kind), h('span', { class: 'sg-label' }, it.label, it.sub && it.sub !== it.label ? h('small', null, it.sub) : null))));
+      list.hidden = !(S.sugOpen && items.length);
+      q.setAttribute('aria-expanded', list.hidden ? 'false' : 'true');
+    };
+    q.addEventListener('input', () => {
+      S.sugOpen = true; idx = -1; draw();
+      clearTimeout(qTimer); qTimer = setTimeout(() => { f.q = q.value; render(); }, 400);
+    });
+    q.addEventListener('keydown', e => {
+      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && items.length) {
+        e.preventDefault(); S.sugOpen = true;
+        if (e.key === 'ArrowDown') idx = idx + 1 >= items.length ? -1 : idx + 1;
+        else idx = idx <= -1 ? items.length - 1 : idx - 1;
+        draw();
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (idx >= 0 && items[idx]) choose(items[idx]);
+        else { S.sugOpen = false; clearTimeout(qTimer); f.q = q.value; render(); }
+      } else if (e.key === 'Escape') { S.sugOpen = false; draw(); }
+    });
+    q.addEventListener('focus', () => { S.sugOpen = true; draw(); });
+    q.addEventListener('blur', () => { S.sugOpen = false; list.hidden = true; q.setAttribute('aria-expanded', 'false'); });
+    return h('div', { class: 'suggest-wrap' }, q, list);
+  }
+
+  // ------------------------------------------------------------------
+  // Sắp xếp bảng: bấm tiêu đề cột để xếp giảm dần → tăng dần → về thứ tự mặc định. Ghi nhớ theo bảng.
+  // Giá trị lấy từ phần chữ đầu tiên của ô (số kiểu Việt Nam, %, ngày dd/mm/yyyy); ô trống "–" luôn ở cuối.
+  // ------------------------------------------------------------------
+  const SORT = new Map();
+  function sortVal(td) {
+    if (!td) return null;
+    const n = td.firstChild;
+    const s = (n ? n.textContent : '').trim().replace(/\u2212/g, '-');
+    if (!s || /^[–—-]$/.test(s)) return null;
+    const d = s.match(/^(\d{2})\/(\d{2})\/(\d{2}|\d{4})\b/);
+    if (d) return +((d[3].length === 2 ? '20' + d[3] : d[3]) + d[2] + d[1]);
+    const m = s.match(/^([+-]?)(\d{1,3}(?:\.\d{3})*(?:,\d+)?|\d+(?:,\d+)?)\s*(%|điểm %|tỷ|tr|đ|HĐ)?$/);
+    if (m) {
+      let x = parseFloat(m[2].replace(/\./g, '').replace(',', '.')) * (m[1] === '-' ? -1 : 1);
+      if (m[3] === 'tỷ') x *= 1000;
+      return x;
+    }
+    return s;
+  }
+  function headerCols(table) {
+    const grid = [], map = new Map();
+    [...table.tHead.rows].forEach((tr, r) => {
+      grid[r] = grid[r] || [];
+      let c = 0;
+      [...tr.cells].forEach(th => {
+        while (grid[r][c]) c++;
+        const cs = th.colSpan || 1, rs = th.rowSpan || 1;
+        for (let i = 0; i < rs; i++) for (let j = 0; j < cs; j++) { grid[r + i] = grid[r + i] || []; grid[r + i][c + j] = th; }
+        if (cs === 1) map.set(th, c);
+        c += cs;
+      });
+    });
+    return map;
+  }
+  function makeSortable(table, key) {
+    const body = table.tBodies[0];
+    if (!table.tHead || !body || body.rows.length < 2) return;
+    const st = SORT.get(key);
+    headerCols(table).forEach((col, th) => {
+      if (!th.textContent.trim()) return;
+      th.classList.add('sortable');
+      th.tabIndex = 0;
+      th.title = 'Bấm để sắp xếp';
+      if (st && st.col === col) th.setAttribute('aria-sort', st.dir > 0 ? 'ascending' : 'descending');
+      const click = () => {
+        const cur = SORT.get(key);
+        if (cur && cur.col === col) { if (cur.dir === cur.first) cur.dir = -cur.dir; else SORT.delete(key); }
+        else {
+          const v = [...body.rows].map(r => sortVal(r.cells[col])).find(x => x != null);
+          const first = typeof v === 'number' ? -1 : 1; // số: lớn trước; chữ: A → Z
+          SORT.set(key, { col, dir: first, first });
+        }
+        render();
+      };
+      th.addEventListener('click', click);
+      th.addEventListener('keydown', e => { if (e.key === 'Enter') click(); });
+    });
+    if (!st) return;
+    const rows = [...body.rows], vals = new Map(rows.map(r => [r, sortVal(r.cells[st.col])]));
+    rows.sort((a, b) => {
+      const x = vals.get(a), y = vals.get(b);
+      if (x == null || y == null) return x == null && y == null ? 0 : x == null ? 1 : -1;
+      return st.dir * (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), 'vi', { numeric: true }));
+    });
+    body.append(...rows);
+  }
+  function applySorts() {
+    const page = route() + (routeArg() ? '/*' : '');
+    $app.querySelectorAll('table.t').forEach(t => {
+      if (t.classList.contains('tree') || t.classList.contains('nosort') || t.querySelector('tbody input, tbody select, tbody textarea')) return;
+      makeSortable(t, page + '|' + [...t.tHead.querySelectorAll('th')].map(th => th.textContent).join('|'));
+    });
   }
 
   // ------------------------------------------------------------------
@@ -456,7 +605,16 @@
     const cols = ['hd', 'dt', 'cp', 'pct'].concat(tv ? ['tv'] : []);
     const num = (g, k) => (k === 'pct' ? F.pct(g.pct) : F.trieu(g[k]));
     const tbody = h('tbody');
-    const regions = [...DTCP.groupBy(lines, 'region').values()].sort((a, b) => catSort('region', a.key) - catSort('region', b.key) || String(a.key).localeCompare(String(b.key), 'vi', { numeric: true }));
+    const ts = S.treeSort;
+    const byKey = (a, b) => String(a.key).localeCompare(String(b.key), 'vi', { numeric: true });
+    // Sắp xếp trong từng tầng theo cột đã chọn (bấm tiêu đề cột); không chọn thì theo mã.
+    const order = (arr, dflt) => arr.sort(!ts ? dflt : (a, b) => {
+      if (ts.k === 'name') return ts.dir * byKey(a, b);
+      const x = a[ts.k], y = b[ts.k];
+      if (!isFinite(x) || !isFinite(y)) return isFinite(x) ? -1 : isFinite(y) ? 1 : 0;
+      return ts.dir * (x - y) || byKey(a, b);
+    });
+    const regions = order([...DTCP.groupBy(lines, 'region').values()], (a, b) => catSort('region', a.key) - catSort('region', b.key) || byKey(a, b));
     const row = (level, key, label, g, extra, onClick, open) => h('tr', { class: 'lv' + level + (onClick ? ' click' : ''), tabindex: onClick ? '0' : null, onclick: onClick, onkeydown: onClick ? e => { if (e.key === 'Enter') onClick(); } : null },
       h('td', { class: 'l name' }, level < 2 ? h('span', { class: 'tw' }, open ? '▾' : '▸') : null, h('span', null, label)),
       h('td', { class: 'l' }, extra[0] || ''), h('td', { class: 'l' }, extra[1] || ''),
@@ -467,12 +625,12 @@
       tbody.append(row(0, rk, dimLabel('region', rg.key, rg.first), rg, [F.int(rg.count) + ' HĐ', ''], preview ? null : toggle(rk), rOpen));
       if (!rOpen) return;
       const rl = lines.filter(l => l.region === rg.key);
-      [...DTCP.groupBy(rl, 'project').values()].sort((a, b) => String(a.key).localeCompare(String(b.key), 'vi', { numeric: true })).forEach(pg => {
+      order([...DTCP.groupBy(rl, 'project').values()], byKey).forEach(pg => {
         const pk = 'p:' + rg.key + ':' + pg.key, pOpen = S.open.has(pk);
         tbody.append(row(1, pk, dimLabel('project', pg.key, pg.first), pg, [F.int(pg.count) + ' HĐ', ''], preview ? null : toggle(pk), pOpen));
         if (!pOpen) return;
         const pl = rl.filter(l => (l.project_code || '(không rõ)') === pg.key);
-        [...DTCP.groupBy(pl, 'contract').values()].sort((a, b) => String(a.key).localeCompare(String(b.key), 'vi', { numeric: true })).forEach(cg => {
+        order([...DTCP.groupBy(pl, 'contract').values()], byKey).forEach(cg => {
           const f = cg.first;
           tbody.append(row(2, cg.key, `${cg.key} · ${f.contract_no}${f.contract_title ? ' – ' + f.contract_title : ''}`, cg,
             [nameOf('investor', f.investor), preview ? nameOf('stage', f.stage) : h('a', { href: '#/chi-tiet', title: 'Xem Chi tiết DT-CP các hợp đồng ở ' + lc(T('stage')) + ' này', onclick: e => { e.stopPropagation(); S.filters.stage = f.stage || ''; } }, nameOf('stage', f.stage))],
@@ -488,10 +646,22 @@
         h('button', { class: 'btn sm', type: 'button', onclick: () => { S.open.clear(); render(); } }, 'Thu gọn'),
         h('button', { class: 'btn sm', type: 'button', onclick: e => run(e.currentTarget, () => exportContracts(lines, 'bang-dtcp')) }, 'Xuất Excel')),
       h('div', { class: 'table-wrap tree-wrap' }, h('table', { class: 't tree' },
-        h('thead', null, h('tr', null, h('th', null, `${T('region')} / ${T('project')} / ${T('contract')}`), h('th', { class: 'l' }, T('investor')), h('th', { class: 'l' }, T('stage')),
-          cols.map(k => h('th', null, T(k))))),
+        h('thead', null, h('tr', null, sortTh('name', `${T('region')} / ${T('project')} / ${T('contract')}`, preview), h('th', { class: 'l' }, T('investor')), h('th', { class: 'l' }, T('stage')),
+          cols.map(k => sortTh(k, T(k), preview)))),
         tbody,
         h('tfoot', null, h('tr', null, h('td', { class: 'l' }, 'Tổng cộng'), h('td', { class: 'l' }, F.int(tot.count) + ' HĐ'), h('td'), cols.map(k => h('td', null, num(tot, k))))))));
+  }
+
+  function sortTh(k, label, preview) {
+    if (preview) return h('th', null, label);
+    const ts = S.treeSort, on = ts && ts.k === k;
+    const click = () => {
+      const first = k === 'name' ? 1 : -1;
+      S.treeSort = !on ? { k, dir: first } : ts.dir === first ? { k, dir: -first } : null;
+      render();
+    };
+    return h('th', { class: 'sortable', tabindex: '0', title: 'Bấm để sắp xếp trong từng tầng', 'aria-sort': on ? (ts.dir > 0 ? 'ascending' : 'descending') : null,
+      onclick: click, onkeydown: e => { if (e.key === 'Enter') click(); } }, label);
   }
 
   // Xuất danh sách hợp đồng (theo bộ lọc hiện tại) ra Excel
@@ -695,7 +865,7 @@
         h('tfoot', null, h('tr', null, h('td', { class: 'l' }, 'Mới nhất · ' + F.dateShort(ls.report_date)), aggCols.map(k => h('td', null, aggCell(tot, k))))))));
     // Bảng từng hợp đồng
     items.sort((a, b) => (mval(b.g, m) || 0) - (mval(a.g, m) || 0) || String(a.key).localeCompare(String(b.key), 'vi', { numeric: true }));
-    const show = items.slice(0, 400);
+    const show = items.slice(0, 3000);
     const go = key => () => { location.hash = '#/chi-tiet/' + encodeURIComponent(key); };
     const tbl = h('div', { class: 'table-wrap' }, h('table', { class: 't' },
       h('thead', null, h('tr', null, h('th', null, T('contract')), h('th', { class: 'l' }, T('stage') + ' hiện tại'),
@@ -720,7 +890,7 @@
     const tableCard = h('div', { class: 'card wide' },
       h('div', { class: 'card-head' }, h('h2', null, `${T(m)} của từng hợp đồng theo ${lc(T('stage'))}`),
         h('button', { class: 'btn sm', type: 'button', onclick: e => run(e.currentTarget, () => exportDetail(items, stages, ls)) }, 'Xuất Excel')),
-      h('p', { class: 'note' }, `Đơn vị: ${m === 'pct' ? '%' : 'triệu đồng'}. Ô tô màu là ${lc(T('stage'))} hiện tại; dòng nhỏ dưới mỗi số là thay đổi so với ${lc(T('stage'))} liền trước. Rê chuột vào ô để xem khoảng tháng.` +
+      h('p', { class: 'note' }, `Đơn vị: ${m === 'pct' ? '%' : 'triệu đồng'}. Ô tô màu là ${lc(T('stage'))} hiện tại; dòng nhỏ dưới mỗi số là thay đổi so với ${lc(T('stage'))} liền trước. Rê chuột vào ô để xem khoảng tháng. Bấm tiêu đề cột để sắp xếp.` +
         (items.length > show.length ? ` Đang hiện ${show.length} hợp đồng đầu; xuất Excel để xem đủ.` : '')), tbl);
     return h('div', { class: 'stack', style: 'gap:18px' }, head, filterBar(all, { snap: false }), controls, h('div', { class: 'grid' }, sumCard, tableCard));
   }
@@ -788,7 +958,7 @@
       h('p', { class: 'note' }, `Mỗi cột là số liệu ở tháng cuối cùng hợp đồng nằm ở ${lc(T('stage'))} đó; cột tô màu là ${lc(T('stage'))} hiện tại (= số liệu mới nhất). Dòng nhỏ là thay đổi so với ${lc(T('stage'))} liền trước. Đơn vị: triệu đồng.`),
       st.length > 1 ? [h('div', { class: 'legend' }, h('span', null, sw(C[0]), T('dt')), h('span', null, sw(C[1]), T('cp'))), h('div', { class: 'chart-box' }, hostS), h('p', { class: 'note axis-note' }, 'Trục: tỷ đồng')]
         : h('p', { class: 'note' }, `Hợp đồng mới có số liệu ở một ${lc(T('stage'))}. Khi file các tháng sau ghi ${lc(T('stage'))} mới, bảng sẽ có thêm cột để so sánh.`),
-      h('div', { class: 'table-wrap' }, h('table', { class: 't' },
+      h('div', { class: 'table-wrap' }, h('table', { class: 't nosort' },
         h('thead', null, h('tr', null, h('th', null, 'Chỉ số'), st.map(g => h('th', { class: g.stage === cur ? 'cur' : '' }, nameOf('stage', g.stage) + (g.stage === cur ? ' (hiện tại)' : ''), h('span', { class: 'sub' }, stagePeriod(g)))))),
         h('tbody', null, rowsDef.map(d => h('tr', { class: d.sub ? 'subrow' : '' }, h('td', { class: 'l' + (d.sub ? ' indent' : '') }, d.t),
           st.map((g, i) => {
@@ -909,7 +1079,7 @@
       const good = GOOD[k] > 0 ? d > 0 : GOOD[k] < 0 ? d < 0 : null;
       return h('td', { class: good === null ? '' : good ? 'is-good' : 'is-bad' }, k === 'pct' ? F.pt(d) : (d > 0 ? '+' : '') + F.trieu(d));
     };
-    const show = rows.slice(0, 500);
+    const show = rows.slice(0, 3000);
     const tbl = h('div', { class: 'table-wrap' }, h('table', { class: 't cmp' },
       h('thead', null, h('tr', null, h('th', { rowspan: 2 }, T(cm.by)), h('th', { class: 'l', rowspan: 2 }, 'Trạng thái'),
         ...['dt', 'cp', 'pct'].map(k => h('th', { colspan: 3, class: 'grp' + (k === m ? ' hl' : '') }, T(k)))),
@@ -920,7 +1090,7 @@
         ...['dt', 'cp', 'pct'].flatMap(k => [h('td', null, cell(r.a, k)), h('td', null, cell(r.b, k)), dcell(r.a, r.b, k)]))))));
     const tableCard = h('div', { class: 'card wide' }, h('div', { class: 'card-head' }, h('h2', null, `Chi tiết theo ${lc(T(cm.by))} (${F.int(rows.length)} dòng)`),
       h('button', { class: 'btn sm', type: 'button', onclick: e => run(e.currentTarget, () => exportCompare(rows, sa, sb)) }, 'Xuất Excel')),
-      h('p', { class: 'note' }, `Đơn vị: triệu đồng; ${T('pct')} tính bằng %, Δ của nó là điểm %. Xanh là tốt lên, đỏ là xấu đi.` + (rows.length > 500 ? ' Đang hiện 500 dòng đầu; xuất Excel để xem đủ.' : '')), tbl);
+      h('p', { class: 'note' }, `Đơn vị: triệu đồng; ${T('pct')} tính bằng %, Δ của nó là điểm %. Xanh là tốt lên, đỏ là xấu đi.` + (rows.length > show.length ? ` Đang hiện ${show.length} dòng đầu; xuất Excel để xem đủ.` : '') + ' Bấm tiêu đề cột để sắp xếp.'), tbl);
     return h('div', { class: 'stack', style: 'gap:18px' }, controls, filterBar(lb, { snap: false }), h('div', { class: 'grid' }, summary, chartCard, tableCard));
   }
 

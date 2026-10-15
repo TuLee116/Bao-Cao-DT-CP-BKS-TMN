@@ -174,12 +174,14 @@
     m.forEach(finish);
     return m;
   }
+  // Chuẩn hóa để tìm kiếm: không phân biệt chữ hoa/thường, có dấu/không dấu ("thi cong" khớp "Thi Công").
+  const fold = s => norm(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[đĐ]/g, 'd').toLowerCase();
   function filter(lines, f) {
-    const q = norm(f.q).toLocaleLowerCase('vi');
+    const q = fold(f.q);
     return lines.filter(l => (!f.company || l.company === f.company) && (!f.region || l.region === f.region) &&
       (!f.investor || l.investor === f.investor) && (!f.stage || l.stage === f.stage) && (!f.project || l.project_code === f.project) &&
-      (!q || [l.contract_code, l.contract_no, l.contract_title, l.project_code, l.project_name].join(' ').toLocaleLowerCase('vi').includes(q)));
+      (!q || fold([l.contract_code, l.contract_no, l.contract_title, l.project_code, l.project_name].join(' ')).includes(q)));
   }
 
-  root.DTCP = { COST_COLS, COST_KEYS, VALUE_KEYS, parseRows, total, groupBy, filter, cpOf, DIM_KEY };
+  root.DTCP = { COST_COLS, COST_KEYS, VALUE_KEYS, parseRows, total, groupBy, filter, cpOf, DIM_KEY, fold };
 })(typeof window !== 'undefined' ? window : globalThis);

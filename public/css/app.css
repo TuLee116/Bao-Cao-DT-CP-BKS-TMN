@@ -246,3 +246,11 @@ input.invalid { border-color: var(--bad); }
 .card .tiles { grid-template-columns: repeat(auto-fit, minmax(min(100%, 13.5rem), 1fr)); }
 .card .tiles .big { font-size: clamp(1.45rem, 1.1rem + 1vw, 1.95rem); white-space: nowrap; }
 .chart-hb svg { display: block; overflow: visible; }
+
+/* Chi tiết DT-CP */
+.t .sub { display: block; font-size: .6875rem; color: var(--muted); font-weight: 400; }
+.t .sub.is-good { color: var(--ok); }
+.t .sub.is-bad { color: var(--bad); }
+.t td.cur, .t th.cur { background: var(--accent-soft); }
+.t tr.subrow td { color: var(--muted); }
+.t td.indent { padding-left: 24px; }

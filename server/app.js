@@ -2,6 +2,7 @@
 const path = require('path');
 const crypto = require('crypto');
 const express = require('express');
+const compression = require('compression');
 const bcrypt = require('bcryptjs');
 const { query, tx, migrate, HttpError, hasDb } = require('./db');
 
@@ -12,6 +13,8 @@ const ROLES = ['admin', 'viewer'];
 const app = express();
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
+// Nén gzip mọi phản hồi (JSON số liệu, file JS/CSS): giảm 70–90% dung lượng truyền, số liệu giữ nguyên.
+app.use(compression({ threshold: 1024 }));
 
 app.use((req, res, next) => {
   res.set({
@@ -260,12 +263,29 @@ api.get('/contracts/:code/history', need('member'), wrap(async (req, res) => {
   const cp = COST_KEYS.map(k => `coalesce((l.vals->>'${k}')::numeric, 0)`).join(' + ');
   const [h, n] = await Promise.all([
     query(`select s.id as snapshot_id, to_char(s.report_date, 'YYYY-MM-DD') as report_date, s.label, max(l.stage) as stage,
-        ${['hd', 'sl', 'slhs', 'tv', 'dt'].map(sum).join(', ')}, coalesce(sum(${cp}), 0)::float8 as cp
+        ${VAL_KEYS.map(sum).join(', ')}, coalesce(sum(${cp}), 0)::float8 as cp
       from snapshot_lines l join snapshots s on s.id = l.snapshot_id
       where l.contract_code = $1 group by s.id order by s.report_date, s.id`, [code]),
     query('select id, content, author_id, author_name, created_at from contract_notes where contract_code = $1 order by created_at desc', [code])
   ]);
   res.json({ history: h.rows, notes: n.rows });
+}));
+
+// Ma trận DT-CP gọn: mỗi hợp đồng × mỗi mốc một dòng (đã cộng các dòng HĐ/PL), dạng mảng để giảm dung lượng.
+// rows: [chỉ số mã trong codes, snapshot_id, giai đoạn, hd, sl, slhs, tv, dt, cp]. Đơn vị: đồng.
+const MX_FIELDS = ['hd', 'sl', 'slhs', 'tv', 'dt'];
+api.get('/dtcp/matrix', need('member'), wrap(async (req, res) => {
+  const cp = COST_KEYS.map(k => `coalesce((vals->>'${k}')::numeric, 0)`).join(' + ');
+  const r = await query(`select contract_code, snapshot_id, max(stage) as stage,
+      ${MX_FIELDS.map(k => `coalesce(sum((vals->>'${k}')::numeric), 0)::float8 as ${k}`).join(', ')}, coalesce(sum(${cp}), 0)::float8 as cp
+    from snapshot_lines group by contract_code, snapshot_id order by contract_code, snapshot_id`);
+  const codes = [], idx = new Map();
+  const rows = r.rows.map(x => {
+    if (!idx.has(x.contract_code)) { idx.set(x.contract_code, codes.length); codes.push(x.contract_code); }
+    return [idx.get(x.contract_code), x.snapshot_id, x.stage || ''].concat(MX_FIELDS.map(k => x[k]), x.cp);
+  });
+  res.set('Cache-Control', 'private, no-cache');
+  res.json({ fields: ['code', 'snapshot_id', 'stage'].concat(MX_FIELDS, 'cp'), codes, rows });
 }));
 
 api.post('/contract-notes', need('member'), wrap(async (req, res) => {

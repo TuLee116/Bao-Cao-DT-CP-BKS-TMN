@@ -43,6 +43,7 @@
     updateSnapshot: (id, patch) => call('PUT', 'snapshots/' + id, patch),
     deleteSnapshot: id => call('DELETE', 'snapshots/' + id),
     contractHistory: code => call('GET', 'contracts/' + encodeURIComponent(code) + '/history'),
+    dtcpMatrix: () => call('GET', 'dtcp/matrix'),
     addContractNote: (code, content) => call('POST', 'contract-notes', { contract_code: code, content }),
     deleteContractNote: id => call('DELETE', 'contract-notes/' + id),
     saveCatalog: (kind, code, name, sort) => call('PUT', 'catalog', { kind, code, name, sort }),
@@ -128,9 +129,29 @@
           const ls = (db.lines[s.id] || []).filter(l => l.contract_code === code);
           if (!ls.length) return null;
           const sum = k => ls.reduce((t, l) => t + (l.vals[k] || 0), 0);
-          return { snapshot_id: s.id, report_date: s.report_date, label: s.label, stage: ls[0].stage, hd: sum('hd'), sl: sum('sl'), slhs: sum('slhs'), tv: sum('tv'), dt: sum('dt'), cp: cpKeys.reduce((t, k) => t + sum(k), 0) };
+          const r = { snapshot_id: s.id, report_date: s.report_date, label: s.label, stage: ls[0].stage };
+          DTCP.VALUE_KEYS.concat(cpKeys).forEach(k => { r[k] = sum(k); });
+          r.cp = cpKeys.reduce((t, k) => t + r[k], 0);
+          return r;
         }).filter(Boolean);
         return { history, notes: clone(db.notes.filter(n => n.contract_code === code).sort((a, b) => (a.created_at < b.created_at ? 1 : -1))) };
+      },
+      async dtcpMatrix() {
+        need(); await tick();
+        const F = DTCP.VALUE_KEYS, codes = [], idx = new Map(), acc = new Map();
+        db.snapshots.forEach(s => (db.lines[s.id] || []).forEach(l => {
+          const key = l.contract_code + '\u0000' + s.id;
+          if (!acc.has(key)) acc.set(key, { code: l.contract_code, sid: s.id, stage: '', v: F.concat('cp').map(() => 0) });
+          const a = acc.get(key);
+          if ((l.stage || '') > a.stage) a.stage = l.stage || '';
+          F.forEach((k, i) => { a.v[i] += l.vals[k] || 0; });
+          a.v[F.length] += DTCP.cpOf(l.vals);
+        }));
+        const rows = [...acc.values()].sort((a, b) => (a.code < b.code ? -1 : a.code > b.code ? 1 : a.sid - b.sid)).map(a => {
+          if (!idx.has(a.code)) { idx.set(a.code, codes.length); codes.push(a.code); }
+          return [idx.get(a.code), a.sid, a.stage].concat(a.v);
+        });
+        return { fields: ['code', 'snapshot_id', 'stage'].concat(F, 'cp'), codes, rows };
       },
       async addContractNote(code, content) {
         const u = need();

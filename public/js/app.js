@@ -12,6 +12,7 @@
     snapshots: [], catalog: new Map(), dashboard: null, lines: new Map(), loading: new Set(), snap: null,
     filters: { company: '', region: '', investor: '', stage: '', project: '', q: '' },
     cmp: { mode: 'snap', a: null, b: null, by: 'contract', metric: 'dt', only: false },
+    det: { metric: 'dt', months: false }, mx: null,
     open: new Set(), hist: null, catKind: null, custom: null, redraw: null
   };
 
@@ -98,7 +99,7 @@
     if (!S.profile) return S.needsSetup ? mount(viewSetup(), 'Cài đặt lần đầu') : mount(viewLogin(), 'Đăng nhập');
     if (!S.loaded) return mount(shell(h('div', { class: 'skeleton', style: 'height:320px' })), '');
     const views = {
-      '': [viewDashboard, 'Tổng quan'], 'so-sanh': [viewCompare, 'So sánh'], 'hop-dong': [viewContract, 'Hợp đồng'], 'du-lieu': [viewData, 'Dữ liệu'],
+      '': [viewDashboard, 'Tổng quan'], 'chi-tiet': [viewDetail, 'Chi tiết DT-CP'], 'so-sanh': [viewCompare, 'So sánh'], 'hop-dong': [viewContract, 'Hợp đồng'], 'du-lieu': [viewData, 'Dữ liệu'],
       'danh-muc': [viewCatalog, 'Danh mục'], 'nguoi-dung': [viewUsers, 'Người dùng'], 'tuy-bien': [viewCustomize, 'Tùy biến'], 'tai-khoan': [viewAccount, 'Tài khoản']
     };
     let r = route();
@@ -122,10 +123,10 @@
       S.profile ? confirmBtn('Đặt lại dữ liệu demo', async () => { api.reset(); toast('Đã đặt lại dữ liệu demo.'); await refreshAuth(); }, 'sm') : null));
   }
 
-  const views0 = ['', 'so-sanh', 'hop-dong', 'du-lieu', 'danh-muc', 'nguoi-dung', 'tuy-bien', 'tai-khoan'];
+  const views0 = ['', 'chi-tiet', 'so-sanh', 'hop-dong', 'du-lieu', 'danh-muc', 'nguoi-dung', 'tuy-bien', 'tai-khoan'];
   function shell(content) {
     const r = route();
-    const items = [['', 'Tổng quan'], ['so-sanh', 'So sánh'], ['du-lieu', 'Dữ liệu', 1], ['danh-muc', 'Danh mục', 1], ['tuy-bien', 'Tùy biến', 1], ['nguoi-dung', 'Người dùng', 1]];
+    const items = [['', 'Tổng quan'], ['chi-tiet', 'Chi tiết DT-CP'], ['so-sanh', 'So sánh'], ['du-lieu', 'Dữ liệu', 1], ['danh-muc', 'Danh mục', 1], ['tuy-bien', 'Tùy biến', 1], ['nguoi-dung', 'Người dùng', 1]];
     const nav = h('nav', { class: 'nav', 'aria-label': 'Chức năng' },
       items.filter(i => !i[2] || isAdmin()).map(([k, t]) => h('a', { href: '#/' + k, class: (r === k || (k === '' && (r === 'hop-dong' || !views0.includes(r)))) ? 'on' : '' }, t)));
     const who = h('div', { class: 'who' },
@@ -207,7 +208,7 @@
     S.users = isAdmin() ? await api.listUsers() : [];
     S.loaded = true;
   }
-  async function reload() { S.lines.clear(); S.hist = null; await loadAll(); render(); }
+  async function reload() { S.lines.clear(); S.hist = null; S.mx = null; await loadAll(); render(); }
   async function getLines(id) { if (!S.lines.has(id)) S.lines.set(id, await api.lines(id)); return S.lines.get(id); }
   // Dòng của một mốc nếu đã tải; nếu chưa, tải nền rồi vẽ lại trang.
   function linesOf(id) {
@@ -326,10 +327,10 @@
       { id: 'kv', type: 'group', title: '', note: 'Bấm vào một dòng để lọc theo khu vực đó.', dim: 'region', metrics: ['dt', 'cp'], top: 12, detail: false, width: 'half', hidden: false },
       { id: 'cty', type: 'group', title: '', note: 'Bấm vào một dòng để lọc theo công ty đó.', dim: 'company', metrics: ['dt', 'cp'], top: 12, detail: false, width: 'half', hidden: false },
       { id: 'cdt', type: 'group', title: '', note: 'Tỷ lệ chi phí trực tiếp trên doanh thu: thấp hơn là tốt hơn.', dim: 'investor', metrics: ['pct'], top: 12, detail: false, width: 'half', hidden: false },
-      { id: 'gd', type: 'group', title: '', note: '', dim: 'stage', metrics: ['dt', 'cp'], top: 12, detail: false, width: 'half', hidden: false },
+      { id: 'gd', type: 'group', title: '', note: 'Bấm vào một giai đoạn để mở Chi tiết DT-CP của các hợp đồng đang ở giai đoạn đó.', dim: 'stage', metrics: ['dt', 'cp'], top: 12, detail: false, width: 'half', hidden: false },
       { id: 'ct', type: 'group', title: '', note: '10 công trình có doanh thu lớn nhất; phần còn lại gộp vào "Khác".', dim: 'project', metrics: ['dt', 'cp'], top: 10, detail: false, width: 'half', hidden: false },
       { id: 'cocau', type: 'costs', title: '', note: 'Tổng từng khoản trong phạm vi đang lọc và tỷ trọng trên tổng chi phí trực tiếp.', dim: 'region', metrics: [], top: 12, detail: false, width: 'half', hidden: false },
-      { id: 'bang', type: 'table', title: '', note: 'Bấm vào một dòng để mở hoặc thu gọn; bấm vào hợp đồng để xem chi tiết và diễn biến qua các mốc. Đơn vị: triệu đồng.', dim: 'region', metrics: [], top: 12, detail: false, width: 'full', hidden: false }
+      { id: 'bang', type: 'table', title: '', note: 'Bấm vào một dòng để mở hoặc thu gọn; bấm vào hợp đồng hoặc giai đoạn để mở Chi tiết DT-CP (so sánh qua các giai đoạn và các tháng). Đơn vị: triệu đồng.', dim: 'region', metrics: [], top: 12, detail: false, width: 'full', hidden: false }
     ]
   };
   const CARD_TYPES = { kpis: 'Ô chỉ số', group: 'Biểu đồ theo nhóm', costs: 'Cơ cấu chi phí', table: 'Bảng chi tiết' };
@@ -419,7 +420,12 @@
         const pickable = !ctx.preview && ['company', 'region', 'investor', 'stage', 'project'].includes(card.dim);
         ctx.draws.push(() => Charts.hbars(host, cats, series, {
           fmt: v => fmtM(ms[0], v), axisFmt: ms[0] === 'pct' ? d3.format('.0%') : ms[0] === 'count' ? F.int : F.tyAxis,
-          onPick: pickable ? key => { if (key != null) { S.filters[card.dim] = key; render(); window.scrollTo({ top: 0, behavior: 'smooth' }); } } : null
+          onPick: pickable ? key => {
+            if (key == null) return;
+            S.filters[card.dim] = key;
+            if (card.dim === 'stage') { location.hash = '#/chi-tiet'; return; } // giai đoạn → Chi tiết DT-CP
+            render(); window.scrollTo({ top: 0, behavior: 'smooth' });
+          } : null
         }));
       }
     } else if (card.type === 'costs') {
@@ -469,7 +475,8 @@
         [...DTCP.groupBy(pl, 'contract').values()].sort((a, b) => String(a.key).localeCompare(String(b.key), 'vi', { numeric: true })).forEach(cg => {
           const f = cg.first;
           tbody.append(row(2, cg.key, `${cg.key} · ${f.contract_no}${f.contract_title ? ' – ' + f.contract_title : ''}`, cg,
-            [nameOf('investor', f.investor), nameOf('stage', f.stage)], preview ? null : () => { location.hash = '#/hop-dong/' + encodeURIComponent(cg.key); }, false));
+            [nameOf('investor', f.investor), preview ? nameOf('stage', f.stage) : h('a', { href: '#/chi-tiet', title: 'Xem Chi tiết DT-CP các hợp đồng ở ' + lc(T('stage')) + ' này', onclick: e => { e.stopPropagation(); S.filters.stage = f.stage || ''; } }, nameOf('stage', f.stage))],
+            preview ? null : () => { location.hash = '#/chi-tiet/' + encodeURIComponent(cg.key); }, false));
         });
       });
     });
@@ -582,6 +589,237 @@
           if (ok) { S.hist = null; toast('Đã thêm ghi chú.'); render(); }
         } }, h('label', { class: 'f' }, 'Ghi chú mới', ta), h('div', { class: 'row' }, add))));
     }
+    return h('div', { class: 'grid' }, cards);
+  }
+
+  // ------------------------------------------------------------------
+  // Chi tiết DT-CP: số liệu mới nhất của từng hợp đồng và so sánh giữa các thời điểm (giai đoạn) 1, 2, 3, 5…
+  // Số liệu của một thời điểm = số liệu ở mốc (tháng) cuối cùng hợp đồng còn ở thời điểm đó.
+  // Ma trận hợp đồng × mốc tải một lần (đã cộng sẵn ở máy chủ, nén gzip) và giữ trong bộ nhớ tới khi dữ liệu đổi.
+  // ------------------------------------------------------------------
+  const stageCmp = (a, b) => catSort('stage', a) - catSort('stage', b) || String(a).localeCompare(String(b), 'vi', { numeric: true });
+  const latestSnap = () => S.snapshots[0] || null;
+  const mval = (r, k) => (k === 'pct' ? (r.dt ? r.cp / r.dt : NaN) : r[k] || 0);
+  const fmtCell = (k, v) => (k === 'pct' ? F.pct(v) : F.trieu(v));
+  function matrix() {
+    if (S.mx && S.mx.data) return S.mx.data;
+    if (!S.mx) {
+      const mx = S.mx = { data: null };
+      api.dtcpMatrix().then(d => {
+        if (S.mx !== mx) return;
+        const fi = Object.fromEntries(d.fields.map((f, i) => [f, i]));
+        const ord = new Map(S.snapshots.map((s, i) => [s.id, S.snapshots.length - i]));
+        const byCode = new Map();
+        d.rows.forEach(r => {
+          const s = snapById(r[fi.snapshot_id]);
+          if (!s) return;
+          const code = d.codes[r[fi.code]];
+          const o = { snapshot_id: s.id, report_date: s.report_date, label: s.label, stage: r[fi.stage] || '', ord: ord.get(s.id) };
+          ['hd', 'sl', 'slhs', 'tv', 'dt', 'cp'].forEach(k => { o[k] = r[fi[k]] || 0; });
+          if (!byCode.has(code)) byCode.set(code, []);
+          byCode.get(code).push(o);
+        });
+        byCode.forEach(a => a.sort((x, y) => x.ord - y.ord));
+        mx.data = byCode;
+        render();
+      }, e => { if (S.mx === mx) S.mx = null; toast(e.message, true); });
+    }
+    return null;
+  }
+  // Gom các mốc của một hợp đồng theo thời điểm; hist xếp theo ngày tăng dần.
+  function stagesOf(hist) {
+    const m = new Map();
+    hist.forEach(r => {
+      const k = r.stage || '';
+      if (!m.has(k)) m.set(k, { stage: k, first: r, last: r, n: 0 });
+      const g = m.get(k); g.last = r; g.n++;
+    });
+    return [...m.values()].sort((a, b) => stageCmp(a.stage, b.stage));
+  }
+  const stagePeriod = g => (g.n > 1 ? `${F.dateShort(g.first.report_date)} → ${F.dateShort(g.last.report_date)} · ${g.n} mốc` : `mốc ${F.dateShort(g.last.report_date)}`);
+  function dcellSub(k, a, b) {
+    if (a == null || b == null) return null;
+    const d = k === 'pct' ? b - a : b - a;
+    if (!isFinite(d) || Math.abs(d) < (k === 'pct' ? 1e-9 : 1)) return h('span', { class: 'sub' }, 'không đổi');
+    const good = GOOD[k] > 0 ? d > 0 : GOOD[k] < 0 ? d < 0 : null;
+    return h('span', { class: 'sub ' + (good === null ? '' : good ? 'is-good' : 'is-bad') }, k === 'pct' ? F.pt(d) : (d > 0 ? '+' : '') + F.trieu(d));
+  }
+  const DET_METRICS = ['dt', 'cp', 'pct', 'hd', 'sl', 'tv'];
+
+  function viewDetail() {
+    if (!S.snapshots.length) return emptyData();
+    const code = routeArg();
+    return code ? detailContract(code) : detailList();
+  }
+
+  function detailList() {
+    const ls = latestSnap(), all = linesOf(ls.id), mx = matrix();
+    const det = S.det;
+    const head = h('div', null, h('div', { class: 'page-head' }, h('h1', null, 'Chi tiết DT-CP')),
+      h('p', { class: 'lead' }, `Số liệu mới nhất theo mốc `, h('b', null, F.date(ls.report_date)), `. Mỗi cột ${lc(T('stage'))} (cột "Thời điểm" của file) là số liệu ở tháng cuối cùng hợp đồng nằm ở ${lc(T('stage'))} đó, để so sánh DT-CP qua từng ${lc(T('stage'))}. Bấm vào một hợp đồng để xem chi tiết và số liệu từng tháng.`));
+    if (!all || !mx) return h('div', { class: 'stack', style: 'gap:18px' }, head, skeleton());
+    const fl = DTCP.filter(all, S.filters);
+    const groups = [...DTCP.groupBy(fl, 'contract').values()];
+    const items = groups.map(g => {
+      const hist = mx.get(g.key) || [];
+      const st = stagesOf(hist);
+      return { key: g.key, g, f: g.first, st: new Map(st.map(x => [x.stage, x])), order: st.map(x => x.stage), hist };
+    });
+    const stages = [...new Set(items.flatMap(x => x.order))].sort(stageCmp);
+    const m = DET_METRICS.includes(det.metric) ? det.metric : 'dt';
+    const mSel = h('select', { id: 'det-metric' }, DET_METRICS.map(k => h('option', { value: k }, T(k))));
+    mSel.value = m; mSel.addEventListener('change', () => { det.metric = mSel.value; render(); });
+    const controls = h('div', { class: 'card filters' }, h('div', { class: 'filter-grid' }, h('label', { class: 'f' }, 'Chỉ số so sánh trong bảng', mSel)));
+    if (!items.length) return h('div', { class: 'stack', style: 'gap:18px' }, head, filterBar(all, { snap: false }), h('div', { class: 'card empty' }, h('p', null, 'Không có hợp đồng nào khớp bộ lọc.')));
+    // Tổng theo từng thời điểm (chỉ cộng các hợp đồng đã qua thời điểm đó)
+    const agg = stages.map(s => {
+      const a = { stage: s, count: 0, hd: 0, sl: 0, tv: 0, dt: 0, cp: 0 };
+      items.forEach(x => { const g = x.st.get(s); if (!g) return; a.count++; ['hd', 'sl', 'tv', 'dt', 'cp'].forEach(k => { a[k] += g.last[k]; }); });
+      a.pct = a.dt ? a.cp / a.dt : NaN;
+      return a;
+    });
+    const tot = DTCP.total(fl);
+    const aggCols = ['count', 'hd', 'sl', 'dt', 'tv', 'cp', 'pct'].filter(k => k !== 'tv' || tot.tv || agg.some(a => a.tv)).filter(k => k !== 'sl' || tot.sl || agg.some(a => a.sl));
+    const aggCell = (a, k) => (k === 'count' ? F.int(a.count) : fmtCell(k, a[k]));
+    const host = h('div', { class: 'chart-hb' });
+    const draws = [() => Charts.hbars(host, agg.map(a => ({ key: a.stage, label: nameOf('stage', a.stage), values: [a.dt, a.cp], extra: [[null, T('count'), F.int(a.count)], [null, T('pct'), F.pct(a.pct)]] })),
+      [{ name: T('dt'), color: C[0] }, { name: T('cp'), color: C[1] }], { fmt: F.vnd, axisFmt: F.tyAxis, onPick: key => { S.filters.stage = key; render(); } })];
+    S.redraw = () => drawAll(draws);
+    const sumCard = h('div', { class: 'card wide' }, h('h2', null, `Tổng hợp theo ${lc(T('stage'))}`),
+      h('p', { class: 'note' }, `${F.int(items.length)} ${lc(T('contract'))} đang lọc. Mỗi ${lc(T('stage'))} cộng số liệu của các hợp đồng đã qua ${lc(T('stage'))} đó (tại tháng cuối của ${lc(T('stage'))}). Dòng "Mới nhất" là mốc ${F.date(ls.report_date)}. Đơn vị: triệu đồng.`),
+      h('div', { class: 'legend' }, h('span', null, sw(C[0]), T('dt')), h('span', null, sw(C[1]), T('cp'))),
+      h('div', { class: 'chart-box' }, host), h('p', { class: 'note axis-note' }, `Trục: tỷ đồng. Bấm vào một ${lc(T('stage'))} để lọc các hợp đồng đang ở ${lc(T('stage'))} đó.`),
+      h('div', { class: 'table-wrap' }, h('table', { class: 't' },
+        h('thead', null, h('tr', null, h('th', null, T('stage')), aggCols.map(k => h('th', null, T(k))))),
+        h('tbody', null, agg.map(a => h('tr', null, h('td', { class: 'l' }, nameOf('stage', a.stage)), aggCols.map(k => h('td', { class: k === 'pct' && a.pct > 1 ? 'is-bad' : '' }, aggCell(a, k)))))),
+        h('tfoot', null, h('tr', null, h('td', { class: 'l' }, 'Mới nhất · ' + F.dateShort(ls.report_date)), aggCols.map(k => h('td', null, aggCell(tot, k))))))));
+    // Bảng từng hợp đồng
+    items.sort((a, b) => (mval(b.g, m) || 0) - (mval(a.g, m) || 0) || String(a.key).localeCompare(String(b.key), 'vi', { numeric: true }));
+    const show = items.slice(0, 400);
+    const go = key => () => { location.hash = '#/chi-tiet/' + encodeURIComponent(key); };
+    const tbl = h('div', { class: 'table-wrap' }, h('table', { class: 't' },
+      h('thead', null, h('tr', null, h('th', null, T('contract')), h('th', { class: 'l' }, T('stage') + ' hiện tại'),
+        stages.map(s => h('th', null, nameOf('stage', s))), h('th', { class: 'sum' }, 'Mới nhất'))),
+      h('tbody', null, show.map(x => {
+        const cur = x.f.stage || '';
+        let prev = null;
+        return h('tr', { class: 'click', tabindex: '0', onclick: go(x.key), onkeydown: e => { if (e.key === 'Enter') go(x.key)(); } },
+          h('td', { class: 'l name', title: x.f.contract_title || '' }, `${x.key} · ${x.f.contract_no}`),
+          h('td', { class: 'l' }, nameOf('stage', cur)),
+          stages.map(s => {
+            const g = x.st.get(s);
+            if (!g) return h('td', { class: 'muted' }, '–');
+            const v = mval(g.last, m), el = h('td', { class: s === cur ? 'cur' : '', title: stagePeriod(g) }, fmtCell(m, v), dcellSub(m, prev, v));
+            prev = v;
+            return el;
+          }),
+          h('td', { class: 'sum' + (m === 'pct' && x.g.pct > 1 ? ' is-bad' : '') }, fmtCell(m, mval(x.g, m))));
+      })),
+      h('tfoot', null, h('tr', null, h('td', { class: 'l' }, 'Tổng cộng'), h('td', { class: 'l' }, F.int(items.length) + ' HĐ'),
+        agg.map(a => h('td', null, fmtCell(m, mval(a, m)))), h('td', { class: 'sum' }, fmtCell(m, mval(tot, m)))))));
+    const tableCard = h('div', { class: 'card wide' },
+      h('div', { class: 'card-head' }, h('h2', null, `${T(m)} của từng hợp đồng theo ${lc(T('stage'))}`),
+        h('button', { class: 'btn sm', type: 'button', onclick: e => run(e.currentTarget, () => exportDetail(items, stages, ls)) }, 'Xuất Excel')),
+      h('p', { class: 'note' }, `Đơn vị: ${m === 'pct' ? '%' : 'triệu đồng'}. Ô tô màu là ${lc(T('stage'))} hiện tại; dòng nhỏ dưới mỗi số là thay đổi so với ${lc(T('stage'))} liền trước. Rê chuột vào ô để xem khoảng tháng.` +
+        (items.length > show.length ? ` Đang hiện ${show.length} hợp đồng đầu; xuất Excel để xem đủ.` : '')), tbl);
+    return h('div', { class: 'stack', style: 'gap:18px' }, head, filterBar(all, { snap: false }), controls, h('div', { class: 'grid' }, sumCard, tableCard));
+  }
+
+  async function exportDetail(items, stages, ls) {
+    await loadXLSX();
+    const ks = ['hd', 'sl', 'tv', 'dt', 'cp', 'pct'];
+    const head = ['Mã DT-CP', 'Số hợp đồng', 'Nội dung', T('company'), T('region'), T('project'), T('investor'), T('stage') + ' hiện tại']
+      .concat(...stages.map(s => ks.map(k => `${nameOf('stage', s)} · ${T(k)}`).concat(`${nameOf('stage', s)} · Mốc cuối`)), ks.map(k => 'Mới nhất · ' + T(k)));
+    const body = items.map(x => {
+      const f = x.f;
+      return [x.key, f.contract_no, f.contract_title, nameOf('company', f.company), dimLabel('region', f.region, f), f.project_code + ' – ' + f.project_name, nameOf('investor', f.investor), nameOf('stage', f.stage)]
+        .concat(...stages.map(s => { const g = x.st.get(s); return g ? ks.map(k => { const v = mval(g.last, k); return isFinite(v) ? v : ''; }).concat(F.date(g.last.report_date)) : ks.map(() => '').concat(''); }),
+          ks.map(k => { const v = mval(x.g, k); return isFinite(v) ? v : ''; }));
+    });
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([[`Chi tiết DT-CP theo ${lc(T('stage'))} – mốc mới nhất ${snapLabel(ls)} – đơn vị: đồng`], head].concat(body));
+    ws['!cols'] = head.map((t, i) => ({ wch: i < 3 ? 28 : 16 }));
+    XLSX.utils.book_append_sheet(wb, ws, 'Chi tiet DT-CP');
+    XLSX.writeFile(wb, `chi-tiet-dtcp-${ls.report_date}.xlsx`);
+  }
+
+  function detailContract(code) {
+    const ls = latestSnap(), all = linesOf(ls.id);
+    if (!S.hist || S.hist.code !== code) {
+      S.hist = { code, data: null };
+      api.contractHistory(code).then(d => { if (S.hist && S.hist.code === code) { S.hist.data = d; render(); } }, e => toast(e.message, true));
+    }
+    const hist = S.hist.data;
+    const back = h('a', { class: 'btn sm', href: '#/chi-tiet' }, '← Danh sách');
+    if (!all || !hist) return h('div', { class: 'stack' }, h('div', { class: 'row' }, back), skeleton());
+    const hs = hist.history;
+    if (!hs.length) return h('div', { class: 'card empty' }, h('h2', null, 'Không tìm thấy hợp đồng ' + code), back);
+    const f = all.find(l => l.contract_code === code) || (S.lines.get(S.snap) || []).find(l => l.contract_code === code) || null;
+    const last = hs[hs.length - 1], prev = hs[hs.length - 2] || null;
+    hs.forEach(r => { r.pct = r.dt ? r.cp / r.dt : NaN; });
+    const st = stagesOf(hs);
+    const cur = last.stage || '';
+    const chips = f ? [[T('company'), nameOf('company', f.company)], [T('region'), dimLabel('region', f.region, f)], [T('project'), f.project_code + ' – ' + f.project_name], [T('investor'), nameOf('investor', f.investor)]] : [];
+    const draws = [];
+    const cards = [];
+    const tileKeys = ['hd', 'dt', 'cp', 'pct'].concat(last.sl ? ['sl'] : [], last.tv ? ['tv'] : []);
+    cards.push(h('div', { class: 'card wide' },
+      h('div', { class: 'card-head' }, h('div', null, h('p', { class: 'eyebrow' }, 'Chi tiết DT-CP · ' + code), h('h1', { class: 'contract-title' }, f ? f.contract_no : code),
+        f && f.contract_title ? h('p', { class: 'lead' }, f.contract_title) : null),
+      h('div', { class: 'row' }, back, h('a', { class: 'btn sm', href: '#/hop-dong/' + encodeURIComponent(code) }, 'Dòng HĐ/PL & ghi chú'))),
+      h('div', { class: 'chips' }, chips.map(([k, v]) => h('span', { class: 'chip' }, h('span', { class: 'muted' }, k + ': '), v)),
+        h('span', { class: 'chip stagechg' }, h('span', { class: 'muted' }, T('stage') + ' hiện tại: '), nameOf('stage', cur))),
+      last.snapshot_id !== ls.id ? h('div', { class: 'alert warn' }, `Hợp đồng không có trong mốc mới nhất (${F.date(ls.report_date)}); số liệu dưới đây là mốc gần nhất có hợp đồng: ${F.date(last.report_date)}.`) : null,
+      h('div', { class: 'tiles' }, tileKeys.map(k => h('div', { class: 'tile' },
+        h('span', { class: 'label' }, T(k) + ' · mốc ' + F.dateShort(last.report_date)),
+        h('span', { class: 'big' + (k === 'pct' && last.pct > 1 ? ' is-bad' : '') }, fmtM(k, last[k])),
+        deltaEl(k, prev ? prev[k] : null, last[k], prev ? 'so với mốc ' + F.dateShort(prev.report_date) : 'Chưa có mốc trước để so sánh'))))));
+    // So sánh theo thời điểm
+    const groups = [...new Set(DTCP.COST_KEYS.map(costGroup))];
+    const gval = (r, gn) => DTCP.COST_KEYS.filter(k => costGroup(k) === gn).reduce((t, k) => t + (r[k] || 0), 0);
+    const rowsDef = [['hd', T('hd')], ['sl', T('sl')], ['slhs', T('slhs')], ['tv', T('tv')], ['dt', T('dt')], ['cp', T('cp')], ['pct', T('pct')]]
+      .filter(([k]) => !['sl', 'slhs', 'tv'].includes(k) || hs.some(r => r[k]))
+      .map(([k, t]) => ({ k, t, get: r => r[k], m: k }))
+      .concat(groups.filter(gn => hs.some(r => gval(r, gn))).map(gn => ({ k: 'g:' + gn, t: gn, get: r => gval(r, gn), m: 'cp', sub: true })));
+    const hostS = h('div', { class: 'chart-hb' });
+    if (st.length > 1) draws.push(() => Charts.hbars(hostS, st.map(g => ({ key: g.stage, label: nameOf('stage', g.stage), values: [g.last.dt, g.last.cp], extra: [[null, T('pct'), F.pct(g.last.pct)], [null, 'Mốc', stagePeriod(g)]] })),
+      [{ name: T('dt'), color: C[0] }, { name: T('cp'), color: C[1] }], { fmt: F.vnd, axisFmt: F.tyAxis }));
+    cards.push(h('div', { class: 'card wide' }, h('h2', null, `So sánh DT-CP theo ${lc(T('stage'))}`),
+      h('p', { class: 'note' }, `Mỗi cột là số liệu ở tháng cuối cùng hợp đồng nằm ở ${lc(T('stage'))} đó; cột tô màu là ${lc(T('stage'))} hiện tại (= số liệu mới nhất). Dòng nhỏ là thay đổi so với ${lc(T('stage'))} liền trước. Đơn vị: triệu đồng.`),
+      st.length > 1 ? [h('div', { class: 'legend' }, h('span', null, sw(C[0]), T('dt')), h('span', null, sw(C[1]), T('cp'))), h('div', { class: 'chart-box' }, hostS), h('p', { class: 'note axis-note' }, 'Trục: tỷ đồng')]
+        : h('p', { class: 'note' }, `Hợp đồng mới có số liệu ở một ${lc(T('stage'))}. Khi file các tháng sau ghi ${lc(T('stage'))} mới, bảng sẽ có thêm cột để so sánh.`),
+      h('div', { class: 'table-wrap' }, h('table', { class: 't' },
+        h('thead', null, h('tr', null, h('th', null, 'Chỉ số'), st.map(g => h('th', { class: g.stage === cur ? 'cur' : '' }, nameOf('stage', g.stage) + (g.stage === cur ? ' (hiện tại)' : ''), h('span', { class: 'sub' }, stagePeriod(g)))))),
+        h('tbody', null, rowsDef.map(d => h('tr', { class: d.sub ? 'subrow' : '' }, h('td', { class: 'l' + (d.sub ? ' indent' : '') }, d.t),
+          st.map((g, i) => {
+            const v = d.get(g.last);
+            return h('td', { class: (g.stage === cur ? 'cur' : '') + (d.k === 'pct' && v > 1 ? ' is-bad' : '') }, fmtCell(d.k === 'pct' ? 'pct' : 'x', v), i ? dcellSub(d.m, d.get(st[i - 1].last), v) : null);
+          }))))))));
+    // Số liệu từng tháng (hiện khi bấm)
+    const det = S.det;
+    const toggle = h('button', { class: 'btn sm', type: 'button', onclick: () => { det.months = !det.months; render(); } }, det.months ? 'Ẩn số liệu từng tháng' : `Hiện số liệu từng tháng (${hs.length} mốc)`);
+    const monthCard = h('div', { class: 'card wide' }, h('div', { class: 'card-head' }, h('h2', null, 'Số liệu từng tháng (các mốc cập nhật)'), toggle));
+    if (det.months) {
+      const hostH = h('div', { class: 'chart md' });
+      if (hs.length > 1) {
+        monthCard.append(h('div', { class: 'legend' }, h('span', null, sw(C[0], true), T('dt')), h('span', null, sw(C[1], true), T('cp')), h('span', null, sw(C[3], true), T('hd'))), h('div', { class: 'chart-box' }, hostH), h('p', { class: 'note axis-note' }, 'Trục: tỷ đồng'));
+        draws.push(() => Charts.lines(hostH, hs.map(r => r.report_date), [
+          { name: T('dt'), color: C[0], values: hs.map(r => r.dt) }, { name: T('cp'), color: C[1], values: hs.map(r => r.cp) }, { name: T('hd'), color: C[3], values: hs.map(r => r.hd) }],
+        { fmt: F.vnd, axisFmt: F.tyAxis, xFmt: F.dateShort, headFmt: F.date }));
+      }
+      const tv = hs.some(r => r.tv);
+      monthCard.append(h('div', { class: 'table-wrap' }, h('table', { class: 't' },
+        h('thead', null, h('tr', null, ['Mốc', T('stage'), T('hd'), T('dt'), 'Δ', T('cp'), 'Δ', T('pct')].concat(tv ? [T('tv')] : []).map((t, i) => h('th', { class: i < 2 ? 'l' : '' }, t)))),
+        h('tbody', null, hs.slice().reverse().map(r => {
+          const i = hs.indexOf(r), p = hs[i - 1];
+          return h('tr', { class: r.snapshot_id === ls.id ? 'sel' : '' }, h('td', { class: 'l' }, F.date(r.report_date) + (r.label ? ' · ' + r.label : '')),
+            h('td', { class: 'l' }, nameOf('stage', r.stage) + (p && p.stage !== r.stage ? ' (đổi)' : '')),
+            h('td', null, F.trieu(r.hd)), h('td', null, F.trieu(r.dt)), h('td', null, p ? deltaEl('dt', p.dt, r.dt) : ''),
+            h('td', null, F.trieu(r.cp)), h('td', null, p ? deltaEl('cp', p.cp, r.cp) : ''), h('td', { class: r.pct > 1 ? 'is-bad' : '' }, F.pct(r.pct)), tv ? h('td', null, F.trieu(r.tv)) : null);
+        })))), h('p', { class: 'note' }, 'Đơn vị: triệu đồng. Δ: thay đổi so với mốc liền trước. Mốc mới nhất ở trên cùng.'));
+    } else monthCard.append(h('p', { class: 'note' }, `Số liệu của tất cả các tháng vẫn được lưu trên máy chủ; bấm nút để xem và so sánh.`));
+    cards.push(monthCard);
+    S.redraw = () => drawAll(draws);
     return h('div', { class: 'grid' }, cards);
   }
 

@@ -166,20 +166,14 @@
       h('footer', { class: 'wrap foot' }, 'Đơn vị số tiền: triệu đồng. Lợi nhuận tính trước thuế TNDN.'));
   }
   function logo() {
-    const ns = 'http://www.w3.org/2000/svg';
-    const s = document.createElementNS(ns, 'svg'); s.setAttribute('viewBox', '0 0 16 16'); s.setAttribute('width', '20'); s.setAttribute('height', '20'); s.setAttribute('aria-hidden', 'true');
-    [[2, 8, 6, 1], [6.5, 4, 10, 1], [11, 6, 8, 2]].forEach(([x, y, hh, c]) => {
-      const r = document.createElementNS(ns, 'rect');
-      r.setAttribute('x', x); r.setAttribute('y', y); r.setAttribute('width', 3); r.setAttribute('height', hh); r.setAttribute('rx', 1);
-      r.style.fill = `var(--series-${c})`; s.append(r);
-    });
-    return s;
+    return h('span', { class: 'logo-tile' }, h('img', { src: 'img/logo-mark.png', alt: '', width: 26, height: 26 }));
   }
+
 
   // ---------- Đăng nhập ----------
   function authCard(...kids) {
     return h('div', null, demoBar(), h('div', { class: 'wrap auth' }, h('div', { class: 'card auth-card stack' },
-      h('div', { class: 'brand' }, logo(), 'BKS-TMN'), h('h1', null, APP), ...kids)));
+      h('div', { class: 'auth-logo' }, h('img', { src: 'img/logo-tmn.png', alt: 'Tân Minh Nhân Corporation', width: 220, height: 149 })), h('h1', null, APP), ...kids)));
   }
 
   function viewLogin() {

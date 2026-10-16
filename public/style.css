@@ -183,6 +183,12 @@ tr.tv-sub td { background: #eef7f6; color: var(--teal); font-weight: 700; font-s
 tr.tv-sub-warn td { background: #fffbeb; color: var(--warn); }
 .tv-hd-pick { flex-direction: row; align-items: center; gap: 8px; font-size: 13px; color: var(--navy); }
 .tv-hd-pick select { width: auto; min-width: 150px; padding: 8px 10px; }
+tr.tv-head-row td { background: #f3f7fd; border-top: 2px solid #dbe6f5; font-size: 13px; }
+tr.tv-head-row td.tv-head-sum { font-size: 15px; font-weight: 800; color: var(--teal); }
+tr.tv-child td { background: #fff; }
+tr.tv-child td.indent { padding-left: 34px; }
+tr.tv-child select.tv-hd { margin-right: 8px; }
+#tv-toggle-all { margin-left: auto; margin-right: 12px; }
 .tv-tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
 .tv-tools .spacer { flex: 1; }
 button.sm { padding: 5px 10px; font-size: 12px; }

@@ -379,6 +379,13 @@ tr.ngoai-cp td { color: var(--muted); font-style: italic; }
 .b-warn b, .b-muc { font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 99px; margin-right: 6px; background: #eef2f7; color: var(--muted); }
 .m-cao b, .b-muc.m-cao { background: #fde8e8; color: #b42318; }
 .m-tb b, .b-muc.m-tb { background: #fff4d6; color: #92400e; }
+.b-wlink { cursor: pointer; }
+tr.b-wlink:hover td, li.b-wlink:hover { background: #eef6ff; }
+.b-where { font-size: 11.5px; color: var(--teal); font-weight: 600; white-space: nowrap; }
+@keyframes hlFlash { 0%, 60% { background: #fff3c4; } 100% { background: transparent; } }
+@keyframes hlEdge { 0%, 60% { box-shadow: inset 4px 0 0 #eda100; } 100% { box-shadow: none; } }
+tr.hl-flash > td { animation: hlFlash 2.6s ease-out; }
+tr.hl-flash > td:first-child { animation: hlFlash 2.6s ease-out, hlEdge 2.6s ease-out; }
 .b-foot { text-align: center; font-size: 11.5px; color: var(--muted); }
 @media (max-width: 960px) {
   .b-charts { grid-template-columns: minmax(0, 1fr); }

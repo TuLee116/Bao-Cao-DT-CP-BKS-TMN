@@ -53,7 +53,7 @@ function showTab(name) {
   $$('#tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
   $$('main > .tab-panel').forEach((p) => (p.hidden = p.id !== 'tab-' + name));
   try { localStorage.setItem('tab', name); } catch {}
-  Promise.resolve(loaders[name]()).catch((err) => alert(err.message));
+  return Promise.resolve(loaders[name]()).catch((err) => alert(err.message));
 }
 $('#tabs').addEventListener('click', (e) => e.target.dataset.tab && showTab(e.target.dataset.tab));
 
@@ -824,7 +824,7 @@ function qtGroupsHtml(rows) {
       ${edit ? `<td class="row-actions">${g.k && !daQt ? `<button class="sm" data-qtadd="${g.k}" title="Thêm đợt nghiệm thu / quyết toán cho HĐ này">+ Đợt</button>` : ''}</td>` : ''}
     </tr>`;
     return head + (open ? g.rows.map((r, i) => `
-      <tr class="tv-child">
+      <tr class="tv-child" data-rid="${r.id}">
         <td class="num muted">${n}.${i + 1}</td>
         <td class="indent"><span class="tree">└</span><b>${esc(r.so_hieu)}</b></td>
         <td>${dmy(r.ngay)}</td>
@@ -867,7 +867,7 @@ function hdGroups(rows) {
 
 function hdRowHtml(r, stt, { child = false, head = false, toggle = '' } = {}) {
   return `
-    <tr class="${child ? 'hd-child' : 'hd-head'}" ${child ? `data-grp-child="${esc(hdKey(r))}"` : ''}>
+    <tr class="${child ? 'hd-child' : 'hd-head'}" data-rid="${r.id}" ${child ? `data-grp-child="${esc(hdKey(r))}"` : ''}>
       <td class="num muted">${stt}</td>
       <td class="${child ? 'indent' : ''}">${toggle}${child ? '<span class="tree">└</span>' : ''}<span class="kind-tag ${r.ma_loai === 'HĐ' ? 'kind-hd' : ''}">${esc(r.ma_loai || '')}</span> ${canEdit() ? `<b class="so-ma-pick" data-soma="${esc(r.so_ma || '')}" title="Nhấp đúp để thêm phụ lục cho ${esc(r.so_ma || '')}">${esc(r.so_ma || r.so_hieu)}</b>` : `<b>${esc(r.so_ma || r.so_hieu)}</b>`}</td>
       <td>${dmy(r.ngay)}</td>
@@ -1533,7 +1533,7 @@ function renderCost() {
   const addBtn = (nhom, sub) => (edit ? `<button class="sm" data-cadd="${nhom}" data-csub="${sub || ''}" title="Thêm chi phí vào mục này">+</button>` : '');
   const ngoaiCp = (r) => Boolean(NHOM().find((n) => n.code === r.nhom)?.sub.find((sc) => sc.code === r.nhom_con)?.khong_tinh_cp);
   const detail = (r, no, indent) => `
-    <tr class="c-row${ngoaiCp(r) ? ' ngoai-cp' : ''}" title="${esc(r.nguoi_cap_nhat ? 'Cập nhật bởi ' + r.nguoi_cap_nhat : '')}">
+    <tr class="c-row${ngoaiCp(r) ? ' ngoai-cp' : ''}" data-cid="${r.id}" title="${esc(r.nguoi_cap_nhat ? 'Cập nhật bởi ' + r.nguoi_cap_nhat : '')}">
       <td class="num muted">${no}</td>
       <td class="indent-${indent}"><span class="tree">└</span>${esc(r.noi_dung)}</td>
       <td class="c-dt">${esc(r.doi_tac)}${r.so_ct ? `<div class="muted small">${esc(r.so_ct)}</div>` : ''}</td><td>${dmy(r.ngay)}</td>
@@ -1731,7 +1731,7 @@ function renderTpCard() {
   const groups = tpGroups(list);
   const autoOpen = Boolean(q) || Boolean(tpFilter.loc) || groups.length === 1;
   const childRow = (c, stt) => `
-    <tr class="tv-child">
+    <tr class="tv-child" data-tpid="${c.id}">
       <td class="num muted">${stt}</td>
       <td class="indent"><span class="tree">└</span><b class="tp-open so-ma-pick" data-tp="${c.id}" title="Nhấp đúp để mở bảng nhập chi tiết">${esc(c.so_ma)}</b>
         ${c.so_pl ? `<span class="muted small">(+${c.so_pl} PL)</span>` : ''}

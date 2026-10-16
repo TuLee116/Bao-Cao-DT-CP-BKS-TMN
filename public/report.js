@@ -593,22 +593,76 @@ function bProjectDetail(d, v, open) {
           nhom.filter((n) => n.khoi === k.code).map((n) => `<tr><td class="indent-1">${esc(n.ten)}</td><td class="num">${bn(n[v])}</td><td class="num">${bpct(n[v], tongCp)}</td><td class="num">${bpct(n[v], d.du_kien.doanh_thu[v])}</td></tr>`).join('')).join('')}</tbody>
         <tfoot><tr><td>TỔNG CHI PHÍ</td><td class="num">${bn(tongCp)}</td><td class="num">100%</td><td class="num">${bpct(tongCp, d.du_kien.doanh_thu[v])}</td></tr></tfoot>
       </table></div>
-      ${d.canh_bao.length ? `<h4>Cảnh báo</h4><ul class="b-warn">${d.canh_bao.map((w) => `<li class="m-${w.muc}"><b>${MUC[w.muc]}</b> ${esc(w.noi_dung)}</li>`).join('')}</ul>` : ''}
+      ${d.canh_bao.length ? `<h4>Cảnh báo</h4><ul class="b-warn">${d.canh_bao.map((w) => `<li ${w.link ? bWarnAttr(w, d.id) : `class="m-${w.muc}"`}><b>${MUC[w.muc]}</b> ${esc(w.noi_dung)}${w.link ? ` <span class="b-where no-print">${bWarnPlace(w.link)} →</span>` : ''}</li>`).join('')}</ul>` : ''}
     </div>
   </details>`;
 }
 
 function bWarnTable(list) {
   const rank = { cao: 0, tb: 1, thap: 2 };
-  const rows = list.flatMap((d) => d.canh_bao.map((w) => ({ ...w, da: d.ma_du_an }))).sort((a, b) => rank[a.muc] - rank[b.muc] || a.da.localeCompare(b.da));
+  const rows = list.flatMap((d) => d.canh_bao.map((w) => ({ ...w, da: d.ma_du_an, id: d.id }))).sort((a, b) => rank[a.muc] - rank[b.muc] || a.da.localeCompare(b.da));
   if (!rows.length) return '<p class="muted">Không có cảnh báo.</p>';
-  return `<div class="table-wrap"><table class="b-table"><thead><tr><th>#</th><th>Mức</th><th>Dự án</th><th>Nội dung</th></tr></thead>
-    <tbody>${rows.map((w, i) => `<tr><td class="num">${i + 1}</td><td><span class="b-muc m-${w.muc}">${MUC[w.muc]}</span></td><td>${esc(w.da)}</td><td class="wrap">${esc(w.noi_dung)}</td></tr>`).join('')}</tbody></table></div>`;
+  return `<p class="muted small no-print">Bấm vào một dòng để mở đúng vị trí cần kiểm tra.</p>
+    <div class="table-wrap"><table class="b-table b-warn-tbl"><thead><tr><th>#</th><th>Mức</th><th>Dự án</th><th>Nội dung</th><th class="no-print">Vị trí</th></tr></thead>
+    <tbody>${rows.map((w, i) => `<tr ${bWarnAttr(w, w.id)}><td class="num">${i + 1}</td><td><span class="b-muc m-${w.muc}">${MUC[w.muc]}</span></td><td>${esc(w.da)}</td><td class="wrap">${esc(w.noi_dung)}</td>
+      <td class="no-print b-where">${w.link ? `${bWarnPlace(w.link)} →` : ''}</td></tr>`).join('')}</tbody></table></div>`;
 }
+
+// ---------- Cảnh báo có liên kết: bấm để tới đúng tab / dòng ----------
+function bWarnAttr(w, id) {
+  return w.link ? `class="b-wlink m-${w.muc}" data-wda="${id}" data-wlink='${JSON.stringify(w.link).replace(/'/g, '&#39;')}' tabindex="0" title="Mở vị trí cần kiểm tra"` : '';
+}
+function bWarnPlace(l) {
+  if (l.go === 'card') return 'Thẻ công trình';
+  if (l.tab === 'revenue') return l.qt ? 'Doanh thu › 2. HT/QT' : l.tv ? 'Doanh thu › 3. Tiền về' : 'Doanh thu › 1. HĐ/PL';
+  if (l.tp) return 'Chi phí › Thầu phụ (chi tiết)';
+  if (l.tpgrp !== undefined) return 'Chi phí › 1. Thầu phụ';
+  return 'Chi phí › bảng chi phí';
+}
+function bFlash(sel) {
+  const el = typeof sel === 'string' ? $(sel) : sel;
+  const row = el?.closest('tr') || el;
+  if (!row) return false;
+  $$('.hl-flash').forEach((x) => x.classList.remove('hl-flash'));
+  row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  row.classList.remove('hl-flash'); void row.offsetWidth; row.classList.add('hl-flash');
+  return true;
+}
+async function bGoWarn(daId, l) {
+  if (l.go === 'card') return openProjectReport(daId);
+  revProjectId = daId;
+  if (l.tab === 'revenue') {
+    if (l.qt) qtOpen.add(l.qt);
+    if (l.tv) tvOpen.add(l.tv);
+    if (l.rid) hdCollapsed.clear();
+    await showTab('revenue');
+    setTimeout(() => bFlash(l.rid ? `#tab-revenue [data-rid="${l.rid}"]` : l.qt ? `[data-qtgrp="${l.qt}"]` : `[data-tvgrp="${l.tv}"]`), 120);
+    return;
+  }
+  costOpen.add('thau_phu');
+  if (l.nhom) { costOpen.add(l.nhom); costOpen.add(`${l.nhom}:_`); if (l.sub) costOpen.add(`${l.nhom}:${l.sub}`); }
+  if (l.tpgrp !== undefined) tpOpen.add(l.tpgrp);
+  await showTab('cost');
+  if (l.tp) {
+    const c = costData?.thau_phu.find((x) => x.id === l.tp);
+    if (c) { tpOpen.add(c.hd_cdt_id || 0); renderTpCard(); bFlash(`#tp-tbody [data-tpid="${l.tp}"]`); setTimeout(() => openTp(l.tp), 500); }
+    return;
+  }
+  setTimeout(() => bFlash(l.cid ? `[data-cid="${l.cid}"]` : l.tpgrp !== undefined ? `#tp-tbody [data-tpgrp="${l.tpgrp}"]` : `[data-cgrp="${l.nhom}"]`), 120);
+}
+$('#b-report').addEventListener('click', (e) => {
+  const w = e.target.closest('[data-wlink]');
+  if (w) bGoWarn(Number(w.dataset.wda), JSON.parse(w.dataset.wlink)).catch((err) => alert(err.message));
+});
+$('#b-report').addEventListener('keydown', (e) => {
+  const w = e.target.closest('[data-wlink]');
+  if (w && e.key === 'Enter') bGoWarn(Number(w.dataset.wda), JSON.parse(w.dataset.wlink));
+});
 
 function bDrawCharts(list, v, one) {
   if ($('#f-ch-col')) bFinDraw(list, v);
   $$('#b-report .pc-card').forEach(bPcDraw);
+  if (!$('#b-ch-line')) return; // báo cáo đang tải lại
   if (pcScrollTo) { const el = $(`#pc-${pcScrollTo}`); pcScrollTo = null; if (el) setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50); }
   const pts = bMonths(list, v);
   bLineChart($('#b-ch-line'), pts, [{ key: 'luy_dt', name: 'Doanh thu', color: BCOL.dt }, { key: 'luy_cp', name: 'Chi phí', color: BCOL.cp }]);

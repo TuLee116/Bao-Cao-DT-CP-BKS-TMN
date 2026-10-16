@@ -70,16 +70,13 @@ const canEdit = () => ['admin', 'editor'].includes(ME.role);
 
 let dash = { du_an: [] };
 const dashById = () => new Map(dash.du_an.map((d) => [d.id, d]));
-const DSTATE = { project: '', vat: 'gt', pie: 'dt', lop: 'th' };
-// Lớp số liệu: dk = Dự kiến (theo hợp đồng), th = Thực hiện (đến hiện tại)
+// Danh sách dự án: số liệu Thực hiện, trước VAT (xem đủ các lớp / VAT ở tab Báo cáo)
+const DSTATE = { vat: 'gt', lop: 'th' };
 const LOP = { dk: 'du_kien', th: 'thuc_hien' };
 const lopOf = (d, lop = DSTATE.lop) => d[LOP[lop] || 'thuc_hien'];
-try { Object.assign(DSTATE, JSON.parse(localStorage.getItem('dash') || '{}')); } catch {}
-const saveDState = () => { try { localStorage.setItem('dash', JSON.stringify(DSTATE)); } catch {} };
 
 async function loadProjects() {
   [projects, dash] = await Promise.all([api('/api/du-an'), api('/api/dashboard')]);
-  renderDashboard();
   renderProjects();
 }
 
@@ -119,12 +116,8 @@ function renderProjects() {
 }
 
 // =====================================================================
-// DASHBOARD (tab Dự án) – số liệu lấy từ Doanh thu + Chi phí
+// Tiện ích biểu đồ dùng chung (tab Báo cáo – public/report.js)
 // =====================================================================
-const C_DT = '#2c5fa3'; // Doanh thu (navy)
-const C_CP = '#c27a3e'; // Chi phí (đồng)
-const PIE_COLORS = ['#2c5fa3', '#c27a3e', '#16968a', '#7e5aa6', '#9a8a2e', '#b04f5a', '#3f8fbf'];
-const C_OTHER = '#b5b3ab';
 const SVGNS = 'http://www.w3.org/2000/svg';
 
 // Số gọn cho trục / nhãn: 1,25 tỷ · 850 tr
@@ -134,59 +127,6 @@ function shortMoney(n) {
   if (a >= 1e9) return (n < 0 ? '-' : '') + f(a / 1e9) + ' tỷ';
   if (a >= 1e6) return (n < 0 ? '-' : '') + f(a / 1e6) + ' tr';
   return fmt.format(n);
-}
-
-function dashRows() {
-  const id = Number(DSTATE.project);
-  return id ? dash.du_an.filter((d) => d.id === id) : dash.du_an;
-}
-
-function renderDashboard() {
-  const sel = $('#d-project');
-  if (!dash.du_an.some((d) => d.id === Number(DSTATE.project))) DSTATE.project = '';
-  sel.innerHTML = `<option value="">Tất cả dự án (${dash.du_an.length})</option>` +
-    dash.du_an.map((d) => `<option value="${d.id}">${esc(d.ma_du_an)} – ${esc(d.ten_du_an)}</option>`).join('');
-  sel.value = DSTATE.project;
-  $$('#d-vat button').forEach((b) => b.classList.toggle('on', b.dataset.v === DSTATE.vat));
-  $$('#d-pie-by button').forEach((b) => b.classList.toggle('on', b.dataset.v === DSTATE.pie));
-  $$('#d-lop button').forEach((b) => b.classList.toggle('on', b.dataset.v === DSTATE.lop));
-
-  const rows = dashRows();
-  const v = DSTATE.vat;
-  const sum = (f) => rows.reduce((s, d) => s + f(d), 0);
-  const soHd = sum((d) => d.so_hd);
-  const dt = sum((d) => lopOf(d).doanh_thu[v]);
-  const cp = sum((d) => lopOf(d).chi_phi[v]);
-  const ln = dt - cp;
-  const dtSv = sum((d) => lopOf(d).doanh_thu.sv);
-  const tv = sum((d) => d.tien_ve);
-  const cl = sum((d) => lopOf(d).con_lai);
-  const khac = DSTATE.lop === 'th' ? 'dk' : 'th';
-  const dt2 = sum((d) => lopOf(d, khac).doanh_thu[v]);
-  const ln2 = dt2 - sum((d) => lopOf(d, khac).chi_phi[v]);
-  const pctTxt = (a, b) => (b ? (a / b * 100).toFixed(1).replace('.', ',') + '%' : '—');
-  const setK = (id, val, sub, neg) => {
-    $('#d-k-' + id).textContent = typeof val === 'number' && id !== 'hd' ? fmt.format(val) : val;
-    $('#d-k-' + id).classList.toggle('neg', Boolean(neg));
-    $('#d-k-' + id + '-sub').textContent = sub;
-  };
-  const basis = v === 'gt' ? 'trước VAT' : 'sau VAT';
-  const isTh = DSTATE.lop === 'th';
-  $('#d-k-dt-label').textContent = isTh ? 'Doanh thu thực hiện' : 'Doanh thu dự kiến';
-  $('#d-k-cp-label').textContent = isTh ? 'Chi phí thực hiện' : 'Chi phí dự kiến';
-  $('#d-k-ln-label').textContent = isTh ? 'Lợi nhuận thực hiện' : 'Lợi nhuận dự kiến';
-  $('#d-k-cl-label').textContent = isTh ? 'Còn phải thu (theo nghiệm thu)' : 'Còn lại theo HĐ';
-  $('#d-line-title').textContent = `Doanh thu – Chi phí ${isTh ? 'thực hiện' : 'dự kiến'} theo tháng (lũy kế)`;
-  setK('hd', String(soHd), `${rows.length} dự án · ${sum((d) => d.so_hd_qt)} HĐ đã QT · ${sum((d) => d.so_tp)} HĐ thầu phụ`);
-  setK('dt', dt, `VNĐ, ${basis} · ${isTh ? 'đạt' : 'đã nghiệm thu'} ${isTh ? pctTxt(dt, dt2) + ' dự kiến' : pctTxt(dt2, dt)}`);
-  const goc = sum((d) => d.tra_goc[v]);
-  setK('cp', cp, `${pctTxt(cp, dt)} doanh thu` + (goc ? ` · không gồm trả gốc vay ${fmt.format(goc)}` : ''));
-  setK('ln', ln, `Tỷ suất LN: ${pctTxt(ln, dt)} · ${isTh ? 'Dự kiến' : 'Thực hiện'}: ${fmt.format(ln2)} (${pctTxt(ln2, dt2)})`, ln < 0);
-  setK('cl', cl, `Đã thu ${fmt.format(tv)} (${pctTxt(tv, dtSv)}), sau VAT` +
-    (cl < 0 ? ' · số âm: CĐT đã tạm ứng / thanh toán vượt giá trị ' + (isTh ? 'nghiệm thu' : 'HĐ') : ''), cl < 0);
-
-  drawLine();
-  drawPie();
 }
 
 // ---------- Tooltip dùng chung ----------
@@ -223,220 +163,6 @@ function niceTicks(min, max, count = 5) {
   for (let t = lo; t <= hi + step / 2; t += step) ticks.push(Math.round(t));
   return ticks;
 }
-
-// ---------- Biểu đồ đường: lũy kế theo tháng ----------
-function drawLine() {
-  const box = $('#d-line');
-  const rows = dashRows();
-  const v = DSTATE.vat;
-  const byMonth = {};
-  let noDt = 0, noCp = 0;
-  for (const d of rows) {
-    const L = lopOf(d);
-    noDt += L.chua_ngay.dt; noCp += L.chua_ngay.cp;
-    for (const [m, t] of Object.entries(L.thang)) {
-      const o = (byMonth[m] ||= { dt: 0, cp: 0 });
-      o.dt += t['dt_' + v]; o.cp += t['cp_' + v];
-    }
-  }
-  const keys = Object.keys(byMonth).sort();
-  const notes = [];
-  if (noDt || noCp) notes.push(`Chưa đưa vào biểu đồ (thiếu ngày): ${noDt} dòng doanh thu, ${noCp} dòng chi phí — vẫn được tính trong số tổng.`);
-  $('#d-line-note').textContent = notes.join(' ');
-  box.innerHTML = '';
-  if (!keys.length) {
-    box.innerHTML = '<div class="chart-empty">Chưa có số liệu có ngày để vẽ biểu đồ</div>';
-    return;
-  }
-  // Điền đủ các tháng liên tiếp
-  const months = [];
-  let [y, m] = keys[0].split('-').map(Number);
-  const [ye, me] = keys[keys.length - 1].split('-').map(Number);
-  while (y < ye || (y === ye && m <= me)) {
-    months.push(`${y}-${String(m).padStart(2, '0')}`);
-    if (++m > 12) { m = 1; y++; }
-  }
-  let cDt = 0, cCp = 0;
-  const pts = months.map((k) => {
-    const o = byMonth[k] || { dt: 0, cp: 0 };
-    cDt += o.dt; cCp += o.cp;
-    return { k, dt: cDt, cp: cCp, mDt: o.dt, mCp: o.cp };
-  });
-
-  const W = Math.max(300, box.clientWidth);
-  const H = 290;
-  const pad = { l: 64, r: 78, t: 30, b: 34 };
-  const iw = W - pad.l - pad.r, ih = H - pad.t - pad.b;
-  const vals = pts.flatMap((p) => [p.dt, p.cp]);
-  const ticks = niceTicks(Math.min(0, ...vals), Math.max(0, ...vals));
-  const y0 = ticks[0], y1 = ticks[ticks.length - 1];
-  const X = (i) => pad.l + (pts.length === 1 ? iw / 2 : (i / (pts.length - 1)) * iw);
-  const Y = (val) => pad.t + ih - ((val - y0) / (y1 - y0)) * ih;
-
-  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, width: W, height: H, role: 'img',
-    'aria-label': `Doanh thu và chi phí lũy kế theo tháng, ${months.length} tháng` }, box);
-  // Chú giải
-  const lg = svgEl('g', { class: 'legend' }, svg);
-  [['Doanh thu', C_DT], ['Chi phí', C_CP]].forEach(([t, c], i) => {
-    const x = pad.l + i * 110;
-    svgEl('line', { x1: x, x2: x + 18, y1: 10, y2: 10, stroke: c, 'stroke-width': 2.5, 'stroke-linecap': 'round' }, lg);
-    svgEl('text', { x: x + 24, y: 14, class: 'ax-lbl strong' }, lg).textContent = t;
-  });
-  // Lưới + trục Y
-  for (const t of ticks) {
-    svgEl('line', { x1: pad.l, x2: W - pad.r, y1: Y(t), y2: Y(t), class: t === 0 ? 'ax-base' : 'ax-grid' }, svg);
-    svgEl('text', { x: pad.l - 8, y: Y(t) + 4, 'text-anchor': 'end', class: 'ax-lbl' }, svg).textContent = shortMoney(t);
-  }
-  // Nhãn trục X (thưa bớt khi nhiều tháng)
-  const every = Math.ceil(pts.length / Math.max(1, Math.floor(iw / 58)));
-  pts.forEach((p, i) => {
-    const lastI = pts.length - 1;
-    if (i !== lastI && (i % every || X(lastI) - X(i) < 52)) return;
-    const [yy, mm] = p.k.split('-');
-    svgEl('text', { x: X(i), y: H - pad.b + 18, 'text-anchor': 'middle', class: 'ax-lbl' }, svg).textContent = `${mm}/${yy.slice(2)}`;
-  });
-  // Đường
-  const path = (f) => pts.map((p, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)},${Y(p[f]).toFixed(1)}`).join('');
-  [['dt', C_DT], ['cp', C_CP]].forEach(([f, c]) => {
-    svgEl('path', { d: path(f), fill: 'none', stroke: c, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }, svg);
-    if (pts.length <= 24) pts.forEach((p, i) => svgEl('circle', { cx: X(i), cy: Y(p[f]), r: 3.5, fill: c, stroke: '#fff', 'stroke-width': 2 }, svg));
-  });
-  // Nhãn cuối đường (tránh chồng nhau)
-  const last = pts[pts.length - 1];
-  let yDt = Y(last.dt), yCp = Y(last.cp);
-  if (Math.abs(yDt - yCp) < 14) { const mid = (yDt + yCp) / 2; const up = last.dt >= last.cp; yDt = mid + (up ? -7 : 7); yCp = mid + (up ? 7 : -7); }
-  svgEl('text', { x: X(pts.length - 1) + 8, y: yDt + 4, class: 'ax-lbl strong' }, svg).textContent = shortMoney(last.dt);
-  svgEl('text', { x: X(pts.length - 1) + 8, y: yCp + 4, class: 'ax-lbl strong' }, svg).textContent = shortMoney(last.cp);
-
-  // Đường dóng + tooltip
-  const cross = svgEl('line', { y1: pad.t, y2: pad.t + ih, class: 'ax-cross', visibility: 'hidden' }, svg);
-  const hDt = svgEl('circle', { r: 5, fill: C_DT, stroke: '#fff', 'stroke-width': 2, visibility: 'hidden' }, svg);
-  const hCp = svgEl('circle', { r: 5, fill: C_CP, stroke: '#fff', 'stroke-width': 2, visibility: 'hidden' }, svg);
-  const hit = svgEl('rect', { x: pad.l - 10, y: pad.t, width: iw + 20, height: ih, fill: 'transparent' }, svg);
-  const vatTxt = v === 'gt' ? 'trước VAT' : 'sau VAT';
-  hit.addEventListener('mousemove', (e) => {
-    const r = svg.getBoundingClientRect();
-    const sx = (e.clientX - r.left) * (W / r.width);
-    const i = pts.length === 1 ? 0 : Math.max(0, Math.min(pts.length - 1, Math.round(((sx - pad.l) / iw) * (pts.length - 1))));
-    const p = pts[i];
-    for (const el of [cross, hDt, hCp]) el.setAttribute('visibility', 'visible');
-    cross.setAttribute('x1', X(i)); cross.setAttribute('x2', X(i));
-    hDt.setAttribute('cx', X(i)); hDt.setAttribute('cy', Y(p.dt));
-    hCp.setAttribute('cx', X(i)); hCp.setAttribute('cy', Y(p.cp));
-    const [yy, mm] = p.k.split('-');
-    showTip(`<b>Tháng ${mm}/${yy}</b> <span class="muted">(${vatTxt})</span>
-      <table><tr><td></td><td>Lũy kế</td><td>Trong tháng</td></tr>
-      <tr><td><i style="background:${C_DT}"></i>Doanh thu</td><td>${fmt.format(p.dt)}</td><td>${fmt.format(p.mDt)}</td></tr>
-      <tr><td><i style="background:${C_CP}"></i>Chi phí</td><td>${fmt.format(p.cp)}</td><td>${fmt.format(p.mCp)}</td></tr>
-      <tr class="sum"><td>Chênh lệch</td><td class="${p.dt - p.cp < 0 ? 'neg' : ''}">${fmt.format(p.dt - p.cp)}</td><td class="${p.mDt - p.mCp < 0 ? 'neg' : ''}">${fmt.format(p.mDt - p.mCp)}</td></tr></table>`,
-    e.clientX, e.clientY);
-  });
-  hit.addEventListener('mouseleave', () => { for (const el of [cross, hDt, hCp]) el.setAttribute('visibility', 'hidden'); hideTip(); });
-}
-
-// ---------- Biểu đồ quạt: tỷ trọng các dự án ----------
-function drawPie() {
-  const box = $('#d-pie');
-  const f = DSTATE.pie;
-  const v = DSTATE.vat;
-  const name = f === 'dt' ? 'doanh thu' : 'chi phí';
-  const all = dash.du_an.map((d) => ({ id: d.id, ma: d.ma_du_an, ten: d.ten_du_an, val: (f === 'dt' ? lopOf(d).doanh_thu : lopOf(d).chi_phi)[v] }));
-  const pos = all.filter((d) => d.val > 0).sort((a, b) => b.val - a.val);
-  const neg = all.filter((d) => d.val < 0).length;
-  box.innerHTML = '';
-  if (!pos.length) {
-    box.innerHTML = `<div class="chart-empty">Chưa có số liệu ${name}</div>`;
-    return;
-  }
-  let slices = pos.slice(0, PIE_COLORS.length).map((d, i) => ({ ...d, color: PIE_COLORS[i] }));
-  if (pos.length > PIE_COLORS.length) {
-    slices = pos.slice(0, PIE_COLORS.length - 1).map((d, i) => ({ ...d, color: PIE_COLORS[i] }));
-    const rest = pos.slice(PIE_COLORS.length - 1);
-    slices.push({ id: 0, ma: 'Khác', ten: `${rest.length} dự án khác`, val: rest.reduce((s, d) => s + d.val, 0), color: C_OTHER });
-  }
-  const total = slices.reduce((s, d) => s + d.val, 0);
-  const sel = Number(DSTATE.project);
-  const pctOf = (x) => (x / total * 100).toFixed(1).replace('.', ',') + '%';
-
-  const S = 220, R = 100, r0 = 62, c = S / 2;
-  const wrap = document.createElement('div');
-  wrap.className = 'pie-wrap';
-  box.appendChild(wrap);
-  const svg = svgEl('svg', { viewBox: `0 0 ${S} ${S}`, width: S, height: S, role: 'img', 'aria-label': `Tỷ trọng ${name} các dự án` }, wrap);
-  const arc = (a0, a1) => {
-    const p = (a, rr) => [c + rr * Math.sin(a), c - rr * Math.cos(a)];
-    if (a1 - a0 >= Math.PI * 2 - 1e-9) a1 = a0 + Math.PI * 2 - 1e-4;
-    const big = a1 - a0 > Math.PI ? 1 : 0;
-    const [x0, y0] = p(a0, R), [x1, y1] = p(a1, R), [x2, y2] = p(a1, r0), [x3, y3] = p(a0, r0);
-    return `M${x0},${y0}A${R},${R} 0 ${big} 1 ${x1},${y1}L${x2},${y2}A${r0},${r0} 0 ${big} 0 ${x3},${y3}Z`;
-  };
-  let a = 0;
-  const tipHtml = (d) => `<b>${esc(d.ma)}</b> ${esc(d.ten)}<br>${fmt.format(d.val)} đ · <b>${pctOf(d.val)}</b> ${name}`;
-  slices.forEach((d) => {
-    const a1 = a + (d.val / total) * Math.PI * 2;
-    const el = svgEl('path', { d: arc(a, a1), fill: d.color, stroke: '#fff', 'stroke-width': slices.length > 1 ? 2 : 0,
-      class: 'slice' + (sel && d.id !== sel ? ' dim' : '') }, svg);
-    el.addEventListener('mousemove', (e) => showTip(tipHtml(d), e.clientX, e.clientY));
-    el.addEventListener('mouseleave', hideTip);
-    if (d.id) el.addEventListener('click', () => setDashProject(sel === d.id ? '' : d.id));
-    a = a1;
-  });
-  const focus = sel && slices.find((d) => d.id === sel);
-  svgEl('text', { x: c, y: c - 4, 'text-anchor': 'middle', class: 'pie-c1' }, svg).textContent = focus ? pctOf(focus.val) : shortMoney(total);
-  svgEl('text', { x: c, y: c + 16, 'text-anchor': 'middle', class: 'pie-c2' }, svg).textContent = focus ? focus.ma : `Tổng ${name}`;
-
-  const ul = document.createElement('ul');
-  ul.className = 'pie-legend';
-  ul.innerHTML = slices.map((d) => `<li data-id="${d.id}" class="${sel && d.id !== sel ? 'dim' : ''}${d.id ? ' clickable' : ''}">
-    <i style="background:${d.color}"></i><span class="nm" title="${esc(d.ten)}">${esc(d.ma)}${d.id ? ' – ' + esc(d.ten) : ' (' + esc(d.ten) + ')'}</span>
-    <b>${pctOf(d.val)}</b><span class="vl">${shortMoney(d.val)}</span></li>`).join('');
-  ul.addEventListener('click', (e) => {
-    const id = Number(e.target.closest('li')?.dataset.id);
-    if (id) setDashProject(sel === id ? '' : id);
-  });
-  wrap.appendChild(ul);
-  if (neg) {
-    const n = document.createElement('div');
-    n.className = 'muted small';
-    n.textContent = `${neg} dự án có ${name} âm không thể hiện trên biểu đồ quạt.`;
-    box.appendChild(n);
-  }
-}
-
-function setDashProject(id) {
-  DSTATE.project = id ? String(id) : '';
-  saveDState();
-  renderDashboard();
-}
-$('#d-project').addEventListener('change', (e) => setDashProject(e.target.value));
-$('#d-vat').addEventListener('click', (e) => {
-  const b = e.target.closest('button');
-  if (!b) return;
-  DSTATE.vat = b.dataset.v;
-  saveDState();
-  renderDashboard();
-  renderProjects();
-});
-$('#d-lop').addEventListener('click', (e) => {
-  const b = e.target.closest('button');
-  if (!b) return;
-  DSTATE.lop = b.dataset.v;
-  saveDState();
-  renderDashboard();
-  renderProjects();
-});
-$('#d-pie-by').addEventListener('click', (e) => {
-  const b = e.target.closest('button');
-  if (!b) return;
-  DSTATE.pie = b.dataset.v;
-  saveDState();
-  renderDashboard();
-});
-let dashResize;
-window.addEventListener('resize', () => {
-  clearTimeout(dashResize);
-  dashResize = setTimeout(() => { if (!$('#tab-projects').hidden && dash.du_an.length) drawLine(); }, 150);
-});
 
 function resetProjectForm() {
   pForm.reset();

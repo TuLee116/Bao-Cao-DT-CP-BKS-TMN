@@ -47,7 +47,7 @@ Web quản lý dự án xây dựng có đăng nhập, phân quyền, khởi t�
 - Nhóm 1 trong tổng chi phí = tổng giá trị HT/QT của các HĐ thầu phụ.
 - Xóa HĐ thầu phụ hoặc PL cần Passcode; dòng HĐ gốc chỉ xóa cùng cả hợp đồng.
 
-### Dashboard tổng (tab Dự án)
+### Số liệu Dự kiến / Thực hiện (dùng ở tab Báo cáo và danh sách dự án)
 Số liệu lấy tự động từ tab Doanh thu và Chi phí (API `GET /api/dashboard`, công thức ở `lib/dashboard.js`), 2 lớp:
 
 | | Dự kiến (hiệu quả hợp đồng) | Thực hiện (đến hiện tại) |

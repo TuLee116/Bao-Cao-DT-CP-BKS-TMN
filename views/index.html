@@ -39,46 +39,6 @@
   <main>
     <!-- ================= DỰ ÁN ================= -->
     <section id="tab-projects" class="tab-panel">
-      <div class="card dash-head">
-        <div class="toolbar">
-          <h2>Tổng quan dự án</h2>
-          <select id="d-project" class="project-select" aria-label="Lọc dự án"></select>
-          <div class="seg" id="d-lop" role="group" aria-label="Lớp số liệu">
-            <button type="button" data-v="dk" title="Theo giá trị hợp đồng / quyết toán">Dự kiến</button><button type="button" data-v="th" class="on" title="Theo khối lượng đã nghiệm thu / thanh toán">Thực hiện</button>
-          </div>
-          <div class="seg" id="d-vat" role="group" aria-label="Cơ sở VAT">
-            <button type="button" data-v="gt" class="on">Trước VAT</button><button type="button" data-v="sv">Sau VAT</button>
-          </div>
-        </div>
-        <div class="kpis dash-kpis">
-          <div class="kpi"><div class="label">Tổng số HĐ</div><div class="value" id="d-k-hd">0</div><div class="sub" id="d-k-hd-sub"></div></div>
-          <div class="kpi"><div class="label" id="d-k-dt-label">Doanh thu</div><div class="value" id="d-k-dt">0</div><div class="sub" id="d-k-dt-sub"></div></div>
-          <div class="kpi"><div class="label" id="d-k-cp-label">Chi phí</div><div class="value" id="d-k-cp">0</div><div class="sub" id="d-k-cp-sub"></div></div>
-          <div class="kpi"><div class="label" id="d-k-ln-label">Lợi nhuận</div><div class="value" id="d-k-ln">0</div><div class="sub" id="d-k-ln-sub"></div></div>
-          <div class="kpi"><div class="label" id="d-k-cl-label">Còn lại</div><div class="value" id="d-k-cl">0</div><div class="sub" id="d-k-cl-sub"></div></div>
-        </div>
-        <p class="muted small dash-note"><b>Dự kiến</b>: doanh thu theo giá trị HĐ + PL (HĐ đã quyết toán lấy giá trị quyết toán), thầu phụ theo giá trị HĐTP (đã QT lấy giá trị chốt).
-          <b>Thực hiện</b>: doanh thu đã nghiệm thu (HT/QT), thầu phụ đã thanh toán đợt/quyết toán (không tính tạm ứng).
-          Chi phí khác như nhau ở 2 lớp, không gồm trả nợ gốc vay · Lợi nhuận = Doanh thu − Chi phí · Còn lại = Doanh thu (sau VAT) − Tiền về.</p>
-      </div>
-
-      <div class="dash-charts">
-        <div class="card">
-          <div class="toolbar"><h2 id="d-line-title">Doanh thu – Chi phí theo tháng (lũy kế)</h2></div>
-          <div id="d-line" class="chart"></div>
-          <div id="d-line-note" class="muted small"></div>
-        </div>
-        <div class="card">
-          <div class="toolbar">
-            <h2>Tỷ trọng các dự án</h2>
-            <div class="seg" id="d-pie-by" role="group" aria-label="Tỷ trọng theo">
-              <button type="button" data-v="dt" class="on">Doanh thu</button><button type="button" data-v="cp">Chi phí</button>
-            </div>
-          </div>
-          <div id="d-pie" class="chart"></div>
-        </div>
-      </div>
-
       <div class="card" data-role="admin editor">
         <h2 id="p-form-title">Thêm dự án</h2>
         <form id="p-form" class="grid-form">
@@ -103,6 +63,7 @@
       <div class="card">
         <div class="toolbar">
           <h2>Danh sách dự án</h2>
+          <span class="muted small p-note">Doanh thu · Chi phí · Lợi nhuận: số thực hiện, trước VAT — bấm tên dự án để xem báo cáo chi tiết</span>
           <input id="p-search" type="search" placeholder="Tìm mã, tên, chủ đầu tư...">
           <button id="p-csv">Xuất CSV</button>
         </div>

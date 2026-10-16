@@ -3,7 +3,7 @@
 // Số liệu: /api/bao-cao (cùng công thức Dashboard). Dùng chung tiện ích của app.js / common.js.
 // =====================================================================
 let BC = null;                                  // dữ liệu báo cáo
-const BST = { project: '', vat: 'gt', ky: 'nam', tu: '', den: '' }; // phạm vi, cơ sở VAT, kỳ báo cáo
+const BST = { project: '', vat: 'gt', ky: 'nam', tu: '', den: '', chi_tiet: false }; // phạm vi, cơ sở VAT, kỳ báo cáo
 try { Object.assign(BST, JSON.parse(localStorage.getItem('bao_cao') || '{}')); } catch {}
 const bSave = () => { try { localStorage.setItem('bao_cao', JSON.stringify(BST)); } catch {} };
 
@@ -449,6 +449,7 @@ function renderReport() {
   const lnDk = T.dk.dt[v] - T.dk.cp[v], lnTh = T.th.dt[v] - T.th.cp[v];
   const lap = new Date(BC.lap_luc);
   const scope = one ? `${one.ma_du_an} – ${one.ten_du_an}` : `Tất cả dự án (${list.length})`;
+  const warnN = list.reduce((s2, d) => s2 + d.canh_bao.length, 0);
 
   const kpi = (label, val, sub, cls = '') => `<div class="b-kpi ${cls}"><div class="label">${label}</div><div class="value">${bm(val)}</div><div class="sub">${sub}</div></div>`;
   const projRows = (f) => list.map(f).join('');
@@ -467,6 +468,11 @@ function renderReport() {
 
   ${bPcSection(list, v)}
 
+  <div class="card b-detail-bar">
+    <div><b>Phân tích chi tiết</b> <span class="muted small">(I → ${one ? 'IV' : 'V'}: tổng quan theo hợp đồng, biểu đồ, ${one ? '' : 'tổng hợp dự án, '}chi tiết từng dự án, cảnh báo${warnN ? ` – <b class="warn-text">${warnN} cảnh báo</b>` : ''})</span></div>
+    <button type="button" class="${BST.chi_tiet ? '' : 'primary'}" id="b-detail-toggle">${BST.chi_tiet ? 'Ẩn chi tiết ▴' : 'Hiện chi tiết ▾'}</button>
+  </div>
+  <div id="b-detail" class="b-detail" ${BST.chi_tiet ? '' : 'hidden'}>
   <section class="card b-sec">
     <h2>I. Tổng quan theo hợp đồng</h2>
     <p class="b-count">${T.so_da} dự án · ${T.so_hd} HĐ chủ đầu tư (${T.so_hd_qt} đã quyết toán) · ${T.so_tp} HĐ thầu phụ (${T.so_tp_qt} đã quyết toán)</p>
@@ -536,6 +542,7 @@ function renderReport() {
     <h2>${one ? 'IV' : 'V'}. Cảnh báo & lưu ý</h2>
     ${bWarnTable(list)}
   </section>
+  </div>
   <div class="b-foot">Nguồn: ${esc(BC.ten_he_thong || 'PROJECT PROFIT')} · ${esc(BC.phien_ban)} · Số liệu lấy tự động từ các tab Doanh thu, Chi phí, Thầu phụ, Tiền về tại thời điểm lập báo cáo.</div>`;
 
   bDrawCharts(list, v, one);
@@ -803,7 +810,10 @@ $('#b-report').addEventListener('click', async (e) => {
     $('.pc-body', card).innerHTML = bPcBody(BC.du_an.find((x) => x.id === id), t.dataset.pt);
     return bPcDraw(card);
   }
-  if (e.target.closest('[data-pdetail]')) { BST.project = String(id); bSave(); renderReport(); return window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  if (e.target.closest('[data-pdetail]')) {
+    BST.project = String(id); BST.chi_tiet = true; bSave(); renderReport();
+    return $('.b-detail-bar')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
   if (e.target.closest('[data-pcimgdel]')) {
     e.stopPropagation();
     if (!confirm('Xóa ảnh công trình này?')) return;
@@ -834,20 +844,38 @@ $('#b-reload').addEventListener('click', () => loadReport().catch((err) => alert
 $('#b-report').addEventListener('click', (e) => {
   if (e.target.id === 'b-open-all' || e.target.id === 'b-close-all') $$('#b-report details.b-proj').forEach((d) => (d.open = e.target.id === 'b-open-all'));
   if (e.target.id === 'f-set-target') return bTargetDialog();
+  if (e.target.id === 'b-detail-toggle') return bSetDetail(!BST.chi_tiet);
   const go = e.target.dataset.bgo;
   if (go) { e.preventDefault(); revProjectId = Number(e.target.dataset.id); showTab(go); }
 });
 let bResize;
 window.addEventListener('resize', () => { clearTimeout(bResize); bResize = setTimeout(() => { if (BC && !$('#tab-report').hidden) bDrawCharts(bScope().list, BST.vat, bScope().one); }, 200); });
 
+// Ẩn / hiện khối Phân tích chi tiết (I → V); vẽ lại biểu đồ khi hiện
+function bSetDetail(on) {
+  BST.chi_tiet = on;
+  bSave();
+  const box = $('#b-detail'), btn = $('#b-detail-toggle');
+  if (!box) return;
+  box.hidden = !on;
+  btn.textContent = on ? 'Ẩn chi tiết ▴' : 'Hiện chi tiết ▾';
+  btn.classList.toggle('primary', !on);
+  if (on) { const { list, one } = bScope(); bDrawCharts(list, BST.vat, one); }
+}
+
 // In / PDF: mở hết chi tiết, vẽ lại biểu đồ theo khổ giấy
 let bOpenState = null;
+let bDetailWas = null;
 window.addEventListener('beforeprint', () => {
   if ($('#tab-report').hidden || !BC) return;
+  bDetailWas = BST.chi_tiet;
+  if ($('#b-detail')) $('#b-detail').hidden = false;
   bOpenState = $$('#b-report details.b-proj').map((d) => d.open);
   $$('#b-report details.b-proj').forEach((d) => (d.open = true));
 });
 window.addEventListener('afterprint', () => {
+  if (bDetailWas === false && $('#b-detail')) $('#b-detail').hidden = true;
+  bDetailWas = null;
   if (!bOpenState) return;
   $$('#b-report details.b-proj').forEach((d, i) => (d.open = bOpenState[i]));
   bOpenState = null;

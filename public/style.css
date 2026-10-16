@@ -439,6 +439,13 @@ dialog.pass-dlg.f-dlg h3 { color: var(--navy); }
 @media (max-width: 640px) { .f-grid, .f-row2 { grid-template-columns: minmax(0, 1fr); } .f-row2 > :last-child { grid-column: auto; } .b-ky-custom input { width: 130px; } }
 @media print { .f-grid { grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(0, 1.15fr); } .f-row2 { grid-template-columns: 1.1fr 0.9fr 1.2fr; } .f-val { font-size: 15px; } .f-sec { break-after: page; } }
 
+/* ---------- Khối Phân tích chi tiết (ẩn / hiện) ---------- */
+.b-detail-bar { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; padding: 14px 20px; }
+.b-detail-bar b { color: var(--navy); }
+.b-detail { display: grid; gap: 18px; }
+.b-detail[hidden] { display: none; }
+@media print { .b-detail-bar { display: none !important; } .b-detail { display: grid !important; } }
+
 /* ---------- Thẻ báo cáo từng công trình ---------- */
 .pc-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .pc-grid.one { grid-template-columns: minmax(0, 640px); }

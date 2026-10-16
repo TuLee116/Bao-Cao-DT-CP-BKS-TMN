@@ -625,6 +625,7 @@ function renderReport() {
     <h2>${one ? 'IV' : 'V'}. Cảnh báo & lưu ý</h2>
     ${bWarnTable(list)}
   </section>
+
   </div>
   <div class="b-foot">Nguồn: ${esc(BC.ten_he_thong || 'PROJECT PROFIT')} · ${esc(BC.phien_ban)} · Số liệu lấy tự động từ các tab Doanh thu, Chi phí, Thầu phụ, Tiền về tại thời điểm lập báo cáo.</div>`;
 
@@ -675,7 +676,6 @@ function bProjectDetail(d, v, open) {
           nhom.filter((n) => n.khoi === k.code).map((n) => `<tr><td class="indent-1">${esc(n.ten)}</td><td class="num">${bn(n[v])}</td><td class="num">${bpct(n[v], tongCp)}</td><td class="num">${bpct(n[v], d.du_kien.doanh_thu[v])}</td></tr>`).join('')).join('')}</tbody>
         <tfoot><tr><td>TỔNG CHI PHÍ</td><td class="num">${bn(tongCp)}</td><td class="num">100%</td><td class="num">${bpct(tongCp, d.du_kien.doanh_thu[v])}</td></tr></tfoot>
       </table></div>
-      ${d.canh_bao.length ? `<h4>Cảnh báo</h4><ul class="b-warn">${d.canh_bao.map((w) => `<li ${w.link ? bWarnAttr(w, d.id) : `class="m-${w.muc}"`}><b>${MUC[w.muc]}</b> ${esc(w.noi_dung)}${w.link ? ` <span class="b-where no-print">${bWarnPlace(w.link)} →</span>` : ''}</li>`).join('')}</ul>` : ''}
     </div>
   </details>`;
 }

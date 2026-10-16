@@ -64,7 +64,8 @@ Số liệu lấy tự động từ tab Doanh thu và Chi phí (API `GET /api/da
 
 ### Báo cáo tổng quan (tab Báo cáo)
 Tổng hợp toàn bộ số liệu liên kết (API `GET /api/bao-cao`, `lib/report.js`, giao diện `public/report.js`), chọn phạm vi (tất cả / 1 dự án) và cơ sở VAT:
-- **I. Tổng quan**: Dự kiến / Thực hiện (Doanh thu, Chi phí, Lợi nhuận, tỷ suất), Dòng tiền & công nợ (Tiền về, Còn phải thu, Còn phải trả thầu phụ, trả nợ gốc).
+- **Tổng quan tài chính theo kỳ** (Tháng / Quý / Năm / 6 tháng / Lũy kế / Tùy chọn từ tháng – đến tháng): 4 thẻ Doanh thu, Chi phí, Lợi nhuận (tỷ suất), Dòng tiền thực tế (số dư cuối kỳ) so với kỳ trước; **Mục tiêu năm** (Quản trị đặt, API `/api/muc-tieu`) với % đạt; biểu đồ DT–CP–LN theo tháng, cơ cấu doanh thu theo công trình, bảng hiệu quả từng công trình. Số theo kỳ dùng lớp Thực hiện theo ngày phát sinh.
+- **I. Tổng quan theo hợp đồng**: Dự kiến / Thực hiện (Doanh thu, Chi phí, Lợi nhuận, tỷ suất), Dòng tiền & công nợ (Tiền về, Còn phải thu, Còn phải trả thầu phụ, trả nợ gốc).
 - **II. Biểu đồ**: DT–CP thực hiện lũy kế, dòng tiền thu/chi theo tháng, cơ cấu chi phí, lợi nhuận theo dự án (hoặc lãi gộp theo HĐ CĐT).
 - **III. Tổng hợp theo dự án**, **IV. Chi tiết từng dự án** (từng HĐ CĐT: HĐ+PL, nghiệm thu, % HT, tiền về, phải thu, thầu phụ, lãi gộp dự kiến; cơ cấu chi phí), **V. Cảnh báo**.
 - Xuất: **In / PDF** (A4 ngang, mỗi dự án 1 trang mới), **Excel** (9 sheet gồm toàn bộ dòng chi tiết), **PowerPoint** (bìa, tổng quan, biểu đồ gốc sửa được, bảng tổng hợp, từng dự án, cảnh báo).

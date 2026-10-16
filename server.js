@@ -3,7 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const store = require('./lib/db');
 const auth = require('./lib/auth');
-const { TRANG_THAI, ROLES, validateProject, validateUser, validateSettings, validateContact, validateRevenue, validateTienVe, validateCost, validateTp, validateTpLine, validateTpPay, passwordErrors, passcodeErrors } = require('./lib/validate');
+const { TRANG_THAI, ROLES, validateProject, validateUser, validateSettings, validateContact, validateTarget, validateRevenue, validateTienVe, validateCost, validateTp, validateTpLine, validateTpPay, passwordErrors, passcodeErrors } = require('./lib/validate');
 const { buildContracts, summarizeContracts } = require('./lib/subcontract');
 const { KHOI_CHI_PHI, NHOM_CHI_PHI, summarizeCost, sortCost, costLine } = require('./lib/cost');
 const { summarizeProject } = require('./lib/dashboard');
@@ -374,7 +374,25 @@ api.get('/bao-cao', wrap(async (req, res) => {
     lap_luc: new Date().toISOString(), nguoi_lap: req.user.full_name || req.user.username,
     ten_cong_ty: s.ten_cong_ty, ten_he_thong: s.ten_he_thong, phien_ban: PHIEN_BAN.ma,
     khoi: KHOI_CHI_PHI.map((k) => ({ code: k.code, ten: k.ten })), du_an,
+    muc_tieu: await readTargets(), la_quan_tri: req.user.role === 'admin',
   });
+}));
+
+// ---------- Mục tiêu năm (Báo cáo) ----------
+const TARGET_KEY = 'muc_tieu';
+async function readTargets() {
+  try { return JSON.parse((await store.getSettings())[TARGET_KEY] || '{}'); } catch { return {}; }
+}
+api.get('/muc-tieu', wrap(async (_req, res) => res.json(await readTargets())));
+api.put('/muc-tieu', auth.requireRole('admin'), wrap(async (req, res) => {
+  const { data, errors } = validateTarget(req.body || {});
+  if (errors.length) return bad(res, errors);
+  const all = await readTargets();
+  const { nam, ...t } = data;
+  if (Object.values(t).every((x) => x === null)) delete all[nam]; else all[nam] = t;
+  await store.saveSettings({ [TARGET_KEY]: JSON.stringify(all) });
+  console.log(`[NHẬT KÝ] ${req.user.username} đặt mục tiêu năm ${nam}: ${JSON.stringify(t)}`);
+  res.json(all);
 }));
 
 // ---------- Dữ liệu mẫu (tester) – chỉ Quản trị ----------

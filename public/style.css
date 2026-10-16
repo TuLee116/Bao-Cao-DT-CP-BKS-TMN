@@ -386,6 +386,58 @@ tr.ngoai-cp td { color: var(--muted); font-style: italic; }
 }
 @media (max-width: 560px) { .b-kpi-grid { grid-template-columns: minmax(0, 1fr); } }
 
+/* ---------- Tổng quan tài chính theo kỳ (mẫu dashboard) ---------- */
+#b-ky { width: auto; }
+.b-ky-custom { display: inline-flex; gap: 6px; align-items: center; }
+.b-ky-custom input { width: 150px; }
+.b-tag { font-size: 12.5px; color: var(--muted); margin: -2px 0 6px; }
+.f-head { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.f-head h2 { margin: 0; }
+.f-range { font-size: 13px; font-weight: 600; color: var(--navy); padding: 6px 12px; border: 1px solid var(--border); border-radius: 10px; background: #f8fbff; }
+.f-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(230px, 1.15fr); gap: 14px; }
+.f-card { display: flex; gap: 12px; padding: 16px; border-radius: 14px; border: 1px solid transparent; min-width: 0; }
+.f-card .f-ic { flex: 0 0 46px; height: 46px; border-radius: 12px; display: grid; place-items: center; color: #fff; }
+.f-card .f-ic svg { width: 26px; height: 26px; }
+.f-body { min-width: 0; }
+.f-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; }
+.f-val { margin: 4px 0 0; font-size: 24px; font-weight: 800; color: var(--navy); font-variant-numeric: tabular-nums; white-space: nowrap; line-height: 1.2; }
+.f-val small { font-size: 13px; font-weight: 600; color: var(--muted); }
+.f-full { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; margin-bottom: 4px; }
+.f-dlg { width: min(420px, calc(100vw - 32px)); }
+.f-dlg input { text-align: left !important; letter-spacing: normal !important; font-size: 14px !important; }
+dialog.pass-dlg.f-dlg h3 { color: var(--navy); }
+.f-delta { display: block; font-size: 12.5px; font-weight: 700; }
+.f-delta small { font-weight: 500; color: var(--muted); }
+.f-delta.ok { color: #0a7d32; } .f-delta.bad { color: #c2410c; }
+.f-sub { margin-top: 4px; font-size: 11.5px; color: var(--muted); }
+.f-dt { background: #edf4fd; border-color: #d3e3f8; } .f-dt .f-ic { background: #2a78d6; } .f-dt .f-title { color: #1c5cab; }
+.f-cp { background: #fdf1eb; border-color: #f7d9c9; } .f-cp .f-ic { background: #eb6834; } .f-cp .f-title { color: #b4481c; }
+.f-ln { background: #eaf8f1; border-color: #c9ecdb; } .f-ln .f-ic { background: #1baf7a; } .f-ln .f-title { color: #12805a; }
+.f-dong { background: #f1effc; border-color: #ddd8f7; } .f-dong .f-ic { background: #6250d6; } .f-dong .f-title { color: #4a3aa7; }
+.f-target { padding: 14px 16px; border-radius: 14px; border: 1px solid var(--border); background: #fff; display: flex; flex-direction: column; gap: 8px; }
+.f-target-h { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--navy); }
+.f-tg { display: grid; grid-template-columns: 10px 1fr auto; gap: 2px 8px; align-items: center; font-size: 12px; }
+.f-tg-dot { width: 9px; height: 9px; border-radius: 50%; }
+.f-tg-l { font-weight: 600; }
+.f-tg-v { color: var(--muted); font-size: 11px; text-align: right; }
+.f-tg-bar { grid-column: 2 / 3; height: 7px; border-radius: 99px; background: #eef2f7; overflow: hidden; }
+.f-tg-bar i { display: block; height: 100%; border-radius: 99px; }
+.f-tg-p { font-weight: 700; font-size: 12px; text-align: right; }
+.f-row2 { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr) minmax(0, 1.2fr); gap: 14px; margin-top: 14px; }
+.f-box { border: 1px solid var(--border); border-radius: 14px; padding: 14px; min-width: 0; }
+.f-box h3 { margin: 0 0 8px; font-size: 13.5px; color: var(--navy); }
+.f-donut { flex-direction: column; }
+.f-donut .pie-legend { width: 100%; }
+.f-donut-pct { font-size: 11px; font-weight: 700; fill: #fff; }
+.f-eff { font-size: 12.5px; }
+.f-eff td, .f-eff th { padding: 8px 6px; }
+.f-eff .pos { color: #0a7d32; }
+.f-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; }
+.f-note { margin: 10px 0 0; }
+@media (max-width: 1200px) { .f-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .f-target { grid-column: 1 / -1; } .f-row2 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .f-row2 > :last-child { grid-column: 1 / -1; } }
+@media (max-width: 640px) { .f-grid, .f-row2 { grid-template-columns: minmax(0, 1fr); } .f-row2 > :last-child { grid-column: auto; } .b-ky-custom input { width: 130px; } }
+@media print { .f-grid { grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(0, 1.15fr); } .f-row2 { grid-template-columns: 1.1fr 0.9fr 1.2fr; } .f-val { font-size: 15px; } .f-sec { break-after: page; } }
+
 /* ---------- In / PDF: A4 ngang, chỉ in báo cáo ---------- */
 @media print {
   @page { size: A4 landscape; margin: 10mm; }

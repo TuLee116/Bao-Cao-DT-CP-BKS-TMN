@@ -293,6 +293,11 @@
         <div class="toolbar b-toolbar">
           <h2>Báo cáo tổng quan</h2>
           <select id="b-project" class="project-select" aria-label="Phạm vi báo cáo"></select>
+          <select id="b-ky" aria-label="Kỳ báo cáo">
+            <option value="thang">Tháng này</option><option value="quy">Quý này</option><option value="nam">Năm nay</option>
+            <option value="6t">6 tháng gần nhất</option><option value="luyke">Lũy kế</option><option value="tuychon">Tùy chọn...</option>
+          </select>
+          <span id="b-ky-custom" class="b-ky-custom" hidden><input type="month" id="b-tu" aria-label="Từ tháng"> – <input type="month" id="b-den" aria-label="Đến tháng"></span>
           <div class="seg" id="b-vat" role="group" aria-label="Cơ sở VAT">
             <button type="button" data-v="gt" class="on">Trước VAT</button><button type="button" data-v="sv">Sau VAT</button>
           </div>

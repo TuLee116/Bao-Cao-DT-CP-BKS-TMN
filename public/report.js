@@ -3,7 +3,7 @@
 // Số liệu: /api/bao-cao (cùng công thức Dashboard). Dùng chung tiện ích của app.js / common.js.
 // =====================================================================
 let BC = null;                                  // dữ liệu báo cáo
-const BST = { project: '', vat: 'gt' };          // phạm vi, cơ sở VAT
+const BST = { project: '', vat: 'gt', ky: 'nam', tu: '', den: '' }; // phạm vi, cơ sở VAT, kỳ báo cáo
 try { Object.assign(BST, JSON.parse(localStorage.getItem('bao_cao') || '{}')); } catch {}
 const bSave = () => { try { localStorage.setItem('bao_cao', JSON.stringify(BST)); } catch {} };
 
@@ -77,14 +77,251 @@ function bCostGroups(list, v) {
 }
 
 // ---------------------------------------------------------------------
+// KỲ BÁO CÁO (theo tháng) – số liệu lớp Thực hiện theo ngày phát sinh
+// ---------------------------------------------------------------------
+const ymAdd = (ym, n) => { let [y, m] = ym.split('-').map(Number); m += n; while (m > 12) { m -= 12; y++; } while (m < 1) { m += 12; y--; } return `${y}-${String(m).padStart(2, '0')}`; };
+const ymDiff = (a, b) => { const [y1, m1] = a.split('-').map(Number), [y2, m2] = b.split('-').map(Number); return (y2 - y1) * 12 + (m2 - m1); };
+const ymTxt = (ym) => { const [y, m] = ym.split('-'); return `${m}/${y}`; };
+const lastDay = (ym) => { const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m, 0)).getUTCDate(); };
+const ROMAN_Q = ['I', 'II', 'III', 'IV'];
+function bNowYm() { return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date()).slice(0, 7); }
+function bAllMonths(list) {
+  const ks = new Set();
+  for (const d of list) { Object.keys(d.thuc_hien.thang).forEach((k) => ks.add(k)); Object.keys(d.dong_tien).forEach((k) => ks.add(k)); }
+  return [...ks].sort();
+}
+function bPeriod(list) {
+  const now = bNowYm();
+  const [y, m] = now.split('-').map(Number);
+  const q = Math.floor((m - 1) / 3);
+  let from, to, label;
+  switch (BST.ky) {
+    case 'thang': from = to = now; label = `Tháng ${ymTxt(now)}`; break;
+    case 'quy': from = `${y}-${String(q * 3 + 1).padStart(2, '0')}`; to = ymAdd(from, 2); label = `Quý ${ROMAN_Q[q]}/${y}`; break;
+    case '6t': to = now; from = ymAdd(now, -5); label = '6 tháng gần nhất'; break;
+    case 'luyke': { const all = bAllMonths(list); from = all[0] && all[0] < now ? all[0] : now; to = all.length && all[all.length - 1] > now ? all[all.length - 1] : now; label = 'Lũy kế từ đầu'; break; }
+    case 'tuychon': from = BST.tu || ymAdd(now, -2); to = BST.den || now; if (from > to) [from, to] = [to, from]; label = 'Tùy chọn'; break;
+    default: from = `${y}-01`; to = `${y}-12`; label = `Năm ${y}`;
+  }
+  const n = ymDiff(from, to) + 1;
+  const prev = BST.ky === 'luyke' ? null : { from: ymAdd(from, -n), to: ymAdd(from, -1) };
+  const [fy, fm] = from.split('-'), [ty, tm] = to.split('-');
+  return { from, to, n, prev, label, range: `01/${fm}/${fy} – ${lastDay(to)}/${tm}/${ty}` };
+}
+// Tổng trong khoảng tháng [a, b]
+function bSumRange(list, v, a, b) {
+  const o = { dt: 0, cp: 0, thu: 0, chi: 0 };
+  const inR = (k) => k >= a && k <= b;
+  for (const d of list) {
+    for (const [k, t] of Object.entries(d.thuc_hien.thang)) if (inR(k)) { o.dt += t['dt_' + v]; o.cp += t['cp_' + v]; }
+    for (const [k, t] of Object.entries(d.dong_tien)) if (inR(k)) { o.thu += t.thu; o.chi += t.chi; }
+  }
+  o.ln = o.dt - o.cp;
+  o.dong_tien = o.thu - o.chi;
+  return o;
+}
+function bBalance(list, b) { // số dư dòng tiền lũy kế đến hết tháng b
+  let s = 0;
+  for (const d of list) for (const [k, t] of Object.entries(d.dong_tien)) if (k <= b) s += t.thu - t.chi;
+  return s;
+}
+// Chuỗi theo tháng (gộp theo quý nếu kỳ > 12 tháng)
+function bSeries(list, v, P) {
+  const byQ = P.n > 12;
+  const out = [];
+  for (let k = P.from; k <= P.to; k = ymAdd(k, byQ ? 3 : 1)) {
+    let a = k, b = byQ ? ymAdd(k, 2) : k;
+    if (b > P.to) b = P.to;
+    const [yy, mm] = k.split('-').map(Number);
+    const o = bSumRange(list, v, a, b);
+    out.push({ label: byQ ? `Q${Math.floor((mm - 1) / 3) + 1}/${String(yy).slice(2)}` : `T${mm}/${String(yy).slice(2)}`, ...o });
+    if (byQ && b === P.to) break;
+  }
+  return out;
+}
+
+const ICON = {
+  dt: '<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/>',
+  cp: '<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M16 11h5v5h-5a2.5 2.5 0 0 1 0-5zM6 6l9-3 1.5 3"/>',
+  ln: '<path d="M4 20V12M10 20V8M16 20v-6M3 20h18M13 6l4-3 4 3M17 3v7"/>',
+  dong: '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M6 9h.01M18 15h.01"/>',
+};
+const bIcon = (k) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[k]}</svg>`;
+// So với kỳ trước: good = tăng là tốt
+function bDelta(cur, prev, good = true) {
+  if (prev === null || prev === undefined) return '';
+  if (!prev) return `<span class="f-delta">— <small>kỳ trước = 0</small></span>`;
+  const p = (cur - prev) / Math.abs(prev);
+  const up = p >= 0;
+  const ok = up === good;
+  return `<span class="f-delta ${ok ? 'ok' : 'bad'}">${up ? '▲' : '▼'} ${Math.abs(p * 100).toFixed(1).replace('.', ',')}% <small>so với kỳ trước</small></span>`;
+}
+const PROJ_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#6250d6'];
+
+function bFinHtml(list, v) {
+  const P = bPeriod(list);
+  const cur = bSumRange(list, v, P.from, P.to);
+  const prv = P.prev ? bSumRange(list, v, P.prev.from, P.prev.to) : null;
+  const bal = bBalance(list, P.to);
+  const year = P.to.slice(0, 4);
+  const ytd = bSumRange(list, v, `${year}-01`, P.to);
+  const tg = (BC.muc_tieu || {})[year] || {};
+  const card = (k, title, val, sub, delta) => `<div class="f-card f-${k}">
+      <div class="f-ic">${bIcon(k)}</div>
+      <div class="f-body"><div class="f-title">${title}</div><div class="f-val ${val < 0 ? 'neg' : ''}">${bTy(val)} <small>tỷ</small></div>
+        <div class="f-full">${bn(val)} đ</div>${delta}${sub ? `<div class="f-sub">${sub}</div>` : ''}</div></div>`;
+  const bar = (label, act, target, color, fmtFn) => {
+    if (target === null || target === undefined) return `<div class="f-tg"><span class="f-tg-dot" style="background:${color}"></span><span class="f-tg-l">${label}</span><span class="muted small">Chưa đặt</span></div>`;
+    const pc = target > 0 ? act / target : 0;
+    const pTxt = target > 0 ? (pc < 0 ? '<0%' : `${(pc * 100).toFixed(0)}%`) : '—';
+    return `<div class="f-tg"><span class="f-tg-dot" style="background:${color}"></span><span class="f-tg-l">${label}</span><span class="f-tg-v ${act < 0 ? 'neg' : ''}">${fmtFn(act)} / ${fmtFn(target)}</span>
+      <div class="f-tg-bar"><i style="width:${Math.max(0, Math.min(100, pc * 100))}%;background:${color}"></i></div><span class="f-tg-p ${pc < 0 ? 'neg' : ''}">${pTxt}</span></div>`;
+  };
+  const tyS = (x) => `${(x * 100).toFixed(1).replace('.', ',')}%`;
+  const tsAct = ytd.dt ? ytd.ln / ytd.dt : 0;
+  const tyFmt = (n) => `${bTy(n)} tỷ`;
+  const anyTarget = ['dt', 'cp', 'ln', 'ty_suat'].some((k) => tg[k] !== null && tg[k] !== undefined);
+  const lnPct = cur.dt ? cur.ln / cur.dt : 0;
+  const prjRows = list.map((d) => { const o = bSumRange([d], v, P.from, P.to); return { d, ...o }; });
+  const tot = prjRows.reduce((a, x) => ({ dt: a.dt + x.dt, cp: a.cp + x.cp, ln: a.ln + x.ln }), { dt: 0, cp: 0, ln: 0 });
+  const undated = list.reduce((s, d) => s + d.thuc_hien.chua_ngay.dt + d.thuc_hien.chua_ngay.cp, 0);
+  return `
+  <section class="card b-sec f-sec">
+    <div class="f-head">
+      <h2>Tổng quan tài chính · ${esc(P.label)}</h2>
+      <div class="f-range">📅 ${P.range}${P.prev ? ` <span class="muted">· so với ${ymTxt(P.prev.from)}${P.prev.n !== 1 && P.prev.from !== P.prev.to ? ' – ' + ymTxt(P.prev.to) : ''}</span>` : ''}</div>
+    </div>
+    <div class="f-grid">
+      ${card('dt', 'Tổng doanh thu', cur.dt, `Nghiệm thu trong kỳ (${v === 'gt' ? 'trước VAT' : 'sau VAT'})`, bDelta(cur.dt, prv?.dt, true))}
+      ${card('cp', 'Tổng chi phí', cur.cp, `${bpct(cur.cp, cur.dt)} doanh thu`, bDelta(cur.cp, prv?.cp, false))}
+      ${card('ln', 'Lợi nhuận', cur.ln, `Tỷ suất LN: <b>${tyS(lnPct)}</b>`, bDelta(cur.ln, prv?.ln, true))}
+      ${card('dong', 'Dòng tiền thực tế', cur.dong_tien, `Thu ${bTy(cur.thu)} · Chi ${bTy(cur.chi)} tỷ<br>Số dư cuối kỳ: <b class="${bal < 0 ? 'neg' : ''}">${bTy(bal)} tỷ</b>`, bDelta(cur.dong_tien, prv?.dong_tien, true))}
+      <div class="f-target">
+        <div class="f-target-h"><b>Mục tiêu năm ${year}</b>${BC.la_quan_tri ? `<button type="button" class="sm no-print" id="f-set-target">${anyTarget ? 'Sửa' : 'Đặt mục tiêu'}</button>` : ''}</div>
+        ${bar('Doanh thu', ytd.dt, tg.dt, BCOL.dt, tyFmt)}
+        ${bar('Chi phí', ytd.cp, tg.cp, BCOL.cp, tyFmt)}
+        ${bar('Lợi nhuận', ytd.ln, tg.ln, BCOL.dk, tyFmt)}
+        ${bar('Tỷ suất LN', tsAct * 100, tg.ty_suat, '#6250d6', (x) => `${Number(x).toFixed(1).replace('.', ',')}%`)}
+        <div class="muted small">Thực hiện lũy kế 01/${year} – ${ymTxt(P.to)}</div>
+      </div>
+    </div>
+    <div class="f-row2">
+      <div class="f-box"><h3>Doanh thu – Chi phí – Lợi nhuận <span class="muted">(tỷ đồng)</span></h3><div id="f-ch-col" class="chart"></div></div>
+      <div class="f-box"><h3>Cơ cấu doanh thu theo công trình</h3><div id="f-ch-donut" class="chart"></div></div>
+      <div class="f-box"><h3>Hiệu quả từng công trình <span class="muted">(tỷ đồng)</span></h3>
+        <div class="table-wrap"><table class="b-table f-eff">
+          <thead><tr><th>Công trình</th><th class="num">Doanh thu</th><th class="num">Chi phí</th><th class="num">Lợi nhuận</th><th class="num">Tỷ suất</th></tr></thead>
+          <tbody>${prjRows.map((x, i) => `<tr><td title="${esc(x.d.ten_du_an)}"><span class="f-dot" style="background:${PROJ_COLORS[i % PROJ_COLORS.length]}"></span><b>${esc(x.d.ma_du_an)}</b></td>
+            <td class="num">${bTy(x.dt)}</td><td class="num">${bTy(x.cp)}</td><td class="num strong ${x.ln < 0 ? 'neg' : 'pos'}">${bTy(x.ln)}</td><td class="num">${x.dt ? tyS(x.ln / x.dt) : '—'}</td></tr>`).join('')}</tbody>
+          <tfoot><tr><td>Tổng cộng</td><td class="num">${bTy(tot.dt)}</td><td class="num">${bTy(tot.cp)}</td><td class="num ${tot.ln < 0 ? 'neg' : ''}">${bTy(tot.ln)}</td><td class="num">${tot.dt ? tyS(tot.ln / tot.dt) : '—'}</td></tr></tfoot>
+        </table></div></div>
+    </div>
+    <p class="muted small f-note">Số liệu theo ngày phát sinh (lớp Thực hiện): doanh thu theo ngày nghiệm thu, chi phí theo ngày chứng từ / thanh toán thầu phụ, dòng tiền = tiền về − tiền chi (sau VAT).${undated ? ` <b class="warn-text">${undated} dòng thiếu ngày không được tính vào kỳ nào</b> (xem mục Cảnh báo; nhập ngày để số theo kỳ đầy đủ).` : ''}</p>
+  </section>`;
+}
+
+// Số liệu Tổng quan tài chính theo kỳ (dùng chung cho xuất Excel / PowerPoint)
+function bFinData(list, v) {
+  const P = bPeriod(list);
+  const cur = bSumRange(list, v, P.from, P.to);
+  const prv = P.prev ? bSumRange(list, v, P.prev.from, P.prev.to) : null;
+  const year = P.to.slice(0, 4);
+  const ytd = bSumRange(list, v, `${year}-01`, P.to);
+  const tg = (BC.muc_tieu || {})[year] || {};
+  const rows = list.map((d, i) => ({ d, color: PROJ_COLORS[i % PROJ_COLORS.length], ...bSumRange([d], v, P.from, P.to) }));
+  return { P, cur, prv, year, ytd, tg, bal: bBalance(list, P.to), series: bSeries(list, v, P), rows };
+}
+
+function bFinDraw(list, v) {
+  const P = bPeriod(list);
+  const pts = bSeries(list, v, P);
+  bColChart($('#f-ch-col'), pts, [{ key: 'dt', name: 'Doanh thu', color: BCOL.dt }, { key: 'cp', name: 'Chi phí', color: BCOL.cp }, { key: 'ln', name: 'Lợi nhuận', color: BCOL.dk }],
+    { valueLabels: pts.length <= 6, tipExtra: (p) => `<tr class="sum"><td>Tỷ suất LN</td><td>${bpct(p.ln, p.dt)}</td></tr>`, height: 240 });
+  const items = list.map((d, i) => ({ label: d.ma_du_an, sub: d.ten_du_an, val: bSumRange([d], v, P.from, P.to).dt, color: PROJ_COLORS[i % PROJ_COLORS.length] }));
+  bDonut($('#f-ch-donut'), items);
+}
+
+// Biểu đồ tròn (vành khuyên) – màu theo thứ tự công trình
+function bDonut(el, all) {
+  const pos = all.filter((x) => x.val > 0).sort((a, b) => b.val - a.val);
+  if (!pos.length) return bEmpty(el, 'Chưa có doanh thu trong kỳ');
+  let items = pos;
+  if (pos.length > 7) { const rest = pos.slice(6); items = [...pos.slice(0, 6), { label: 'Khác', sub: `${rest.length} công trình`, val: rest.reduce((s, x) => s + x.val, 0), color: '#b5b3ab' }]; }
+  const total = items.reduce((s, x) => s + x.val, 0);
+  const S = 200, R = 92, r0 = 56, c = S / 2;
+  el.innerHTML = '<div class="pie-wrap f-donut"></div>';
+  const wrap = el.firstChild;
+  const svg = svgEl('svg', { viewBox: `0 0 ${S} ${S}`, width: S, height: S, role: 'img', 'aria-label': 'Cơ cấu doanh thu theo công trình' }, wrap);
+  let a = 0;
+  const pt = (ang, rr) => [c + rr * Math.sin(ang), c - rr * Math.cos(ang)];
+  for (const x of items) {
+    let a1 = a + (x.val / total) * Math.PI * 2;
+    if (a1 - a >= Math.PI * 2 - 1e-9) a1 = a + Math.PI * 2 - 1e-4;
+    const big = a1 - a > Math.PI ? 1 : 0;
+    const [x0, y0] = pt(a, R), [x1, y1] = pt(a1, R), [x2, y2] = pt(a1, r0), [x3, y3] = pt(a, r0);
+    const path = svgEl('path', { d: `M${x0},${y0}A${R},${R} 0 ${big} 1 ${x1},${y1}L${x2},${y2}A${r0},${r0} 0 ${big} 0 ${x3},${y3}Z`, fill: x.color, stroke: '#fff', 'stroke-width': items.length > 1 ? 2 : 0 }, svg);
+    path.addEventListener('mousemove', (e) => showTip(`<b>${esc(x.label)}</b> ${esc(x.sub || '')}<br>${bn(x.val)} đ · <b>${bpct(x.val, total)}</b>`, e.clientX, e.clientY));
+    path.addEventListener('mouseleave', hideTip);
+    const mid = (a + a1) / 2;
+    if (x.val / total >= 0.06) { const [lx, ly] = pt(mid, (R + r0) / 2); svgEl('text', { x: lx, y: ly + 4, 'text-anchor': 'middle', class: 'f-donut-pct' }, svg).textContent = Math.round((x.val / total) * 100) + '%'; }
+    a = a1;
+  }
+  svgEl('text', { x: c, y: c - 2, 'text-anchor': 'middle', class: 'pie-c1' }, svg).textContent = bTy(total).replace(/,00$/, '');
+  svgEl('text', { x: c, y: c + 16, 'text-anchor': 'middle', class: 'pie-c2' }, svg).textContent = 'tỷ đồng';
+  const ul = document.createElement('ul');
+  ul.className = 'pie-legend';
+  ul.innerHTML = items.map((x) => `<li><i style="background:${x.color}"></i><span class="nm" title="${esc(x.sub || '')}">${esc(x.label)}<br><small class="muted">${bTy(x.val)} tỷ</small></span><b>${bpct(x.val, total)}</b></li>`).join('');
+  wrap.appendChild(ul);
+}
+
+// Hộp thoại đặt mục tiêu năm (Quản trị)
+function bTargetDialog() {
+  const year = bPeriod(BC.du_an).to.slice(0, 4);
+  const t = (BC.muc_tieu || {})[year] || {};
+  const dlg = document.createElement('dialog');
+  dlg.className = 'pass-dlg f-dlg';
+  const mv = (x) => (x === null || x === undefined ? '' : bf.format(x));
+  dlg.innerHTML = `<form method="dialog" class="stack">
+    <h3>Mục tiêu năm</h3>
+    <label>Năm<input name="nam" type="number" min="2000" max="2100" value="${year}" required></label>
+    <label>Doanh thu (đồng)<input name="dt" class="money" value="${mv(t.dt)}" placeholder="Để trống = chưa đặt"></label>
+    <label>Chi phí (đồng)<input name="cp" class="money" value="${mv(t.cp)}" placeholder="Để trống = chưa đặt"></label>
+    <label>Lợi nhuận (đồng)<input name="ln" class="money" value="${mv(t.ln)}" placeholder="Để trống = chưa đặt"></label>
+    <label>Tỷ suất lợi nhuận (%)<input name="ty_suat" inputmode="decimal" value="${t.ty_suat ?? ''}" placeholder="vd 24"></label>
+    <p class="muted small">So sánh với số thực hiện lũy kế trong năm, cơ sở ${BST.vat === 'gt' ? 'trước VAT' : 'sau VAT'} như đang chọn. Để trống tất cả = xóa mục tiêu năm.</p>
+    <div class="msg" role="alert"></div>
+    <div class="actions"><button type="submit" class="primary" value="ok">Lưu</button><button type="button" data-x>Hủy</button></div>
+  </form>`;
+  document.body.appendChild(dlg);
+  const f = $('form', dlg);
+  $$('input.money', f).forEach(attachMoneyInput);
+  f.elements.nam.addEventListener('change', () => {
+    const t2 = (BC.muc_tieu || {})[f.elements.nam.value] || {};
+    f.elements.dt.value = mv(t2.dt); f.elements.cp.value = mv(t2.cp); f.elements.ln.value = mv(t2.ln); f.elements.ty_suat.value = t2.ty_suat ?? '';
+  });
+  $('[data-x]', f).addEventListener('click', () => { dlg.close(); dlg.remove(); });
+  f.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      BC.muc_tieu = await api('/api/muc-tieu', { method: 'PUT', body: JSON.stringify({
+        nam: f.elements.nam.value, dt: parseMoney(f.elements.dt.value), cp: parseMoney(f.elements.cp.value), ln: parseMoney(f.elements.ln.value), ty_suat: f.elements.ty_suat.value }) });
+      dlg.close(); dlg.remove();
+      renderReport();
+    } catch (err) { showMsg($('.msg', f), err.message, 'err'); }
+  });
+  dlg.showModal();
+}
+
+// ---------------------------------------------------------------------
 // Biểu đồ SVG dùng chung (tooltip: showTip/hideTip của app.js)
 // ---------------------------------------------------------------------
 function bAxis(min, max) { return niceTicks(Math.min(0, min), Math.max(0, max)); }
 function bLegend(svg, items, x0) {
-  items.forEach(([t, c], i) => {
-    const x = x0 + i * 130;
+  let x = x0;
+  items.forEach(([t, c]) => {
     svgEl('rect', { x, y: 4, width: 12, height: 12, rx: 3, fill: c }, svg);
     svgEl('text', { x: x + 18, y: 14, class: 'ax-lbl strong' }, svg).textContent = t;
+    x += 30 + t.length * 6.6;
   });
 }
 function bEmpty(el, text) { el.innerHTML = `<div class="chart-empty">${text}</div>`; }
@@ -132,10 +369,10 @@ function bLineChart(el, pts, series) {
 }
 
 // Cột đứng nhóm theo tháng (dòng tiền)
-function bColChart(el, pts, series) {
+function bColChart(el, pts, series, opt = {}) {
   if (!pts.length) return bEmpty(el, 'Chưa có số liệu có ngày');
   el.innerHTML = '';
-  const W = Math.max(320, el.clientWidth || 600), H = 260, pad = { l: 62, r: 16, t: 28, b: 30 };
+  const W = Math.max(320, el.clientWidth || 600), H = opt.height || 260, pad = { l: 62, r: 16, t: 28, b: 30 };
   const iw = W - pad.l - pad.r, ih = H - pad.t - pad.b;
   const vals = pts.flatMap((p) => series.map((s) => p[s.key]));
   const ticks = bAxis(Math.min(...vals), Math.max(...vals));
@@ -155,11 +392,12 @@ function bColChart(el, pts, series) {
       const v = p[s.key], x = cx - (series.length * (bw + 2)) / 2 + j * (bw + 2);
       const ya = Y(Math.max(0, v)), yb = Y(Math.min(0, v));
       svgEl('rect', { x, y: ya, width: bw, height: Math.max(v ? 1 : 0, yb - ya), rx: Math.min(3, bw / 2), fill: s.color }, svg);
+      if (opt.valueLabels && v) svgEl('text', { x: x + bw / 2, y: v >= 0 ? ya - 4 : yb + 11, 'text-anchor': 'middle', class: 'ax-lbl strong' }, svg).textContent = bTy(v).replace(/,0+$/, '').replace(/(,\d)0$/, '$1');
     });
     if (!(i % every)) svgEl('text', { x: cx, y: H - 10, 'text-anchor': 'middle', class: 'ax-lbl' }, svg).textContent = p.label;
     const hit = svgEl('rect', { x: pad.l + slot * i, y: pad.t, width: slot, height: ih, fill: 'transparent' }, svg);
-    hit.addEventListener('mousemove', (e) => showTip(`<b>Tháng ${p.label}</b><table>${series.map((s) => `<tr><td><i style="background:${s.color}"></i>${s.name}</td><td>${bn(p[s.key])}</td></tr>`).join('')}
-      <tr class="sum"><td>Chênh lệch</td><td class="${p.thu - p.chi < 0 ? 'neg' : ''}">${bn(p.thu - p.chi)}</td></tr></table>`, e.clientX, e.clientY));
+    hit.addEventListener('mousemove', (e) => showTip(`<b>${p.label}</b><table>${series.map((s) => `<tr><td><i style="background:${s.color}"></i>${s.name}</td><td class="${p[s.key] < 0 ? 'neg' : ''}">${bn(p[s.key])}</td></tr>`).join('')}
+      ${opt.tipExtra ? opt.tipExtra(p) : ''}</table>`, e.clientX, e.clientY));
     hit.addEventListener('mouseleave', hideTip);
   });
 }
@@ -208,6 +446,9 @@ function renderReport() {
   sel.innerHTML = `<option value="">Tất cả dự án (${BC.du_an.length})</option>` + BC.du_an.map((d) => `<option value="${d.id}">${esc(d.ma_du_an)} – ${esc(d.ten_du_an)}</option>`).join('');
   sel.value = BST.project;
   $$('#b-vat button').forEach((b) => b.classList.toggle('on', b.dataset.v === BST.vat));
+  $('#b-ky').value = BST.ky;
+  $('#b-ky-custom').hidden = BST.ky !== 'tuychon';
+  { const P0 = bPeriod(BC.du_an); $('#b-tu').value = P0.from; $('#b-den').value = P0.to; }
 
   const { list, one } = bScope();
   const v = BST.vat, vt = v === 'gt' ? 'trước VAT' : 'sau VAT';
@@ -223,13 +464,16 @@ function renderReport() {
   <div class="card b-head">
     <div class="b-brand"><img src="/img/logo-icon.png" alt=""><div>
       <div class="b-company">${esc(BC.ten_cong_ty || '')}</div>
-      <h1>BÁO CÁO TỔNG QUAN DỰ ÁN</h1>
+      <h1>BÁO CÁO TỔNG QUAN TÀI CHÍNH DỰ ÁN</h1>
+      <div class="b-tag">Theo dõi nhanh hiệu quả kinh doanh và tình hình tài chính</div>
       <div class="b-meta">Phạm vi: <b>${esc(scope)}</b> · Đơn vị: VNĐ (${vt} trừ khi ghi khác) · Lập lúc ${lap.toLocaleString('vi-VN')} · Người lập: ${esc(BC.nguoi_lap)} · ${esc(BC.phien_ban)}</div>
     </div></div>
   </div>
 
+  ${bFinHtml(list, v)}
+
   <section class="card b-sec">
-    <h2>I. Tổng quan</h2>
+    <h2>I. Tổng quan theo hợp đồng</h2>
     <p class="b-count">${T.so_da} dự án · ${T.so_hd} HĐ chủ đầu tư (${T.so_hd_qt} đã quyết toán) · ${T.so_tp} HĐ thầu phụ (${T.so_tp_qt} đã quyết toán)</p>
     <div class="b-kpi-grid">
       <div class="b-rowlab">Dự kiến<small>theo hợp đồng</small></div>
@@ -360,9 +604,11 @@ function bWarnTable(list) {
 }
 
 function bDrawCharts(list, v, one) {
+  if ($('#f-ch-col')) bFinDraw(list, v);
   const pts = bMonths(list, v);
   bLineChart($('#b-ch-line'), pts, [{ key: 'luy_dt', name: 'Doanh thu', color: BCOL.dt }, { key: 'luy_cp', name: 'Chi phí', color: BCOL.cp }]);
-  bColChart($('#b-ch-flow'), pts, [{ key: 'thu', name: 'Thu (tiền về)', color: BCOL.thu }, { key: 'chi', name: 'Chi', color: BCOL.chi }]);
+  bColChart($('#b-ch-flow'), pts, [{ key: 'thu', name: 'Thu (tiền về)', color: BCOL.thu }, { key: 'chi', name: 'Chi', color: BCOL.chi }],
+    { tipExtra: (p) => `<tr class="sum"><td>Chênh lệch</td><td class="${p.thu - p.chi < 0 ? 'neg' : ''}">${bn(p.thu - p.chi)}</td></tr>` });
   const cg = bCostGroups(list, v);
   const tong = cg.reduce((s, x) => s + x.val, 0);
   bBarH($('#b-ch-cost'), cg.slice(0, 10).map((x) => ({ label: x.ten, values: [x.val] })), [{ name: 'Chi phí', color: BCOL.cp }], { pctOf: tong });
@@ -380,9 +626,12 @@ function bDrawCharts(list, v, one) {
 // ---------------------------------------------------------------------
 $('#b-project').addEventListener('change', (e) => { BST.project = e.target.value; bSave(); renderReport(); });
 $('#b-vat').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; BST.vat = b.dataset.v; bSave(); renderReport(); });
+$('#b-ky').addEventListener('change', (e) => { BST.ky = e.target.value; bSave(); renderReport(); });
+$('#b-ky-custom').addEventListener('change', () => { BST.tu = $('#b-tu').value; BST.den = $('#b-den').value; bSave(); renderReport(); });
 $('#b-reload').addEventListener('click', () => loadReport().catch((err) => alert(err.message)));
 $('#b-report').addEventListener('click', (e) => {
   if (e.target.id === 'b-open-all' || e.target.id === 'b-close-all') $$('#b-report details.b-proj').forEach((d) => (d.open = e.target.id === 'b-open-all'));
+  if (e.target.id === 'f-set-target') return bTargetDialog();
   const go = e.target.dataset.bgo;
   if (go) { e.preventDefault(); revProjectId = Number(e.target.dataset.id); showTab(go); }
 });
@@ -441,6 +690,35 @@ $('#b-xlsx').addEventListener('click', (e) => bBusy(e.target, async () => {
     const ws = add(name, [head, ...rows], widths);
     if (rows.length) ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: rows.length, c: head.length - 1 } }) };
   };
+  const F = bFinData(list, v);
+  const chg = (a, b) => (F.prv && b ? (a - b) / Math.abs(b) : '');
+  const tsY = F.ytd.dt ? (F.ytd.ln / F.ytd.dt) * 100 : 0;
+  const pctT = (a, t) => (t ? a / t : '');
+  const wsF = add('Tai chinh ky', [
+    ['TỔNG QUAN TÀI CHÍNH THEO KỲ'], [BC.ten_cong_ty || ''],
+    ['Kỳ báo cáo', `${F.P.label} (${F.P.range})`], ['So với kỳ trước', F.P.prev ? `${ymTxt(F.P.prev.from)} – ${ymTxt(F.P.prev.to)}` : '—'], ['Đơn vị', `VNĐ, ${vt} (dòng tiền sau VAT)`], [],
+    ['Chỉ tiêu', 'Kỳ này', 'Kỳ trước', '% thay đổi'],
+    ['Tổng doanh thu', F.cur.dt, F.prv ? F.prv.dt : '', chg(F.cur.dt, F.prv?.dt)],
+    ['Tổng chi phí', F.cur.cp, F.prv ? F.prv.cp : '', chg(F.cur.cp, F.prv?.cp)],
+    ['Lợi nhuận', F.cur.ln, F.prv ? F.prv.ln : '', chg(F.cur.ln, F.prv?.ln)],
+    ['Tỷ suất lợi nhuận', F.cur.dt ? F.cur.ln / F.cur.dt : 0, F.prv && F.prv.dt ? F.prv.ln / F.prv.dt : '', ''],
+    ['Dòng tiền thực tế (thu − chi)', F.cur.dong_tien, F.prv ? F.prv.dong_tien : '', chg(F.cur.dong_tien, F.prv?.dong_tien)],
+    ['  Thu (tiền về)', F.cur.thu, F.prv ? F.prv.thu : '', ''], ['  Chi', F.cur.chi, F.prv ? F.prv.chi : '', ''],
+    ['Số dư dòng tiền cuối kỳ', F.bal, '', ''], [],
+    [`Mục tiêu năm ${F.year}`, `Thực hiện 01/${F.year} – ${ymTxt(F.P.to)}`, 'Mục tiêu', '% đạt'],
+    ['Doanh thu', F.ytd.dt, F.tg.dt ?? '', pctT(F.ytd.dt, F.tg.dt)], ['Chi phí', F.ytd.cp, F.tg.cp ?? '', pctT(F.ytd.cp, F.tg.cp)],
+    ['Lợi nhuận', F.ytd.ln, F.tg.ln ?? '', pctT(F.ytd.ln, F.tg.ln)], ['Tỷ suất lợi nhuận (%)', Number(tsY.toFixed(2)), F.tg.ty_suat ?? '', pctT(tsY, F.tg.ty_suat)], [],
+    ['Theo tháng / quý', 'Doanh thu', 'Chi phí', 'Lợi nhuận', 'Thu', 'Chi', 'Dòng tiền'],
+    ...F.series.map((p) => [p.label, p.dt, p.cp, p.ln, p.thu, p.chi, p.dong_tien]), [],
+    ['Hiệu quả từng công trình', 'Doanh thu', 'Chi phí', 'Lợi nhuận', 'Tỷ suất LN', 'Tỷ trọng doanh thu'],
+    ...F.rows.map((x) => [`${x.d.ma_du_an} – ${x.d.ten_du_an}`, x.dt, x.cp, x.ln, x.dt ? x.ln / x.dt : '', F.cur.dt ? x.dt / F.cur.dt : '']),
+  ], [40, 22, 22, 18, 18, 18, 18]);
+  for (const k of Object.keys(wsF)) {
+    if (k[0] === '!') continue;
+    const { r: row, c } = XLSX.utils.decode_cell(k);
+    const isPct = (row === 10 && c <= 2) || (c === 3 && ((row >= 7 && row <= 11) || (row >= 17 && row <= 20))) || (row > 21 + F.series.length + 2 && (c === 4 || c === 5));
+    if (isPct && wsF[k].t === 'n') wsF[k].z = '0.0%';
+  }
   const lnDk = T.dk.dt[v] - T.dk.cp[v], lnTh = T.th.dt[v] - T.th.cp[v];
   add('Tong quan', [
     ['BÁO CÁO TỔNG QUAN DỰ ÁN'], [BC.ten_cong_ty || ''],
@@ -517,6 +795,8 @@ $('#b-pptx').addEventListener('click', (e) => bBusy(e.target, async () => {
   const hd = (t) => ({ text: t, options: { bold: true, color: 'FFFFFF', fill: { color: NAVY }, align: 'center', valign: 'middle' } });
   const num = (n, extra = {}) => ({ text: typeof n === 'string' ? n : ty(n), options: { align: 'right', color: typeof n === 'number' && n < 0 ? 'D92D35' : INK, ...extra } });
   const tblOpt = { x: 0.5, y: 1.35, w: 12.3, fontFace: FONT, fontSize: 10, color: INK, border: { type: 'solid', pt: 0.5, color: LINE }, autoPage: true, autoPageRepeatHeader: true, autoPageSlideStartY: 1.35, newSlideStartY: 1.35, rowH: 0.3, margin: 0.04 };
+  const chartOpt = { x: 0.5, y: 1.35, w: 12.3, h: 5.5, fontFace: FONT, showLegend: true, legendPos: 't', legendFontSize: 11, catAxisLabelFontSize: 10, valAxisLabelFontSize: 10,
+    valAxisLabelFormatCode: '#,##0.0', valGridLine: { color: LINE, size: 0.5 }, catAxisLineShow: true };
 
   // 1. Trang bìa
   const s1 = pptx.addSlide();
@@ -528,9 +808,63 @@ $('#b-pptx').addEventListener('click', (e) => bBusy(e.target, async () => {
   s1.addText(`Ngày lập: ${dateTxt} · Người lập: ${BC.nguoi_lap} · Đơn vị: tỷ đồng (${vt})`, { x: 0.8, y: 4.0, w: 11.7, h: 0.4, fontFace: FONT, fontSize: 14, color: 'BFE9E6' });
   s1.addText('Produced by the Supervisory Board of Tan Minh Nhan Corporation®', { x: 0.8, y: 6.2, w: 11.7, h: 0.4, fontFace: FONT, fontSize: 11, color: 'BFE9E6' });
 
-  // 2. Tổng quan
+  // 1b. Tổng quan tài chính theo kỳ
+  const F = bFinData(list, v);
+  const dPct = (a, b, good = true) => {
+    if (!F.prv) return { text: '', color: MUTED };
+    if (!b) return { text: '— (kỳ trước = 0)', color: MUTED };
+    const p = (a - b) / Math.abs(b);
+    return { text: `${p >= 0 ? '▲' : '▼'} ${Math.abs(p * 100).toFixed(1).replace('.', ',')}% so với kỳ trước`, color: (p >= 0) === good ? '0A7D32' : 'C2410C' };
+  };
+  const sF = slide(`Tổng quan tài chính · ${F.P.label}`, `${F.P.range}${F.P.prev ? ` · so với ${ymTxt(F.P.prev.from)} – ${ymTxt(F.P.prev.to)}` : ''} · Đơn vị: tỷ đồng (${vt}; dòng tiền sau VAT)`);
+  [['TỔNG DOANH THU', F.cur.dt, dPct(F.cur.dt, F.prv?.dt), 'Nghiệm thu trong kỳ', 'EDF4FD', '2A78D6'],
+    ['TỔNG CHI PHÍ', F.cur.cp, dPct(F.cur.cp, F.prv?.cp, false), `${bpct(F.cur.cp, F.cur.dt)} doanh thu`, 'FDF1EB', 'EB6834'],
+    ['LỢI NHUẬN', F.cur.ln, dPct(F.cur.ln, F.prv?.ln), `Tỷ suất LN: ${bpct(F.cur.ln, F.cur.dt)}`, 'EAF8F1', '1BAF7A'],
+    ['DÒNG TIỀN THỰC TẾ', F.cur.dong_tien, dPct(F.cur.dong_tien, F.prv?.dong_tien), `Số dư cuối kỳ: ${ty(F.bal)} tỷ`, 'F1EFFC', '6250D6']]
+    .forEach(([t, val, dl, sub, bg, ac], i) => {
+      const x = 0.5 + i * 2.62;
+      sF.addShape(pptx.ShapeType.roundRect, { x, y: 1.45, w: 2.47, h: 2.0, fill: { color: bg }, line: { color: bg }, rectRadius: 0.1 });
+      sF.addShape(pptx.ShapeType.rect, { x, y: 1.45, w: 2.47, h: 0.07, fill: { color: ac } });
+      sF.addText(t, { x: x + 0.15, y: 1.6, w: 2.2, h: 0.3, fontFace: FONT, fontSize: 10.5, bold: true, color: ac });
+      sF.addText([{ text: ty(val), options: { fontSize: 24, bold: true, color: val < 0 ? 'D92D35' : NAVY } }, { text: ' tỷ', options: { fontSize: 11, color: MUTED } }], { x: x + 0.15, y: 1.92, w: 2.25, h: 0.55, fontFace: FONT });
+      sF.addText(dl.text, { x: x + 0.15, y: 2.5, w: 2.25, h: 0.3, fontFace: FONT, fontSize: 9.5, bold: true, color: dl.color });
+      sF.addText(sub, { x: x + 0.15, y: 2.8, w: 2.25, h: 0.5, fontFace: FONT, fontSize: 9, color: MUTED, valign: 'top' });
+    });
+  // Mục tiêu năm
+  sF.addShape(pptx.ShapeType.roundRect, { x: 11.0, y: 1.45, w: 1.83, h: 2.0, fill: { color: 'FFFFFF' }, line: { color: LINE }, rectRadius: 0.1 });
+  sF.addText(`Mục tiêu ${F.year}`, { x: 11.1, y: 1.52, w: 1.7, h: 0.3, fontFace: FONT, fontSize: 10.5, bold: true, color: NAVY });
+  const tsY = F.ytd.dt ? (F.ytd.ln / F.ytd.dt) * 100 : 0;
+  [['Doanh thu', F.ytd.dt, F.tg.dt, '2A78D6'], ['Chi phí', F.ytd.cp, F.tg.cp, 'EB6834'], ['Lợi nhuận', F.ytd.ln, F.tg.ln, '1BAF7A'], ['Tỷ suất LN', tsY, F.tg.ty_suat, '6250D6']].forEach(([l, a, t, c], i) => {
+    const y = 1.88 + i * 0.38;
+    const pc = t > 0 ? a / t : 0;
+    sF.addText([{ text: l, options: { color: INK } }, { text: t > 0 ? `  ${pc < 0 ? '<0' : Math.round(pc * 100)}%` : '  chưa đặt', options: { bold: true, color: pc < 0 ? 'D92D35' : c } }], { x: 11.1, y, w: 1.7, h: 0.2, fontFace: FONT, fontSize: 8.5 });
+    sF.addShape(pptx.ShapeType.rect, { x: 11.12, y: y + 0.22, w: 1.58, h: 0.07, fill: { color: 'EEF2F7' }, line: { color: 'EEF2F7' } });
+    if (pc > 0) sF.addShape(pptx.ShapeType.rect, { x: 11.12, y: y + 0.22, w: 1.58 * Math.min(1, pc), h: 0.07, fill: { color: c }, line: { color: c } });
+  });
+  // Hiệu quả từng công trình
+  sF.addText('Hiệu quả từng công trình trong kỳ', { x: 0.5, y: 3.65, w: 8, h: 0.3, fontFace: FONT, fontSize: 12, bold: true, color: NAVY });
+  const totF = F.rows.reduce((a, x) => ({ dt: a.dt + x.dt, cp: a.cp + x.cp, ln: a.ln + x.ln }), { dt: 0, cp: 0, ln: 0 });
+  sF.addTable([
+    ['Công trình', 'Doanh thu', 'Chi phí', 'Lợi nhuận', 'Tỷ suất LN', 'Tỷ trọng DT'].map(hd),
+    ...F.rows.map((x) => [{ text: [{ text: '●', options: { color: x.color.slice(1).toUpperCase(), fontSize: 13 } }, { text: `\u00A0\u00A0${x.d.ma_du_an} – ${x.d.ten_du_an}`, options: { bold: true } }] }, num(x.dt), num(x.cp), num(x.ln, { bold: true, color: x.ln < 0 ? 'D92D35' : '0A7D32' }), num(bpct(x.ln, x.dt)), num(bpct(x.dt, F.cur.dt))]),
+    [{ text: 'Tổng cộng', options: { bold: true, fill: { color: 'EEF4FB' } } }, ...[totF.dt, totF.cp, totF.ln, bpct(totF.ln, totF.dt), '100%'].map((x) => num(x, { bold: true, fill: { color: 'EEF4FB' } }))],
+  ], { ...tblOpt, y: 4.0, autoPageSlideStartY: 1.35, colW: [5.3, 1.4, 1.4, 1.4, 1.4, 1.4], rowH: 0.27, fontSize: 9.5 });
+  // Biểu đồ DT–CP–LN theo kỳ + cơ cấu doanh thu
+  if (F.series.length) {
+    const sC = slide(`Doanh thu – Chi phí – Lợi nhuận · ${F.P.label}`, `Đơn vị: tỷ đồng (${vt})`);
+    sC.addChart(pptx.ChartType.bar, ['dt', 'cp', 'ln'].map((k, i) => ({ name: ['Doanh thu', 'Chi phí', 'Lợi nhuận'][i], labels: F.series.map((p) => p.label), values: F.series.map((p) => p[k] / 1e9) })),
+      { ...chartOpt, x: 0.5, w: 7.6, barDir: 'col', catAxisLabelPos: 'low', barGrouping: 'clustered', chartColors: ['2A78D6', 'EB6834', '1BAF7A'], showValue: F.series.length <= 6, dataLabelFormatCode: '#,##0.0', dataLabelFontSize: 8 });
+    const pos = F.rows.filter((x) => x.dt > 0).sort((a, b) => b.dt - a.dt);
+    if (pos.length) {
+      sC.addText('Cơ cấu doanh thu theo công trình', { x: 8.4, y: 1.35, w: 4.4, h: 0.3, fontFace: FONT, fontSize: 12, bold: true, color: NAVY });
+      sC.addChart(pptx.ChartType.doughnut, [{ name: 'Doanh thu', labels: pos.map((x) => x.d.ma_du_an), values: pos.map((x) => x.dt / 1e9) }],
+        { x: 8.3, y: 1.7, w: 4.6, h: 5.1, holeSize: 55, chartColors: pos.map((x) => x.color.slice(1).toUpperCase()), showPercent: true, showValue: false, showLegend: true, legendPos: 'b', legendFontSize: 10, dataLabelColor: 'FFFFFF', dataLabelFontSize: 10, fontFace: FONT });
+    }
+  }
+
+  // 2. Tổng quan theo hợp đồng
   const lnDk = T.dk.dt[v] - T.dk.cp[v], lnTh = T.th.dt[v] - T.th.cp[v];
-  const s2 = slide('Tổng quan', `${T.so_da} dự án · ${T.so_hd} HĐ chủ đầu tư (${T.so_hd_qt} đã QT) · ${T.so_tp} HĐ thầu phụ (${T.so_tp_qt} đã QT) · Đơn vị: tỷ đồng`);
+  const s2 = slide('Tổng quan theo hợp đồng', `${T.so_da} dự án · ${T.so_hd} HĐ chủ đầu tư (${T.so_hd_qt} đã QT) · ${T.so_tp} HĐ thầu phụ (${T.so_tp_qt} đã QT) · Đơn vị: tỷ đồng`);
   const card = (x, y, label, val, sub, color) => {
     s2.addShape(pptx.ShapeType.roundRect, { x, y, w: 3.9, h: 1.35, fill: { color: 'F5F8FC' }, line: { color: LINE }, rectRadius: 0.08 });
     s2.addShape(pptx.ShapeType.rect, { x, y, w: 3.9, h: 0.07, fill: { color } });
@@ -547,8 +881,6 @@ $('#b-pptx').addEventListener('click', (e) => bBusy(e.target, async () => {
 
   // 3–4. Biểu đồ theo tháng (biểu đồ gốc PowerPoint, sửa được)
   const pts = bMonths(list, v);
-  const chartOpt = { x: 0.5, y: 1.35, w: 12.3, h: 5.5, fontFace: FONT, showLegend: true, legendPos: 't', legendFontSize: 11, catAxisLabelFontSize: 10, valAxisLabelFontSize: 10,
-    valAxisLabelFormatCode: '#,##0.0', valGridLine: { color: LINE, size: 0.5 }, catAxisLineShow: true };
   if (pts.length) {
     slide('Doanh thu – Chi phí thực hiện (lũy kế)', `Đơn vị: tỷ đồng (${vt})`).addChart(pptx.ChartType.line, [
       { name: 'Doanh thu', labels: pts.map((p) => p.label), values: pts.map((p) => p.luy_dt / 1e9) },

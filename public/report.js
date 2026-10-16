@@ -99,12 +99,13 @@ function bPeriod(list) {
     case 'thang': from = to = now; label = `Tháng ${ymTxt(now)}`; break;
     case 'quy': from = `${y}-${String(q * 3 + 1).padStart(2, '0')}`; to = ymAdd(from, 2); label = `Quý ${ROMAN_Q[q]}/${y}`; break;
     case '6t': to = now; from = ymAdd(now, -5); label = '6 tháng gần nhất'; break;
-    case 'luyke': { const all = bAllMonths(list); from = all[0] && all[0] < now ? all[0] : now; to = all.length && all[all.length - 1] > now ? all[all.length - 1] : now; label = 'Lũy kế từ đầu'; break; }
-    case 'tuychon': from = BST.tu || ymAdd(now, -2); to = BST.den || now; if (from > to) [from, to] = [to, from]; label = 'Tùy chọn'; break;
+    case 'luyke': { const all = bAllMonths(list); from = all[0] && all[0] < now ? all[0] : now; to = now; label = `Lũy kế đến ${ymTxt(now)}`; break; }
+    case 'all': { const all = bAllMonths(list); from = all[0] || now; to = all.length ? all[all.length - 1] : now; label = 'Toàn bộ thời gian'; break; }
+    case 'tuychon': from = BST.tu || ymAdd(now, -2); to = BST.den || now; if (from > to) [from, to] = [to, from]; label = from === to ? `Tháng ${ymTxt(from)}` : `${ymTxt(from)} – ${ymTxt(to)}`; break;
     default: from = `${y}-01`; to = `${y}-12`; label = `Năm ${y}`;
   }
   const n = ymDiff(from, to) + 1;
-  const prev = BST.ky === 'luyke' ? null : { from: ymAdd(from, -n), to: ymAdd(from, -1) };
+  const prev = BST.ky === 'luyke' || BST.ky === 'all' ? null : { from: ymAdd(from, -n), to: ymAdd(from, -1) };
   const [fy, fm] = from.split('-'), [ty, tm] = to.split('-');
   return { from, to, n, prev, label, range: `01/${fm}/${fy} – ${lastDay(to)}/${tm}/${ty}` };
 }
@@ -650,10 +651,20 @@ function bDeltaS(cur, prev, good = true) {
   return `<span class="f-delta ${(p >= 0) === good ? 'ok' : 'bad'}">${p >= 0 ? '▲' : '▼'} ${Math.abs(p * 100).toFixed(0)}%</span>`;
 }
 
+const KY_OPTS = [['thang', 'Tháng này'], ['quy', 'Quý này'], ['nam', 'Năm nay'], ['6t', '6 tháng gần nhất'], ['luyke', 'Lũy kế đến nay'], ['all', 'Toàn bộ thời gian (All time)'], ['tuychon', 'Tùy chọn...']];
 function bPcSection(list, v) {
   const P = bPeriod(list);
-  return `<section class="card b-sec pc-sec">
-    <div class="f-head"><h2>Báo cáo theo công trình</h2><div class="f-range">Kỳ: ${esc(P.label)} · ${P.range}</div></div>
+  const one = Boolean(Number(BST.project));
+  return `<section class="card b-sec pc-sec" id="pc-sec">
+    <div class="f-head">
+      <div class="pc-sec-title">${one ? '<button type="button" class="sm no-print" id="pc-back" title="Quay lại tất cả công trình">← Về tổng quan</button>' : ''}<h2>Báo cáo theo công trình</h2></div>
+      <div class="pc-ky no-print">
+        <label>Kỳ<select id="pc-ky" aria-label="Kỳ báo cáo">${KY_OPTS.map(([k, t]) => `<option value="${k}" ${k === BST.ky ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+        ${BST.ky === 'tuychon' ? `<span class="b-ky-custom"><input type="month" id="pc-tu" value="${P.from}" aria-label="Từ tháng"> – <input type="month" id="pc-den" value="${P.to}" aria-label="Đến tháng"></span>` : ''}
+        <span class="f-range">${P.range}</span>
+      </div>
+      <div class="f-range print-only">Kỳ: ${esc(P.label)} · ${P.range}</div>
+    </div>
     <div class="pc-grid ${list.length === 1 ? 'one' : ''}">${list.map((d) => bPcCard(d, BC.du_an.indexOf(d))).join('')}</div>
   </section>`;
 }
@@ -839,12 +850,25 @@ $('#b-report').addEventListener('click', async (e) => {
 $('#b-project').addEventListener('change', (e) => { BST.project = e.target.value; bSave(); renderReport(); });
 $('#b-vat').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; BST.vat = b.dataset.v; bSave(); renderReport(); });
 $('#b-ky').addEventListener('change', (e) => { BST.ky = e.target.value; bSave(); renderReport(); });
+// Ô chọn kỳ ở phần Báo cáo theo công trình (liên kết với ô Kỳ trên thanh công cụ)
+$('#b-report').addEventListener('change', (e) => {
+  if (e.target.id === 'pc-ky') { BST.ky = e.target.value; }
+  else if (e.target.id === 'pc-tu' || e.target.id === 'pc-den') { BST.tu = $('#pc-tu').value; BST.den = $('#pc-den').value; }
+  else return;
+  bSave();
+  renderReport();
+  $('#pc-sec')?.scrollIntoView({ block: 'start' });
+});
 $('#b-ky-custom').addEventListener('change', () => { BST.tu = $('#b-tu').value; BST.den = $('#b-den').value; bSave(); renderReport(); });
 $('#b-reload').addEventListener('click', () => loadReport().catch((err) => alert(err.message)));
 $('#b-report').addEventListener('click', (e) => {
   if (e.target.id === 'b-open-all' || e.target.id === 'b-close-all') $$('#b-report details.b-proj').forEach((d) => (d.open = e.target.id === 'b-open-all'));
   if (e.target.id === 'f-set-target') return bTargetDialog();
   if (e.target.id === 'b-detail-toggle') return bSetDetail(!BST.chi_tiet);
+  if (e.target.id === 'pc-back') {
+    BST.project = ''; bSave(); renderReport();
+    return $('#pc-sec')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
   const go = e.target.dataset.bgo;
   if (go) { e.preventDefault(); revProjectId = Number(e.target.dataset.id); showTab(go); }
 });

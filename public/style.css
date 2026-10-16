@@ -447,6 +447,12 @@ dialog.pass-dlg.f-dlg h3 { color: var(--navy); }
 @media print { .b-detail-bar { display: none !important; } .b-detail { display: grid !important; } }
 
 /* ---------- Thẻ báo cáo từng công trình ---------- */
+.pc-sec-title { display: flex; align-items: center; gap: 10px; }
+.pc-ky { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.pc-ky label { display: flex; flex-direction: row; align-items: center; gap: 6px; font-size: 13px; color: var(--navy); }
+.pc-ky select { width: auto; }
+.print-only { display: none; }
+@media print { .print-only { display: block; } }
 .pc-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .pc-grid.one { grid-template-columns: minmax(0, 640px); }
 .pc-card { display: flex; flex-direction: column; border-radius: 16px; border: 2px solid var(--pc); background: #fff; overflow: hidden; min-width: 0; }

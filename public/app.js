@@ -171,8 +171,8 @@ $('#p-csv').addEventListener('click', () => {
 // =====================================================================
 // Công thức giống máy chủ (lib/revenue.js): Tiền VAT = làm tròn(Giá trị × VAT% / 100); VAT 0% = tạm tính
 const REV_LABEL = {
-  hd: { title: '1. Hợp đồng / Phụ lục', short: 'HĐ/PL', so: 'Số HĐ / Phụ lục *', soPh: 'VD: HĐ 01/2026/TMN, PL01' },
-  qt: { title: '2. Giá trị Hoàn thành / Quyết toán', short: 'HT/QT', so: 'Đợt / Hồ sơ HT/QT *', soPh: 'VD: Nghiệm thu đợt 1, Quyết toán' },
+  hd: { title: '1. Hợp đồng / Phụ lục', short: 'HĐ/PL', so: 'Số HĐ / Phụ lục *', soPh: '' },
+  qt: { title: '2. Giá trị Hoàn thành / Quyết toán', short: 'HT/QT', so: 'Đợt / Hồ sơ HT/QT *', soPh: 'Nghiệm thu đợt 1, Quyết toán...' },
 };
 let revProjectId = null;
 let revData = null;
@@ -946,6 +946,7 @@ function setCostMode() {
   $$('.c-tp', cForm).forEach((el) => (el.hidden = !tp));
   $$('.c-gen', cForm).forEach((el) => (el.hidden = tp));
   if (tp) $('#c-sub-wrap').hidden = true;
+  updateNoiDungHint();
   const req = NHOM().find((n) => n.code === cForm.elements.nhom.value)?.bat_buoc_doi_tac;
   $('#c-dt-label').textContent = tp ? 'Nhà thầu phụ' : req ? `${req} *` : 'Đối tác / Nhà cung cấp';
   // Trả nợ vay ngân hàng: gợi ý tên ngân hàng (đã nhập trước đó + ngân hàng phổ biến)
@@ -963,6 +964,13 @@ function setCostMode() {
   $('#c-ngay-label').textContent = tp ? 'Ngày ký HĐ' : 'Ngày';
   $('#c-gt-label').textContent = tp ? 'Giá trị HĐ (trước VAT) *' : 'Giá trị (trước VAT) *';
   $('button[type=submit]', cForm).textContent = cForm.elements.id.value ? 'Lưu thay đổi' : tp ? 'Tạo HĐ thầu phụ' : 'Thêm dòng';
+}
+
+// Gợi ý ô Nội dung đúng theo nhóm / hạng mục đang chọn
+function updateNoiDungHint() {
+  const n = NHOM().find((x) => x.code === cForm.elements.nhom.value);
+  const sc = n?.sub.find((x) => x.code === cForm.elements.nhom_con.value);
+  cForm.elements.noi_dung.placeholder = sc?.goi_y || n?.goi_y || '';
 }
 
 function fillSubOptions(nhomCode, keep) {
@@ -998,6 +1006,7 @@ function initCostForm() {
     nhomOf(k.code).map((n, i) => `<option value="${n.code}">${stt(k, i)}. ${esc(n.ten)}</option>`).join('')}</optgroup>`).join('');
   fillSubOptions(cForm.elements.nhom.value);
   cForm.elements.nhom.addEventListener('change', () => fillSubOptions(cForm.elements.nhom.value));
+  cForm.elements.nhom_con.addEventListener('change', updateNoiDungHint);
   attachMoneyInput(cForm.elements.gia_tri);
   attachDateInput(cForm.elements.ngay);
   cForm.elements.gia_tri.addEventListener('input', updateCostPreview);

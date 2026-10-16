@@ -136,9 +136,12 @@ function bSeries(list, v, P) {
     if (b > P.to) b = P.to;
     const [yy, mm] = k.split('-').map(Number);
     const o = bSumRange(list, v, a, b);
-    out.push({ label: byQ ? `Q${Math.floor((mm - 1) / 3) + 1}/${String(yy).slice(2)}` : `T${mm}/${String(yy).slice(2)}`, ...o });
+    out.push({ k, label: byQ ? `Q${Math.floor((mm - 1) / 3) + 1}/${String(yy).slice(2)}` : `T${mm}/${String(yy).slice(2)}`, ...o });
     if (byQ && b === P.to) break;
   }
+  // Bỏ các tháng/quý tương lai chưa có số liệu (vd: T11, T12 khi đang ở T10)
+  const now = bNowYm();
+  while (out.length > 1 && out[out.length - 1].k > now && ['dt', 'cp', 'thu', 'chi'].every((f) => !out[out.length - 1][f])) out.pop();
   return out;
 }
 
@@ -161,78 +164,87 @@ function bFinHtml(list, v) {
   const year = P.to.slice(0, 4);
   const ytd = bSumRange(list, v, `${year}-01`, P.to);
   const tg = (BC.muc_tieu || {})[year] || {};
-  // Thẻ KPI: tiêu đề · số chính (tỷ) · số đầy đủ · so với kỳ trước · các dòng phụ · chân thẻ (thanh đo)
-  const card = (k, title, val, delta, rows, foot) => `<div class="f-card f-${k}">
+  const S = (f) => list.reduce((a, d) => a + f(d), 0);
+  const K = { dt: S((d) => d.du_kien.doanh_thu[v]), cp: S((d) => d.du_kien.chi_phi[v]) }; K.ln = K.dt - K.cp;
+  const LK = { dt: S((d) => d.thuc_hien.doanh_thu[v]), cp: S((d) => d.thuc_hien.chi_phi[v]) }; LK.ln = LK.dt - LK.cp;
+  const traGoc = S((d) => d.tra_goc.sv);
+  const tyS = (x) => `${(x * 100).toFixed(1).replace('.', ',')}%`;
+  const tyN = (x) => `${bTy(x)} tỷ`;
+  const anyTarget = ['dt', 'cp', 'ln', 'ty_suat'].some((k) => tg[k] !== null && tg[k] !== undefined);
+  const vt = v === 'gt' ? 'trước VAT' : 'sau VAT';
+
+  // ① Thẻ kết quả trong kỳ: số chính + so với kỳ trước + 1–2 dòng giải thích
+  const card = (k, title, val, delta, lines) => `<div class="f-card f-${k}" title="${bn(val)} đ">
       <div class="f-body">
         <div class="f-title">${title}</div>
         <div class="f-val ${val < 0 ? 'neg' : ''}">${bTy(val)} <small>tỷ</small></div>
-        <div class="f-full">${bn(val)} đ</div>
-        ${delta}
-        <dl class="f-rows">${rows.map(([l, x, cls]) => `<dt>${l}</dt><dd class="${cls || ''}">${x}</dd>`).join('')}</dl>
-        ${foot ? `<div class="f-foot">${foot}</div>` : ''}
+        ${delta || '<span class="f-delta muted">&nbsp;</span>'}
+        <div class="f-lines">${lines.filter(Boolean).map((x) => `<div>${x}</div>`).join('')}</div>
       </div></div>`;
-  const meter = (label, pct, color, txt) => `<div class="f-meter-l"><span>${label}</span><b>${txt}</b></div>
-    <div class="f-meter"><i style="width:${Math.max(0, Math.min(100, pct * 100))}%;background:${color}"></i></div>`;
-  const tyN = (x) => `${bTy(x)} tỷ`;
-  const prevRow = (x) => (prv ? [['Kỳ trước', tyN(x), x < 0 ? 'neg' : '']] : []);
-  const K = { dt: list.reduce((a, d) => a + d.du_kien.doanh_thu[v], 0), cp: list.reduce((a, d) => a + d.du_kien.chi_phi[v], 0) };
-  const ntLk = list.reduce((a, d) => a + d.thuc_hien.doanh_thu[v], 0);
-  const bar = (label, act, target, color, fmtFn) => {
-    if (target === null || target === undefined) return `<div class="f-tg"><span class="f-tg-dot" style="background:${color}"></span><span class="f-tg-l">${label}</span><span class="muted small">Chưa đặt</span></div>`;
-    const pc = target > 0 ? act / target : 0;
-    const pTxt = target > 0 ? (pc < 0 ? '<0%' : `${(pc * 100).toFixed(0)}%`) : '—';
-    return `<div class="f-tg"><span class="f-tg-dot" style="background:${color}"></span><span class="f-tg-l">${label}</span><span class="f-tg-v ${act < 0 ? 'neg' : ''}">${fmtFn(act)} / ${fmtFn(target)}</span>
-      <div class="f-tg-bar"><i style="width:${Math.max(0, Math.min(100, pc * 100))}%;background:${color}"></i></div><span class="f-tg-p ${pc < 0 ? 'neg' : ''}">${pTxt}</span></div>`;
+  const prevTxt = (x) => (prv ? `Kỳ trước: <b class="${x < 0 ? 'neg' : ''}">${tyN(x)}</b>` : '');
+
+  // ② Bảng tiến độ: % có thanh đo
+  const pctCell = (a, b, color) => {
+    if (!b || b < 0 || a === null || a === undefined) return '<td class="num muted">—</td>';
+    const p = a / b;
+    return `<td class="f-pct"><span class="f-meter"><i style="width:${Math.max(0, Math.min(100, p * 100))}%;background:${p < 0 ? '#d92d35' : color}"></i></span><b class="${p < 0 ? 'neg' : ''}">${p < 0 ? '<0%' : (p * 100).toFixed(1).replace('.', ',') + '%'}</b></td>`;
   };
-  const tyS = (x) => `${(x * 100).toFixed(1).replace('.', ',')}%`;
-  const tsAct = ytd.dt ? ytd.ln / ytd.dt : 0;
-  const tyFmt = (n) => `${bTy(n)} tỷ`;
-  const anyTarget = ['dt', 'cp', 'ln', 'ty_suat'].some((k) => tg[k] !== null && tg[k] !== undefined);
-  const lnPct = cur.dt ? cur.ln / cur.dt : 0;
-  const prjRows = list.map((d) => { const o = bSumRange([d], v, P.from, P.to); return { d, ...o }; });
+  const money = (x) => (x === null || x === undefined ? '<span class="muted">—</span>' : `<span class="${x < 0 ? 'neg' : ''}">${bTy(x)}</span>`);
+  const tsK = K.dt ? K.ln / K.dt : 0, tsL = LK.dt ? LK.ln / LK.dt : 0, tsY = ytd.dt ? ytd.ln / ytd.dt : 0;
+  const tRow = (name, color, k, lk, pk, t, y, pt) => `<tr><td><span class="f-dot" style="background:${color}"></span><b>${name}</b></td>
+      <td class="num">${k}</td><td class="num">${lk}</td>${pk}<td class="num f-sep">${t}</td><td class="num">${y}</td>${pt}</tr>`;
+
+  const prjRows = list.map((d) => ({ d, ...bSumRange([d], v, P.from, P.to) }));
   const tot = prjRows.reduce((a, x) => ({ dt: a.dt + x.dt, cp: a.cp + x.cp, ln: a.ln + x.ln }), { dt: 0, cp: 0, ln: 0 });
-  const undated = list.reduce((s, d) => s + d.thuc_hien.chua_ngay.dt + d.thuc_hien.chua_ngay.cp, 0);
+  const undated = list.reduce((a, d) => a + d.thuc_hien.chua_ngay.dt + d.thuc_hien.chua_ngay.cp, 0);
+
   return `
   <section class="card b-sec f-sec">
     <div class="f-head">
       <h2>Tổng quan tài chính · ${esc(P.label)}</h2>
       <button type="button" class="f-range f-range-btn" data-kypick title="Bấm để chọn kỳ báo cáo">📅 ${P.range}${P.prev ? ` <span class="muted">· so với ${ymTxt(P.prev.from)}${P.prev.from !== P.prev.to ? ' – ' + ymTxt(P.prev.to) : ''}</span>` : ''} <span class="f-caret">▾</span></button>
     </div>
+
+    <div class="f-tier"><span>1</span>Kết quả trong kỳ <small>${esc(P.label)} · tỷ đồng, ${vt} (dòng tiền sau VAT)</small></div>
     <div class="f-grid">
-      ${card('dt', 'Tổng doanh thu', cur.dt, bDelta(cur.dt, prv?.dt, true),
-        [...prevRow(prv?.dt), ['Giá trị HĐ dự kiến', tyN(K.dt)], ['Nghiệm thu lũy kế', tyN(ntLk)]],
-        meter('Tiến độ doanh thu', K.dt ? ntLk / K.dt : 0, BCOL.dt, bpct(ntLk, K.dt)))}
-      ${card('cp', 'Tổng chi phí', cur.cp, bDelta(cur.cp, prv?.cp, false),
-        [...prevRow(prv?.cp), ['Chi phí dự kiến', tyN(K.cp)], ['Trả gốc vay (ngoài CP)', tyN(list.reduce((a, d) => a + d.tra_goc.sv, 0))]],
-        meter('Chi phí / doanh thu', cur.dt ? cur.cp / cur.dt : 0, cur.cp > cur.dt ? 'var(--danger)' : BCOL.cp, bpct(cur.cp, cur.dt)))}
-      ${card('ln', 'Lợi nhuận', cur.ln, bDelta(cur.ln, prv?.ln, true),
-        [...prevRow(prv?.ln), ['LN dự kiến (HĐ)', tyN(K.dt - K.cp), K.dt - K.cp < 0 ? 'neg' : ''], ['Tỷ suất dự kiến', bpct(K.dt - K.cp, K.dt)]],
-        meter('Tỷ suất LN kỳ', Math.abs(lnPct), lnPct < 0 ? 'var(--danger)' : BCOL.dk, tyS(lnPct)))}
-      ${card('dong', 'Dòng tiền thực tế', cur.dong_tien, bDelta(cur.dong_tien, prv?.dong_tien, true),
-        [['Thu (tiền về)', tyN(cur.thu)], ['Chi', tyN(cur.chi)], ['Số dư cuối kỳ', tyN(bal), bal < 0 ? 'neg' : 'strong']],
-        `<div class="f-meter-l"><span>Tỷ lệ thu / chi</span><b>${cur.chi ? (cur.thu / cur.chi).toFixed(2).replace('.', ',') + ' lần' : '—'}</b></div>
-         <div class="f-split"><i style="width:${cur.thu + cur.chi ? (cur.thu / (cur.thu + cur.chi)) * 100 : 50}%;background:${BCOL.thu}" title="Thu"></i><i style="flex:1;background:${BCOL.chi}" title="Chi"></i></div>`)}
-      <div class="f-target">
-        <div class="f-target-h"><b>Mục tiêu năm ${year}</b>${BC.la_quan_tri ? `<button type="button" class="sm no-print" id="f-set-target">${anyTarget ? 'Sửa' : 'Đặt mục tiêu'}</button>` : ''}</div>
-        ${bar('Doanh thu', ytd.dt, tg.dt, BCOL.dt, tyFmt)}
-        ${bar('Chi phí', ytd.cp, tg.cp, BCOL.cp, tyFmt)}
-        ${bar('Lợi nhuận', ytd.ln, tg.ln, BCOL.dk, tyFmt)}
-        ${bar('Tỷ suất LN', tsAct * 100, tg.ty_suat, BCOL.ts, (x) => `${Number(x).toFixed(1).replace('.', ',')}%`)}
-        <div class="muted small">Thực hiện lũy kế 01/${year} – ${ymTxt(P.to)}</div>
-      </div>
+      ${card('dt', 'Doanh thu', cur.dt, bDelta(cur.dt, prv?.dt, true), ['Giá trị nghiệm thu trong kỳ', prevTxt(prv?.dt)])}
+      ${card('cp', 'Chi phí', cur.cp, bDelta(cur.cp, prv?.cp, false), [`Bằng <b>${bpct(cur.cp, cur.dt)}</b> doanh thu kỳ`, prevTxt(prv?.cp)])}
+      ${card('ln', 'Lợi nhuận', cur.ln, bDelta(cur.ln, prv?.ln, true), [`Tỷ suất lợi nhuận: <b class="${cur.ln < 0 ? 'neg' : ''}">${bpct(cur.ln, cur.dt)}</b>`, prevTxt(prv?.ln)])}
+      ${card('dong', 'Dòng tiền thực tế', cur.dong_tien, bDelta(cur.dong_tien, prv?.dong_tien, true), [`Thu <b>${bTy(cur.thu)}</b> · Chi <b>${bTy(cur.chi)}</b>`, `Số dư cuối kỳ: <b class="${bal < 0 ? 'neg' : ''}">${tyN(bal)}</b>`])}
     </div>
-    <div class="f-box f-big"><h3>Doanh thu – Chi phí – Lợi nhuận <span class="muted">(tỷ đồng · ${P.n > 12 ? 'theo quý' : 'theo tháng'})</span></h3><div id="f-ch-col" class="chart"></div></div>
+
+    <div class="f-tier"><span>2</span>Tiến độ so với hợp đồng &amp; mục tiêu năm ${year}
+      <small>tỷ đồng, ${vt}</small>${BC.la_quan_tri ? `<button type="button" class="sm no-print f-tier-btn" id="f-set-target">${anyTarget ? 'Sửa mục tiêu' : '+ Đặt mục tiêu năm'}</button>` : ''}</div>
+    <div class="table-wrap"><table class="b-table f-prog">
+      <thead>
+        <tr><th rowspan="2">Chỉ tiêu</th><th colspan="3" class="grp">So với hợp đồng (toàn bộ thời gian)</th><th colspan="3" class="grp f-sep">Mục tiêu năm ${year}</th></tr>
+        <tr><th class="num">Dự kiến theo HĐ</th><th class="num">Thực hiện lũy kế</th><th>% đạt</th><th class="num f-sep">Mục tiêu</th><th class="num">Thực hiện 01–${ymTxt(P.to < bNowYm() ? P.to : bNowYm()).slice(0, 2)}/${year}</th><th>% mục tiêu</th></tr>
+      </thead>
+      <tbody>
+        ${tRow('Doanh thu', BCOL.dt, money(K.dt), money(LK.dt), pctCell(LK.dt, K.dt, BCOL.dt), money(tg.dt), money(ytd.dt), pctCell(ytd.dt, tg.dt, BCOL.dt))}
+        ${tRow('Chi phí', BCOL.cp, money(K.cp), money(LK.cp), pctCell(LK.cp, K.cp, BCOL.cp), money(tg.cp), money(ytd.cp), pctCell(ytd.cp, tg.cp, BCOL.cp))}
+        ${tRow('Lợi nhuận', BCOL.dk, money(K.ln), money(LK.ln), pctCell(LK.ln, K.ln > 0 ? K.ln : 0, BCOL.dk), money(tg.ln), money(ytd.ln), pctCell(ytd.ln, tg.ln, BCOL.dk))}
+        ${tRow('Tỷ suất lợi nhuận', BCOL.ts, tyS(tsK), `<span class="${tsL < 0 ? 'neg' : ''}">${tyS(tsL)}</span>`, '<td class="num muted">—</td>',
+          tg.ty_suat === null || tg.ty_suat === undefined ? '<span class="muted">—</span>' : `${Number(tg.ty_suat).toFixed(1).replace('.', ',')}%`, `<span class="${tsY < 0 ? 'neg' : ''}">${tyS(tsY)}</span>`, '<td class="num muted">—</td>')}
+      </tbody>
+    </table></div>
+    <p class="muted small f-foot-note">Thực hiện lũy kế gồm cả các dòng chưa nhập ngày · Trả nợ gốc vay ${tyN(traGoc)} không tính vào chi phí${anyTarget ? '' : ' · Chưa đặt mục tiêu năm'}.</p>
+
+    <div class="f-tier"><span>3</span>Diễn biến ${P.n > 12 ? 'theo quý' : 'theo tháng'} <small>doanh thu, chi phí (cột) · lợi nhuận (đường) · rê chuột để xem số</small></div>
+    <div class="f-box f-big"><div id="f-ch-col" class="chart"></div></div>
+
+    <div class="f-tier"><span>4</span>Cơ cấu theo công trình <small>trong kỳ · tỷ đồng</small></div>
     <div class="f-row2">
-      <div class="f-box"><h3>Cơ cấu doanh thu theo công trình</h3><div id="f-ch-donut" class="chart"></div></div>
-      <div class="f-box"><h3>Hiệu quả từng công trình <span class="muted">(tỷ đồng)</span></h3>
+      <div class="f-box"><h3>Tỷ trọng doanh thu</h3><div id="f-ch-donut" class="chart"></div></div>
+      <div class="f-box"><h3>Hiệu quả từng công trình</h3>
         <div class="table-wrap"><table class="b-table f-eff">
           <thead><tr><th>Công trình</th><th class="num">Doanh thu</th><th class="num">Chi phí</th><th class="num">Lợi nhuận</th><th class="num">Tỷ suất</th></tr></thead>
-          <tbody>${prjRows.map((x, i) => `<tr><td title="${esc(x.d.ten_du_an)}"><span class="f-dot" style="background:${PROJ_COLORS[i % PROJ_COLORS.length]}"></span><b>${esc(x.d.ma_du_an)}</b></td>
+          <tbody>${prjRows.map((x, k) => `<tr><td title="${esc(x.d.ten_du_an)}"><span class="f-dot" style="background:${PROJ_COLORS[k % PROJ_COLORS.length]}"></span><b>${esc(x.d.ma_du_an)}</b> <span class="muted small">${esc(x.d.ten_du_an)}</span></td>
             <td class="num">${bTy(x.dt)}</td><td class="num">${bTy(x.cp)}</td><td class="num strong ${x.ln < 0 ? 'neg' : 'pos'}">${bTy(x.ln)}</td><td class="num">${x.dt ? tyS(x.ln / x.dt) : '—'}</td></tr>`).join('')}</tbody>
           <tfoot><tr><td>Tổng cộng</td><td class="num">${bTy(tot.dt)}</td><td class="num">${bTy(tot.cp)}</td><td class="num ${tot.ln < 0 ? 'neg' : ''}">${bTy(tot.ln)}</td><td class="num">${tot.dt ? tyS(tot.ln / tot.dt) : '—'}</td></tr></tfoot>
         </table></div></div>
     </div>
-    <p class="muted small f-note">Số liệu theo ngày phát sinh (lớp Thực hiện): doanh thu theo ngày nghiệm thu, chi phí theo ngày chứng từ / thanh toán thầu phụ, dòng tiền = tiền về − tiền chi (sau VAT).${undated ? ` <b class="warn-text">${undated} dòng thiếu ngày không được tính vào kỳ nào</b> (xem mục Cảnh báo; nhập ngày để số theo kỳ đầy đủ).` : ''}</p>
+    <p class="muted small f-note">Số theo kỳ tính theo ngày phát sinh: doanh thu theo ngày nghiệm thu, chi phí theo ngày chứng từ / thanh toán thầu phụ, dòng tiền = tiền về − tiền chi.${undated ? ` <b class="warn-text">${undated} dòng chưa nhập ngày</b> không thuộc kỳ nào (xem Cảnh báo).` : ''}</p>
   </section>`;
 }
 
@@ -251,8 +263,8 @@ function bFinData(list, v) {
 function bFinDraw(list, v) {
   const P = bPeriod(list);
   const pts = bSeries(list, v, P);
-  bColChart($('#f-ch-col'), pts, [{ key: 'dt', name: 'Doanh thu', color: BCOL.dt }, { key: 'cp', name: 'Chi phí', color: BCOL.cp }, { key: 'ln', name: 'Lợi nhuận', color: BCOL.dk }],
-    { valueLabels: 'auto', tipExtra: (p) => `<tr class="sum"><td>Tỷ suất LN</td><td>${bpct(p.ln, p.dt)}</td></tr>`, height: 340, maxBar: 30 });
+  bColChart($('#f-ch-col'), pts, [{ key: 'dt', name: 'Doanh thu', color: BCOL.dt }, { key: 'cp', name: 'Chi phí', color: BCOL.cp }],
+    { line: { key: 'ln', name: 'Lợi nhuận', color: BCOL.dk }, tipExtra: (p) => `<tr class="sum"><td>Tỷ suất LN</td><td>${bpct(p.ln, p.dt)}</td></tr>`, height: 320, maxBar: 34 });
   const items = list.map((d, i) => ({ label: d.ma_du_an, sub: d.ten_du_an, val: bSumRange([d], v, P.from, P.to).dt, color: PROJ_COLORS[i % PROJ_COLORS.length] }));
   bDonut($('#f-ch-donut'), items);
 }
@@ -369,8 +381,9 @@ function bTargetDialog() {
 function bAxis(min, max) { return niceTicks(Math.min(0, min), Math.max(0, max)); }
 function bLegend(svg, items, x0) {
   let x = x0;
-  items.forEach(([t, c]) => {
-    svgEl('rect', { x, y: 4, width: 12, height: 12, rx: 3, fill: c }, svg);
+  items.forEach(([t, c, isLine]) => {
+    if (isLine) { svgEl('line', { x1: x - 2, x2: x + 14, y1: 10, y2: 10, stroke: c, 'stroke-width': 2.5 }, svg); svgEl('circle', { cx: x + 6, cy: 10, r: 3.5, fill: c, stroke: '#fff', 'stroke-width': 1.5 }, svg); }
+    else svgEl('rect', { x, y: 4, width: 12, height: 12, rx: 3, fill: c }, svg);
     svgEl('text', { x: x + 18, y: 14, class: 'ax-lbl strong' }, svg).textContent = t;
     x += 30 + t.length * 6.6;
   });
@@ -426,19 +439,21 @@ function bColChart(el, pts, series, opt = {}) {
   el.innerHTML = '';
   const W = Math.max(320, el.clientWidth || 600), H = opt.height || 260, pad = { l: 62, r: 16, t: 28, b: 30 };
   const iw = W - pad.l - pad.r, ih = H - pad.t - pad.b;
-  const vals = pts.flatMap((p) => series.map((s) => p[s.key]));
+  const all = opt.line ? [...series, opt.line] : series;
+  const vals = pts.flatMap((p) => all.map((s) => p[s.key]));
   const ticks = bAxis(Math.min(...vals), Math.max(...vals));
   const y0 = ticks[0], y1 = ticks[ticks.length - 1];
   const Y = (v) => pad.t + ih - ((v - y0) / (y1 - y0)) * ih;
   const slot = iw / pts.length, bw = Math.max(2, Math.min(opt.maxBar || 18, (slot * 0.72) / series.length - 2));
   const showVal = opt.valueLabels === 'auto' ? bw >= 20 : opt.valueLabels;
   const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, width: '100%', role: 'img', 'aria-label': series.map((s) => s.name).join(', ') }, el);
-  bLegend(svg, series.map((s) => [s.name, s.color]), pad.l);
+  bLegend(svg, [...series.map((s) => [s.name, s.color]), ...(opt.line ? [[opt.line.name, opt.line.color, true]] : [])], pad.l);
   for (const t of ticks) {
     svgEl('line', { x1: pad.l, x2: W - pad.r, y1: Y(t), y2: Y(t), class: t === 0 ? 'ax-base' : 'ax-grid' }, svg);
     svgEl('text', { x: pad.l - 8, y: Y(t) + 4, 'text-anchor': 'end', class: 'ax-lbl' }, svg).textContent = shortMoney(t);
   }
   const every = Math.ceil(pts.length / Math.max(1, Math.floor(iw / 56)));
+  const hits = [];
   pts.forEach((p, i) => {
     const cx = pad.l + slot * i + slot / 2;
     series.forEach((s, j) => {
@@ -448,11 +463,19 @@ function bColChart(el, pts, series, opt = {}) {
       if (showVal && v) svgEl('text', { x: x + bw / 2, y: v >= 0 ? ya - 5 : yb + 12, 'text-anchor': 'middle', class: 'bar-val' }, svg).textContent = (v / 1e9).toLocaleString('vi-VN', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
     });
     if (!(i % every)) svgEl('text', { x: cx, y: H - 10, 'text-anchor': 'middle', class: 'ax-lbl' }, svg).textContent = p.label;
+    hits.push([p, i]);
+  });
+  if (opt.line) {
+    const L = opt.line, cx = (i) => pad.l + slot * i + slot / 2;
+    svgEl('path', { d: pts.map((p, i) => `${i ? 'L' : 'M'}${cx(i).toFixed(1)},${Y(p[L.key]).toFixed(1)}`).join(''), fill: 'none', stroke: L.color, 'stroke-width': 2.5, 'stroke-linejoin': 'round' }, svg);
+    pts.forEach((p, i) => svgEl('circle', { cx: cx(i), cy: Y(p[L.key]), r: 4, fill: p[L.key] < 0 ? '#d92d35' : L.color, stroke: '#fff', 'stroke-width': 2 }, svg));
+  }
+  for (const [p, i] of hits) {
     const hit = svgEl('rect', { x: pad.l + slot * i, y: pad.t, width: slot, height: ih, fill: 'transparent' }, svg);
-    hit.addEventListener('mousemove', (e) => showTip(`<b>${p.label}</b><table>${series.map((s) => `<tr><td><i style="background:${s.color}"></i>${s.name}</td><td class="${p[s.key] < 0 ? 'neg' : ''}">${bn(p[s.key])}</td></tr>`).join('')}
+    hit.addEventListener('mousemove', (e) => showTip(`<b>${p.label}</b><table>${all.map((s) => `<tr><td><i style="background:${s.color}"></i>${s.name}</td><td class="${p[s.key] < 0 ? 'neg' : ''}">${bn(p[s.key])}</td></tr>`).join('')}
       ${opt.tipExtra ? opt.tipExtra(p) : ''}</table>`, e.clientX, e.clientY));
     hit.addEventListener('mouseleave', hideTip);
-  });
+  }
 }
 
 // Thanh ngang (1 hoặc nhiều chuỗi), hỗ trợ số âm

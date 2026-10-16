@@ -562,6 +562,28 @@ dialog.pass-dlg.f-dlg h3 { color: var(--navy); }
 @media (max-width: 720px) { .pc-grid, .pc-grid.one { grid-template-columns: minmax(0, 1fr); } .pc-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media print { .pc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .pc-card { break-inside: avoid; } .pc-sec { break-after: page; } .pc-head { -webkit-print-color-adjust: exact; } }
 
+/* ---------- Tổng quan tài chính: 4 tầng rõ ràng ---------- */
+.f-tier { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 22px 0 10px; font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: .5px; color: var(--navy); }
+.f-head + .f-tier { margin-top: 4px; }
+.f-tier > span { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--navy); color: #fff; font-size: 12px; align-self: center; }
+.f-tier small { font-size: 11.5px; font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--muted); }
+.f-tier-btn { margin-left: auto; text-transform: none; letter-spacing: 0; }
+.f-sec .f-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.f-lines { margin-top: 8px; display: grid; gap: 3px; font-size: 12.5px; color: var(--muted); }
+.f-lines b { color: #1e293b; font-variant-numeric: tabular-nums; }
+.f-prog { font-size: 13px; }
+.f-prog td, .f-prog th { padding: 9px 10px; }
+.f-prog .f-sep { border-left: 2px solid #e3e9f2; }
+.f-prog .f-pct { min-width: 150px; white-space: nowrap; }
+.f-prog .f-pct .f-meter { display: inline-block; width: 90px; vertical-align: middle; margin-right: 8px; }
+.f-prog .f-pct b { font-variant-numeric: tabular-nums; }
+.f-foot-note { margin: 6px 0 0; }
+.f-big { margin-top: 0; }
+.f-row2 { margin-top: 0; }
+@media (max-width: 1200px) { .f-sec .f-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .f-sec .f-grid { grid-template-columns: minmax(0, 1fr); } }
+@media print { .f-sec .f-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } .f-tier { margin-top: 12px; } }
+
 /* ---------- In / PDF: A4 ngang, chỉ in báo cáo ---------- */
 @media print {
   @page { size: A4 landscape; margin: 10mm; }

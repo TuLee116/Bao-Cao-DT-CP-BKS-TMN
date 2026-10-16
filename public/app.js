@@ -98,7 +98,7 @@ function renderProjects() {
       const cp = d ? lopOf(d).chi_phi[v] : 0;
       return `
       <tr>
-        <td><b class="p-ma">${esc(r.ma_du_an)}</b><div>${esc(r.ten_du_an)}</div></td>
+        <td><a href="#" class="p-open" data-brep="${r.id}" title="Xem báo cáo công trình"><b class="p-ma">${esc(r.ma_du_an)}</b><div>${esc(r.ten_du_an)}</div></a>${r.loai_cong_trinh || r.dia_diem ? `<div class="muted small">${esc([r.loai_cong_trinh, r.dia_diem].filter(Boolean).join(' · '))}</div>` : ''}</td>
         <td>${esc(r.chu_dau_tu)}</td>
         <td class="num">${fmt.format(dt)}</td>
         <td class="num">${fmt.format(cp)}</td>
@@ -466,6 +466,8 @@ $('#p-cancel')?.addEventListener('click', () => { resetProjectForm(); showMsg($(
 $('#p-search').addEventListener('input', renderProjects);
 
 $('#p-tbody').addEventListener('click', async (e) => {
+  const brep = e.target.closest('[data-brep]')?.dataset.brep;
+  if (brep) { e.preventDefault(); return openProjectReport(Number(brep)); }
   const { edit, del, rev, cost } = e.target.dataset;
   if (rev || cost) {
     revProjectId = Number(rev || cost);

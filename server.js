@@ -419,6 +419,40 @@ api.delete('/demo', auth.requireRole('admin'), wrap(async (req, res) => {
   res.json({ deleted: list.length });
 }));
 
+// ---------- Ảnh công trình (1 ảnh đại diện / dự án, lưu trong CSDL) ----------
+const IMG_MAX = 3 * 1024 * 1024;
+function imageMime(buf) {
+  if (buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg';
+  if (buf.length > 8 && buf.slice(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
+  if (buf.length > 12 && buf.slice(0, 4).toString() === 'RIFF' && buf.slice(8, 12).toString() === 'WEBP') return 'image/webp';
+  return null;
+}
+api.get('/du-an/:id/anh', wrap(async (req, res) => {
+  const id = parseId(req.params.id);
+  const img = id && (await store.getProjectImage(id));
+  if (!img) return res.status(404).end();
+  const etag = `"anh-${id}-${img.v}"`;
+  res.set({ 'Cache-Control': 'private, max-age=86400', ETag: etag });
+  if (req.headers['if-none-match'] === etag) return res.status(304).end();
+  res.type(img.mime).send(img.data);
+}));
+api.put('/du-an/:id/anh', canEdit, express.raw({ type: () => true, limit: IMG_MAX }), wrap(async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id || !(await store.getProject(id))) return bad(res, 'Không tìm thấy công trình', 404);
+  const buf = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+  const mime = imageMime(buf);
+  if (!mime) return bad(res, 'Chỉ nhận ảnh JPG, PNG hoặc WEBP');
+  await store.setProjectImage(id, mime, buf);
+  console.log(`[NHẬT KÝ] ${req.user.username} cập nhật ảnh công trình #${id} (${Math.round(buf.length / 1024)} KB)`);
+  res.json({ ok: true });
+}));
+api.delete('/du-an/:id/anh', canEdit, wrap(async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) return bad(res, 'ID không hợp lệ');
+  await store.deleteProjectImage(id);
+  res.status(204).end();
+}));
+
 // ---------- Doanh thu theo công trình ----------
 api.get('/du-an/:id/doanh-thu', wrap(async (req, res) => {
   const id = parseId(req.params.id);
@@ -742,6 +776,7 @@ app.use((err, req, res, _next) => {
     return bad(res, msg, 409);
   }
   if (err.type === 'entity.parse.failed') return bad(res, 'Dữ liệu JSON không hợp lệ');
+  if (err.type === 'entity.too.large') return bad(res, req.path.endsWith('/anh') ? 'Ảnh quá lớn (tối đa 3 MB)' : 'Dữ liệu gửi lên quá lớn', 413);
   console.error(err);
   bad(res, 'Lỗi máy chủ', 500);
 });

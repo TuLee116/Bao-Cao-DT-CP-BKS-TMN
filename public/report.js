@@ -371,6 +371,7 @@ function bLineChart(el, pts, series) {
 // Cột đứng nhóm theo tháng (dòng tiền)
 function bColChart(el, pts, series, opt = {}) {
   if (!pts.length) return bEmpty(el, 'Chưa có số liệu có ngày');
+  if (pts.every((p) => series.every((s) => !p[s.key]))) return bEmpty(el, 'Không có số liệu trong kỳ');
   el.innerHTML = '';
   const W = Math.max(320, el.clientWidth || 600), H = opt.height || 260, pad = { l: 62, r: 16, t: 28, b: 30 };
   const iw = W - pad.l - pad.r, ih = H - pad.t - pad.b;
@@ -471,6 +472,8 @@ function renderReport() {
   </div>
 
   ${bFinHtml(list, v)}
+
+  ${bPcSection(list, v)}
 
   <section class="card b-sec">
     <h2>I. Tổng quan theo hợp đồng</h2>
@@ -605,6 +608,8 @@ function bWarnTable(list) {
 
 function bDrawCharts(list, v, one) {
   if ($('#f-ch-col')) bFinDraw(list, v);
+  $$('#b-report .pc-card').forEach(bPcDraw);
+  if (pcScrollTo) { const el = $(`#pc-${pcScrollTo}`); pcScrollTo = null; if (el) setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50); }
   const pts = bMonths(list, v);
   bLineChart($('#b-ch-line'), pts, [{ key: 'luy_dt', name: 'Doanh thu', color: BCOL.dt }, { key: 'luy_cp', name: 'Chi phí', color: BCOL.cp }]);
   bColChart($('#b-ch-flow'), pts, [{ key: 'thu', name: 'Thu (tiền về)', color: BCOL.thu }, { key: 'chi', name: 'Chi', color: BCOL.chi }],
@@ -620,6 +625,211 @@ function bDrawCharts(list, v, one) {
       [{ name: 'Dự kiến', color: BCOL.dk }, { name: 'Thực hiện', color: BCOL.th }]);
   }
 }
+
+
+// =====================================================================
+// THẺ BÁO CÁO TỪNG CÔNG TRÌNH (ảnh, 7 tab: Tổng quan · Doanh thu · Chi phí · Lợi nhuận · Dòng tiền · Công nợ · Hạng mục)
+// =====================================================================
+const PC_TABS = [['tong', 'Tổng quan'], ['dt', 'Doanh thu'], ['cp', 'Chi phí'], ['ln', 'Lợi nhuận'], ['dong', 'Dòng tiền'], ['cn', 'Công nợ'], ['hm', 'Hạng mục']];
+const pcTab = {};            // id dự án -> tab đang mở
+const NHOM_NGAN = { thau_phu: 'Thầu phụ', vat_tu: 'Vật tư', nhan_cong: 'Nhân công', may_moc: 'Máy móc', to_chuc: 'Tổ chức TC', khac: 'Khác',
+  gt_tien_ich: 'Tiện ích/phục vụ', gt_luong: 'Lương, thưởng', gt_ngoai_giao: 'Ngoại giao', tc_chi_phi: 'CP tài chính', tc_tra_no: 'Lãi vay', tc_phat: 'Phạt CĐT' };
+let pcScrollTo = null;       // mở báo cáo từ tab Dự án -> cuộn tới thẻ
+const BUILDING = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21h18M5 21V5l8-3v19M13 8h6v13M8 7h2M8 11h2M8 15h2M16 12h1M16 16h1"/></svg>';
+const canEditPc = () => ['admin', 'editor'].includes(ME.role);
+
+function openProjectReport(id) {
+  BST.project = String(id);
+  bSave();
+  pcScrollTo = id;
+  showTab('report');
+}
+
+function bDeltaS(cur, prev, good = true) {
+  if (prev === null || prev === undefined || !prev) return '';
+  const p = (cur - prev) / Math.abs(prev);
+  return `<span class="f-delta ${(p >= 0) === good ? 'ok' : 'bad'}">${p >= 0 ? '▲' : '▼'} ${Math.abs(p * 100).toFixed(0)}%</span>`;
+}
+
+function bPcSection(list, v) {
+  const P = bPeriod(list);
+  return `<section class="card b-sec pc-sec">
+    <div class="f-head"><h2>Báo cáo theo công trình</h2><div class="f-range">Kỳ: ${esc(P.label)} · ${P.range}</div></div>
+    <div class="pc-grid ${list.length === 1 ? 'one' : ''}">${list.map((d) => bPcCard(d, BC.du_an.indexOf(d))).join('')}</div>
+  </section>`;
+}
+
+function bPcCard(d, idx) {
+  const color = PROJ_COLORS[idx % PROJ_COLORS.length];
+  const tab = pcTab[d.id] || 'tong';
+  const sub = [d.loai_cong_trinh, d.dia_diem].filter(Boolean).join(' – ') || d.chu_dau_tu || '';
+  const img = d.co_anh
+    ? `<img src="/api/du-an/${d.id}/anh?v=${d.anh_v}" alt="Ảnh ${esc(d.ten_du_an)}" loading="lazy">`
+    : `<span class="pc-noimg">${BUILDING}${canEditPc() ? '<small>Thêm ảnh</small>' : ''}</span>`;
+  return `<article class="pc-card" id="pc-${d.id}" data-pc="${d.id}" style="--pc:${color}">
+    <header class="pc-head">
+      <span class="pc-no">${idx + 1}</span>
+      <div class="pc-img ${canEditPc() ? 'editable' : ''}" ${canEditPc() ? `data-pcimg="${d.id}" title="Bấm để ${d.co_anh ? 'đổi' : 'thêm'} ảnh công trình"` : ''}>${img}
+        ${canEditPc() && d.co_anh ? `<button type="button" class="pc-img-del no-print" data-pcimgdel="${d.id}" title="Xóa ảnh">×</button>` : ''}</div>
+      <div class="pc-title">
+        <h3>${esc(d.ma_du_an)} – ${esc(d.ten_du_an)}</h3>
+        <div class="pc-sub">${esc(sub)}</div>
+        <div class="pc-meta"><span class="pc-st">${esc(d.trang_thai)}</span><span class="pc-prog">Tiến độ: <b>${d.tien_do}%</b><i><b style="width:${Math.min(100, d.tien_do)}%"></b></i></span></div>
+      </div>
+    </header>
+    <nav class="pc-tabs no-print">${PC_TABS.map(([k, t]) => `<button type="button" data-pt="${k}" class="${k === tab ? 'on' : ''}">${t}</button>`).join('')}</nav>
+    <div class="pc-body">${bPcBody(d, tab)}</div>
+    <button type="button" class="pc-more no-print" data-pdetail="${d.id}">Xem chi tiết công trình ${esc(d.ma_du_an)} →</button>
+  </article>`;
+}
+
+function bPcBody(d, tab) {
+  const v = BST.vat;
+  const P = bPeriod(bScope().list);
+  const cur = bSumRange([d], v, P.from, P.to);
+  const prv = P.prev ? bSumRange([d], v, P.prev.from, P.prev.to) : null;
+  const K = d.du_kien, H = d.thuc_hien;
+  const mini = (label, val, extra = '', cls = '') => `<div class="pc-k ${cls}"><span>${label}</span><b class="${val < 0 ? 'neg' : ''}">${typeof val === 'number' ? bTy(val) : val}</b>${extra}</div>`;
+  const row = (l, val, cls = '') => `<li><span>${l}</span><b class="${cls} ${val < 0 ? 'neg' : ''}">${typeof val === 'number' ? bTy(val) + ' tỷ' : val}</b></li>`;
+  const tpv = (x) => (v === 'gt' ? x.qt_gt : x.qt_sv);
+  const kyNote = `<div class="pc-note">Kỳ ${esc(P.label)} · đơn vị tỷ đồng (${v === 'gt' ? 'trước VAT' : 'sau VAT'})</div>`;
+  switch (tab) {
+    case 'dt': return `<div class="pc-kpis">${mini('DT dự kiến', K.doanh_thu[v])}${mini('DT thực hiện', H.doanh_thu[v], '<small>lũy kế</small>')}${mini('DT trong kỳ', cur.dt, bDeltaS(cur.dt, prv?.dt))}${mini('% hoàn thành', bpct(H.doanh_thu.sv, K.doanh_thu.sv))}</div>
+      <table class="pc-tbl"><thead><tr><th>HĐ chủ đầu tư</th><th class="num">HĐ + PL</th><th class="num">Nghiệm thu</th><th>% HT</th></tr></thead>
+      <tbody>${d.hds.map((x) => `<tr><td>${esc(x.so_ma)}${x.da_qt ? ' <span class="st st-hoan-thanh">QT</span>' : ''}</td><td class="num">${bTy(x.hd[v])}</td><td class="num">${bTy(x.nt[v])}</td>
+        <td><span class="pc-bar"><i style="width:${Math.min(100, x.pct_ht * 100)}%"></i></span>${(x.pct_ht * 100).toFixed(0)}%</td></tr>`).join('') || '<tr><td colspan="4" class="empty">Chưa có HĐ</td></tr>'}</tbody></table>
+      <div class="pc-note">Đơn vị tỷ đồng</div>`;
+    case 'cp': {
+      const tong = K.chi_phi[v];
+      return `<div class="pc-kpis">${mini('CP dự kiến', tong)}${mini('CP thực hiện', H.chi_phi[v], '<small>lũy kế</small>')}${mini('CP trong kỳ', cur.cp, bDeltaS(cur.cp, prv?.cp, false))}${mini('% doanh thu DK', bpct(tong, K.doanh_thu[v]))}</div>
+        <ul class="pc-list">${d.khoi.map((k) => `<li><span>${esc(k.ten)}</span><span class="pc-bar wide"><i style="width:${tong ? Math.max(0, (k[v] / tong) * 100) : 0}%"></i></span><b>${bTy(k[v])} · ${bpct(k[v], tong)}</b></li>`).join('')}</ul>
+        <div class="pc-note">Chi phí dự kiến theo khối · trả nợ gốc vay ${bTy(d.tra_goc.sv)} tỷ không tính</div>`;
+    }
+    case 'ln': {
+      const a = K.doanh_thu[v] - K.chi_phi[v], b = H.doanh_thu[v] - H.chi_phi[v];
+      const items = d.hds.map((x) => ({ l: x.so_ma, val: x.dk[v] - tpv(x.tp) }));
+      const mx = Math.max(1, ...items.map((x) => Math.abs(x.val)));
+      return `<div class="pc-kpis">${mini('LN dự kiến', a, `<small>${bpct(a, K.doanh_thu[v])}</small>`)}${mini('LN thực hiện', b, `<small>lũy kế · ${bpct(b, H.doanh_thu[v])}</small>`)}${mini('LN trong kỳ', cur.ln, bDeltaS(cur.ln, prv?.ln))}${mini('Tỷ suất kỳ', bpct(cur.ln, cur.dt))}</div>
+        <div class="pc-sub-h">Lãi gộp dự kiến theo HĐ (DT − thầu phụ)</div>
+        <ul class="pc-list">${items.map((x) => `<li><span>${esc(x.l)}</span><span class="pc-bar wide ${x.val < 0 ? 'neg-bar' : ''}"><i style="width:${(Math.abs(x.val) / mx) * 100}%"></i></span><b class="${x.val < 0 ? 'neg' : ''}">${bTy(x.val)}</b></li>`).join('') || '<li class="muted">Chưa có HĐ</li>'}</ul>`;
+    }
+    case 'dong': return `<div class="pc-kpis">${mini('Thu (tiền về)', cur.thu, bDeltaS(cur.thu, prv?.thu))}${mini('Chi', cur.chi, bDeltaS(cur.chi, prv?.chi, false))}${mini('Dòng tiền', cur.dong_tien)}${mini('Số dư cuối kỳ', bBalance([d], P.to))}</div>
+      <div class="chart pc-chart" data-pcchart="dong"></div>${kyNote.replace('trước VAT', 'sau VAT')}`;
+    case 'cn': {
+      const thu = d.hds.filter((x) => x.phai_thu).sort((a, b) => b.phai_thu - a.phai_thu);
+      const tra = [...d.hds.filter((x) => x.tp.con_lai).map((x) => ({ l: x.so_ma, val: x.tp.con_lai })), ...(d.tp.chua_gan.con_lai ? [{ l: 'Chưa gắn HĐ CĐT', val: d.tp.chua_gan.con_lai }] : [])].sort((a, b) => b.val - a.val);
+      return `<div class="pc-kpis">${mini('Phải thu', H.con_lai)}${mini('Phải trả TP', d.tp.con_lai)}${mini('Đã trả TP', d.tp.da_tt)}${mini('Trả nợ gốc vay', d.tra_goc.sv)}</div>
+        <div class="pc-2col"><div><div class="pc-sub-h">Phải thu theo HĐ</div><ul class="pc-list compact">${thu.map((x) => row(x.so_ma, x.phai_thu)).join('') || '<li class="muted">Không có</li>'}</ul></div>
+        <div><div class="pc-sub-h">Phải trả thầu phụ theo HĐ CĐT</div><ul class="pc-list compact">${tra.map((x) => row(x.l, x.val)).join('') || '<li class="muted">Không có</li>'}</ul></div></div>
+        <div class="pc-note">Sau VAT · phải thu = nghiệm thu − tiền về (âm: CĐT ứng trước)</div>`;
+    }
+    case 'hm': {
+      const tong = K.chi_phi[v];
+      const ns = d.nhom.filter((n) => n[v]).sort((a, b) => b[v] - a[v]);
+      return `<table class="pc-tbl"><thead><tr><th>Hạng mục chi phí</th><th class="num">Giá trị</th><th class="num">Tỷ trọng</th></tr></thead>
+        <tbody>${ns.map((n) => `<tr><td>${esc(n.ten)}${n.code === 'thau_phu' ? ` <span class="muted small">(${d.so_tp} HĐTP · ${d.so_tp_qt} QT)</span>` : ''}</td><td class="num">${bTy(n[v])}</td><td class="num">${bpct(n[v], tong)}</td></tr>`).join('') || '<tr><td colspan="3" class="empty">Chưa có chi phí</td></tr>'}</tbody>
+        <tfoot><tr><td>Tổng chi phí</td><td class="num">${bTy(tong)}</td><td class="num">100%</td></tr></tfoot></table><div class="pc-note">Chi phí dự kiến · tỷ đồng</div>`;
+    }
+    default: { // tổng quan
+      const groups = d.nhom.filter((n) => n[v] > 0).sort((a, b) => b[v] - a[v]);
+      const top = groups.slice(0, 5);
+      const rest = groups.slice(5).reduce((s2, n) => s2 + n[v], 0);
+      const parts = [...top.map((n, i) => ({ l: NHOM_NGAN[n.code] || n.ten, val: n[v], c: PROJ_COLORS[i] })), ...(rest ? [{ l: 'Khác', val: rest, c: '#b5b3ab' }] : [])];
+      return `<div class="pc-kpis">${mini('Doanh thu', cur.dt, bDeltaS(cur.dt, prv?.dt), 'k-dt')}${mini('Chi phí', cur.cp, bDeltaS(cur.cp, prv?.cp, false), 'k-cp')}${mini('Lợi nhuận', cur.ln, bDeltaS(cur.ln, prv?.ln), 'k-ln')}${mini('Tỷ suất LN', bpct(cur.ln, cur.dt), '', 'k-ts')}</div>
+        <div class="pc-sub-h">Doanh thu – Chi phí – Lợi nhuận (tỷ đồng)</div>
+        <div class="chart pc-chart" data-pcchart="tong"></div>
+        <div class="pc-2col">
+          <div><div class="pc-sub-h">Cơ cấu chi phí</div><div class="pc-donut" data-pcdonut='${JSON.stringify(parts).replace(/'/g, '&#39;')}'></div></div>
+          <div><div class="pc-sub-h">Tình hình công nợ</div><ul class="pc-list compact">
+            ${row('Phải thu', H.con_lai)}${row('Phải trả TP', d.tp.con_lai)}${row('Tiền về trong kỳ', cur.thu)}${row('Số dư cuối kỳ', bBalance([d], P.to), 'strong')}</ul></div>
+        </div>${kyNote}`;
+    }
+  }
+}
+
+function bPcDraw(card) {
+  const id = Number(card.dataset.pc);
+  const d = BC.du_an.find((x) => x.id === id);
+  if (!d) return;
+  const P = bPeriod(bScope().list);
+  const ch = $('[data-pcchart]', card);
+  if (ch) {
+    const pts = bSeries([d], BST.vat, P);
+    if (ch.dataset.pcchart === 'dong') bColChart(ch, pts, [{ key: 'thu', name: 'Thu', color: BCOL.thu }, { key: 'chi', name: 'Chi', color: BCOL.chi }], { height: 170, valueLabels: pts.length <= 4 });
+    else bColChart(ch, pts, [{ key: 'dt', name: 'Doanh thu', color: BCOL.dt }, { key: 'cp', name: 'Chi phí', color: BCOL.cp }, { key: 'ln', name: 'Lợi nhuận', color: BCOL.dk }], { height: 170, valueLabels: pts.length <= 4 });
+  }
+  const dn = $('[data-pcdonut]', card);
+  if (dn) bMiniDonut(dn, JSON.parse(dn.dataset.pcdonut));
+}
+
+function bMiniDonut(el, parts) {
+  const total = parts.reduce((s2, x) => s2 + x.val, 0);
+  if (!total) return bEmpty(el, 'Chưa có chi phí');
+  const S = 92, R = 44, r0 = 27, c = S / 2;
+  el.innerHTML = '';
+  const svg = svgEl('svg', { viewBox: `0 0 ${S} ${S}`, width: S, height: S, role: 'img', 'aria-label': 'Cơ cấu chi phí' }, el);
+  let a = 0;
+  const pt = (ang, rr) => [c + rr * Math.sin(ang), c - rr * Math.cos(ang)];
+  for (const x of parts) {
+    let a1 = a + (x.val / total) * Math.PI * 2;
+    if (a1 - a >= Math.PI * 2 - 1e-9) a1 = a + Math.PI * 2 - 1e-4;
+    const big = a1 - a > Math.PI ? 1 : 0;
+    const [x0, y0] = pt(a, R), [x1, y1] = pt(a1, R), [x2, y2] = pt(a1, r0), [x3, y3] = pt(a, r0);
+    const path = svgEl('path', { d: `M${x0},${y0}A${R},${R} 0 ${big} 1 ${x1},${y1}L${x2},${y2}A${r0},${r0} 0 ${big} 0 ${x3},${y3}Z`, fill: x.c, stroke: '#fff', 'stroke-width': 1.5 }, svg);
+    path.addEventListener('mousemove', (e) => showTip(`<b>${esc(x.l)}</b><br>${bn(x.val)} đ · ${bpct(x.val, total)}`, e.clientX, e.clientY));
+    path.addEventListener('mouseleave', hideTip);
+    a = a1;
+  }
+  svgEl('text', { x: c, y: c + 4, 'text-anchor': 'middle', class: 'pc-donut-c' }, svg).textContent = bTy(total);
+  const ul = document.createElement('ul');
+  ul.className = 'pc-legend';
+  ul.innerHTML = parts.map((x) => `<li><i style="background:${x.c}"></i><span title="${esc(x.l)}">${esc(x.l)}</span><b>${bpct(x.val, total).replace(',0%', '%')}</b></li>`).join('');
+  el.appendChild(ul);
+}
+
+// Ảnh công trình: thu nhỏ (cạnh dài ≤ 1280px, JPEG) rồi tải lên
+async function bUploadImage(id, file) {
+  if (!/^image\/(jpeg|png|webp)$/.test(file.type)) throw new Error('Chỉ nhận ảnh JPG, PNG hoặc WEBP');
+  const bmp = await createImageBitmap(file);
+  const k = Math.min(1, 1280 / Math.max(bmp.width, bmp.height));
+  const cv = document.createElement('canvas');
+  cv.width = Math.round(bmp.width * k); cv.height = Math.round(bmp.height * k);
+  cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height);
+  const blob = await new Promise((res) => cv.toBlob(res, 'image/jpeg', 0.85));
+  const r = await fetch(`/api/du-an/${id}/anh`, { method: 'PUT', headers: { 'Content-Type': 'image/jpeg', 'X-Requested-With': 'fetch' }, body: blob });
+  if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error((j.errors || [j.error]).filter(Boolean).join('; ') || 'Không tải được ảnh'); }
+}
+
+$('#b-report').addEventListener('click', async (e) => {
+  const card = e.target.closest('.pc-card');
+  if (!card) return;
+  const id = Number(card.dataset.pc);
+  const t = e.target.closest('[data-pt]');
+  if (t) {
+    pcTab[id] = t.dataset.pt;
+    $$('.pc-tabs button', card).forEach((b) => b.classList.toggle('on', b === t));
+    $('.pc-body', card).innerHTML = bPcBody(BC.du_an.find((x) => x.id === id), t.dataset.pt);
+    return bPcDraw(card);
+  }
+  if (e.target.closest('[data-pdetail]')) { BST.project = String(id); bSave(); renderReport(); return window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  if (e.target.closest('[data-pcimgdel]')) {
+    e.stopPropagation();
+    if (!confirm('Xóa ảnh công trình này?')) return;
+    try { await api(`/api/du-an/${id}/anh`, { method: 'DELETE' }); await loadReport(); } catch (err) { alert(err.message); }
+    return;
+  }
+  if (e.target.closest('[data-pcimg]')) {
+    const inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = 'image/jpeg,image/png,image/webp';
+    inp.onchange = async () => {
+      if (!inp.files[0]) return;
+      showMsg($('#b-msg'), 'Đang tải ảnh lên...');
+      try { await bUploadImage(id, inp.files[0]); showMsg($('#b-msg'), 'Đã cập nhật ảnh công trình'); await loadReport(); }
+      catch (err) { showMsg($('#b-msg'), err.message, 'err'); }
+    };
+    inp.click();
+  }
+});
 
 // ---------------------------------------------------------------------
 // Sự kiện
@@ -921,12 +1131,24 @@ $('#b-pptx').addEventListener('click', (e) => bBusy(e.target, async () => {
         .map((x) => num(x, { bold: true, fill: { color: 'EEF4FB' } }))],
     ], { ...tblOpt, colW: [2.9, 0.95, 0.95, 0.95, 0.65, 0.95, 0.95, 0.95, 0.65, 0.95, 0.95, 0.95] });
   }
-  // 8+. Từng dự án
+  // 8+. Từng dự án (kèm ảnh công trình nếu có)
+  const imgs = {};
+  await Promise.all(list.filter((d) => d.co_anh).map(async (d) => {
+    try {
+      const b = await (await fetch(`/api/du-an/${d.id}/anh?v=${d.anh_v}`)).blob();
+      const bmp = await createImageBitmap(b);
+      imgs[d.id] = { data: await new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(b); }), ratio: bmp.width / bmp.height };
+    } catch {}
+  }));
   for (const d of list) {
     const a = d.du_kien.doanh_thu[v] - d.du_kien.chi_phi[v], b = d.thuc_hien.doanh_thu[v] - d.thuc_hien.chi_phi[v];
     const tp = (x) => (v === 'gt' ? x.qt_gt : x.qt_sv);
     const s = slide(`${d.ma_du_an} – ${d.ten_du_an}`,
       `CĐT: ${d.chu_dau_tu || '—'} · ${d.trang_thai} · Tiến độ ${d.tien_do}% · LN dự kiến ${ty(a)} (${bpct(a, d.du_kien.doanh_thu[v])}) · LN thực hiện ${ty(b)} (${bpct(b, d.thuc_hien.doanh_thu[v])}) · Đơn vị: tỷ đồng`);
+    if (imgs[d.id]) {
+      const h = 0.95, w = Math.min(2.4, h * imgs[d.id].ratio);
+      s.addImage({ data: imgs[d.id].data, x: 12.83 - w, y: 0.22, w, h, rounding: false });
+    }
     const rows = d.hds.map((x) => [{ text: x.so_ma + (x.da_qt ? ' (Đã QT)' : ''), options: { bold: true } }, num(x.hd[v]), num(x.nt[v]), num((x.pct_ht * 100).toFixed(1).replace('.', ',') + '%'),
       num(x.tien_ve), num(x.phai_thu), num(String(x.tp.n)), num(tp(x.tp)), num(x.tp.da_tt), num(x.tp.con_lai), num(x.dk[v] - tp(x.tp), { bold: true })]);
     if (d.tp.chua_gan.n) rows.push([{ text: 'Thầu phụ chưa gắn HĐ CĐT', options: { italic: true } }, num(''), num(''), num(''), num(''), num(''), num(String(d.tp.chua_gan.n)), num(tp(d.tp.chua_gan)), num(d.tp.chua_gan.da_tt), num(d.tp.chua_gan.con_lai), num(-tp(d.tp.chua_gan))]);

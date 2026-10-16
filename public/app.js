@@ -1109,7 +1109,7 @@ function renderCost() {
   $('#c-tbody').innerHTML = html;
   renderTpCard();
   if (tpDlgId) renderTpDlg();
-  $('#c-tfoot').innerHTML = `<tr><td></td><td colspan="3">TỔNG CHI PHÍ${tong.tam_tinh ? ' <span class="st st-tam-tinh">Có tạm tính</span>' : ''}</td>${sumCells(tong)}<td colspan="2"></td></tr>`;
+  $('#c-tfoot').innerHTML = `<tr><td></td><td colspan="3">TỔNG CHI PHÍ TRỰC TIẾP${tong.tam_tinh ? ' <span class="st st-tam-tinh">Có tạm tính</span>' : ''}</td>${sumCells(tong)}<td colspan="2"></td></tr>`;
   const keys = NHOM().flatMap((n) => [n.code, ...n.sub.map((s) => `${n.code}:${s.code}`)]);
   $('#c-toggle-all').textContent = keys.every((k) => costOpen.has(k)) ? 'Thu gọn tất cả' : 'Mở tất cả';
 }

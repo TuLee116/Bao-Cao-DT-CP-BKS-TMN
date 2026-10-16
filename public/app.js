@@ -1552,22 +1552,33 @@ function renderCost() {
       const tps = n.code === 'thau_phu' ? costData.thau_phu : [];
       const open = costOpen.has(n.code);
       html += `<tr class="c-g1"><td class="num">${no}</td>
-        <td colspan="3">${toggle(n.code, rows.length || n.sub.length || tps.length)}<b>${esc(n.ten)}</b> <span class="muted small">(${tps.length ? tps.length + ' HĐ' + (rows.length ? ' + ' + rows.length + ' dòng' : '') : g.so_dong + ' dòng'})</span>${g.tam_tinh ? ' <span class="st st-tam-tinh">Có tạm tính</span>' : ''}</td>
+        <td colspan="3">${toggle(n.code, rows.length || n.sub.length || tps.length)}<b>${esc(n.ten)}</b> <span class="muted small">(${tps.length ? `${new Set(tps.map((c) => c.hd_cdt_id || 0)).size} HĐ CĐT · ${tps.length} HĐTP` + (rows.length ? ' + ' + rows.length + ' dòng' : '') : g.so_dong + ' dòng'})</span>${g.tam_tinh ? ' <span class="st st-tam-tinh">Có tạm tính</span>' : ''}</td>
         ${sumCells(g, 'strong')}<td></td><td class="row-actions">${addBtn(n.code, n.sub[0]?.code)}</td></tr>`;
       if (!open) return;
-      tps.forEach((c, x) => {
-        html += `<tr class="c-row">
-          <td class="num muted">${no}.${x + 1}</td>
-          <td class="indent-1"><span class="tree">└</span><b class="tp-open" data-tp="${c.id}" title="Nhấp đúp để mở chi tiết">${esc(c.so_ma)}</b>${c.so_pl ? ` <span class="muted small">(+${c.so_pl} PL)</span>` : ''}</td>
-          <td class="c-dt">${esc(c.doi_tac)}</td><td></td>
-          <td class="num">${money(c.qt_gia_tri)}</td><td class="num muted small">HT/QT</td>
-          <td class="num">${money(c.qt_tien_vat)}</td><td class="num strong">${money(c.qt_sau_vat)}</td>
-          <td class="num muted">${pct(c.qt_sau_vat)}</td><td class="c-note">${esc(c.ghi_chu)}</td>
-          <td class="row-actions"><button class="sm" data-tpopen="${c.id}">Chi tiết</button></td>
-        </tr>`;
+      // Thầu phụ: gộp theo HĐ chủ đầu tư (cấp 2), HĐ thầu phụ là cấp 3
+      const tpGs = tps.length ? tpGroups(tps) : [];
+      tpGs.forEach((tg, j) => {
+        const key = `thau_phu:hd${tg.k}`;
+        const st = tg.rows.reduce((a, c) => ({ gia_tri: a.gia_tri + c.qt_gia_tri, tien_vat: a.tien_vat + c.qt_tien_vat, sau_vat: a.sau_vat + c.qt_sau_vat }), { gia_tri: 0, tien_vat: 0, sau_vat: 0 });
+        html += `<tr class="c-g2${tg.k ? '' : ' tv-sub-warn'}"><td class="num muted">${no}.${j + 1}</td>
+          <td colspan="3" class="indent-1">${toggle(key, tg.rows.length)}${tg.k ? `<span class="kind-tag kind-hd">HĐ CĐT</span> ${esc(hdCdtName(tg.k).replace(/^HĐ\s+/, ''))}` : '<span class="st st-tam-tinh">Chưa gắn HĐ CĐT</span>'}
+            <span class="muted small">(${tg.rows.length} HĐTP)</span></td>
+          ${sumCells(st)}<td></td><td></td></tr>`;
+        if (!costOpen.has(key)) return;
+        tg.rows.forEach((c, x) => {
+          html += `<tr class="c-row">
+            <td class="num muted">${no}.${j + 1}.${x + 1}</td>
+            <td class="indent-2"><span class="tree">└</span><b class="tp-open" data-tp="${c.id}" title="Nhấp đúp để mở chi tiết">${esc(c.so_ma)}</b>${c.so_pl ? ` <span class="muted small">(+${c.so_pl} PL)</span>` : ''}</td>
+            <td class="c-dt">${esc(c.doi_tac)}</td><td></td>
+            <td class="num">${money(c.qt_gia_tri)}</td><td class="num muted small">HT/QT</td>
+            <td class="num">${money(c.qt_tien_vat)}</td><td class="num strong">${money(c.qt_sau_vat)}</td>
+            <td class="num muted">${pct(c.qt_sau_vat)}</td><td class="c-note">${esc(c.ghi_chu)}</td>
+            <td class="row-actions"><button class="sm" data-tpopen="${c.id}">Chi tiết</button></td>
+          </tr>`;
+        });
       });
       if (!n.sub.length) {
-        rows.forEach((r, x) => { html += detail(r, `${no}.${tps.length + x + 1}`, 1); });
+        rows.forEach((r, x) => { html += detail(r, `${no}.${tpGs.length + x + 1}`, 1); });
         return;
       }
       n.sub.forEach((sc, j) => {
@@ -1624,7 +1635,8 @@ function renderCost() {
   renderTpCard();
   if (tpDlgId) renderTpDlg();
 }
-const blockKeys = (khoi) => nhomOf(khoi).flatMap((n) => [n.code, ...n.sub.map((sc) => `${n.code}:${sc.code}`)]);
+const blockKeys = (khoi) => nhomOf(khoi).flatMap((n) => [n.code, ...n.sub.map((sc) => `${n.code}:${sc.code}`),
+  ...(n.code === 'thau_phu' && costData ? [...new Set(costData.thau_phu.map((c) => c.hd_cdt_id || 0))].map((k) => `thau_phu:hd${k}`) : [])]);
 
 $('#tab-cost').addEventListener('dblclick', (e) => {
   const el = e.target.closest('.tp-open');

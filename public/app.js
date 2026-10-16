@@ -1959,12 +1959,11 @@ $('#u-tbody')?.addEventListener('click', async (e) => {
 // =====================================================================
 const sForm = $('#s-form');
 
-// Thông tin hệ thống (cập nhật Phiên bản mỗi lần phát hành)
+// Thông tin hệ thống (Phiên bản lấy từ máy chủ: version.json)
 const SYS_INFO = {
   ten: 'Hệ thống nội bộ',
   so_huu: 'Ban Kiểm soát - TMN',
   phat_trien: 'Le Phan Vinh Tu',
-  phien_ban: 'V01.16.10.26',
   sdt: '0794 570 057',
   mail: 'lephanvinhtu.tu@gmail.com',
 };
@@ -1976,7 +1975,9 @@ function loadContact() {
     row('Tên hệ thống/Website', esc(SYS_INFO.ten)) +
     row('Đơn vị sở hữu', esc(SYS_INFO.so_huu)) +
     row('Đơn vị phát triển', esc(SYS_INFO.phat_trien)) +
-    row('Phiên bản hiện tại', esc(SYS_INFO.phien_ban));
+    row('Phiên bản hiện tại', META.phien_ban
+      ? `${esc(META.phien_ban.ma)}<div class="muted small">Cập nhật lần ${META.phien_ban.lan} trong ngày ${esc(META.phien_ban.ngay)}</div>`
+      : '—');
   $('#sys-contact').innerHTML =
     row('SĐT', `<a href="tel:${SYS_INFO.sdt.replace(/\s/g, '')}">${esc(SYS_INFO.sdt)}</a>`) +
     row('Mail', `<a href="mailto:${esc(SYS_INFO.mail)}">${esc(SYS_INFO.mail)}</a>`);

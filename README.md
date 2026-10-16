@@ -87,6 +87,10 @@ Các ràng buộc an toàn:
 - Không ai tự hạ quyền, tự khóa hoặc tự xóa tài khoản của chính mình.
 - Khi bị khóa, đổi quyền hoặc đặt lại mật khẩu, người dùng bị đăng xuất ngay.
 
+## Phiên bản
+Dạng **V[lần cập nhật trong ngày].[dd].[mm].[yy]**, ví dụ `V01.16.10.26` = lần cập nhật thứ 1 trong ngày 16/10/2026; lần 2 cùng ngày là `V02.16.10.26`; sang ngày mới quay về `V01`.
+Lưu trong `version.json`, hiển thị ở tab **Liên hệ**. Trước mỗi lần phát hành chạy `node scripts/bump-version.js` (tự tính theo giờ Việt Nam).
+
 ## Cấu trúc
 ```
 server.js          # Trang + API

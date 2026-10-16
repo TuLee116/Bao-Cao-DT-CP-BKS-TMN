@@ -8,6 +8,7 @@ const { buildContracts, summarizeContracts } = require('./lib/subcontract');
 const { KHOI_CHI_PHI, NHOM_CHI_PHI, summarizeCost, sortCost, costLine } = require('./lib/cost');
 const { summarizeProject } = require('./lib/dashboard');
 const { DEMO_PREFIX, seedDemo } = require('./lib/demo');
+const PHIEN_BAN = require('./lib/version').readVersion(); // đọc 1 lần khi khởi động
 const { LOAI_DOANH_THU, calcLine, summarize, sortRevenue, tienVeLabel, sortTienVe, summarizeTienVe } = require('./lib/revenue');
 
 const app = express();
@@ -103,6 +104,7 @@ api.get('/meta', wrap(async (_req, res) => {
     ten_he_thong: s.ten_he_thong,
     needs_setup: (await store.countUsers()) === 0,
     setup_token_required: Boolean(SETUP_TOKEN),
+    phien_ban: PHIEN_BAN,
   });
 }));
 

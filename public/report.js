@@ -161,9 +161,22 @@ function bFinHtml(list, v) {
   const year = P.to.slice(0, 4);
   const ytd = bSumRange(list, v, `${year}-01`, P.to);
   const tg = (BC.muc_tieu || {})[year] || {};
-  const card = (k, title, val, sub, delta) => `<div class="f-card f-${k}">
-      <div class="f-body"><div class="f-title">${title}</div><div class="f-val ${val < 0 ? 'neg' : ''}">${bTy(val)} <small>tỷ</small></div>
-        <div class="f-full">${bn(val)} đ</div>${delta}${sub ? `<div class="f-sub">${sub}</div>` : ''}</div></div>`;
+  // Thẻ KPI: tiêu đề · số chính (tỷ) · số đầy đủ · so với kỳ trước · các dòng phụ · chân thẻ (thanh đo)
+  const card = (k, title, val, delta, rows, foot) => `<div class="f-card f-${k}">
+      <div class="f-body">
+        <div class="f-title">${title}</div>
+        <div class="f-val ${val < 0 ? 'neg' : ''}">${bTy(val)} <small>tỷ</small></div>
+        <div class="f-full">${bn(val)} đ</div>
+        ${delta}
+        <dl class="f-rows">${rows.map(([l, x, cls]) => `<dt>${l}</dt><dd class="${cls || ''}">${x}</dd>`).join('')}</dl>
+        ${foot ? `<div class="f-foot">${foot}</div>` : ''}
+      </div></div>`;
+  const meter = (label, pct, color, txt) => `<div class="f-meter-l"><span>${label}</span><b>${txt}</b></div>
+    <div class="f-meter"><i style="width:${Math.max(0, Math.min(100, pct * 100))}%;background:${color}"></i></div>`;
+  const tyN = (x) => `${bTy(x)} tỷ`;
+  const prevRow = (x) => (prv ? [['Kỳ trước', tyN(x), x < 0 ? 'neg' : '']] : []);
+  const K = { dt: list.reduce((a, d) => a + d.du_kien.doanh_thu[v], 0), cp: list.reduce((a, d) => a + d.du_kien.chi_phi[v], 0) };
+  const ntLk = list.reduce((a, d) => a + d.thuc_hien.doanh_thu[v], 0);
   const bar = (label, act, target, color, fmtFn) => {
     if (target === null || target === undefined) return `<div class="f-tg"><span class="f-tg-dot" style="background:${color}"></span><span class="f-tg-l">${label}</span><span class="muted small">Chưa đặt</span></div>`;
     const pc = target > 0 ? act / target : 0;
@@ -186,10 +199,19 @@ function bFinHtml(list, v) {
       <div class="f-range">📅 ${P.range}${P.prev ? ` <span class="muted">· so với ${ymTxt(P.prev.from)}${P.prev.n !== 1 && P.prev.from !== P.prev.to ? ' – ' + ymTxt(P.prev.to) : ''}</span>` : ''}</div>
     </div>
     <div class="f-grid">
-      ${card('dt', 'Tổng doanh thu', cur.dt, `Nghiệm thu trong kỳ (${v === 'gt' ? 'trước VAT' : 'sau VAT'})`, bDelta(cur.dt, prv?.dt, true))}
-      ${card('cp', 'Tổng chi phí', cur.cp, `${bpct(cur.cp, cur.dt)} doanh thu`, bDelta(cur.cp, prv?.cp, false))}
-      ${card('ln', 'Lợi nhuận', cur.ln, `Tỷ suất LN: <b>${tyS(lnPct)}</b>`, bDelta(cur.ln, prv?.ln, true))}
-      ${card('dong', 'Dòng tiền thực tế', cur.dong_tien, `Thu ${bTy(cur.thu)} · Chi ${bTy(cur.chi)} tỷ<br>Số dư cuối kỳ: <b class="${bal < 0 ? 'neg' : ''}">${bTy(bal)} tỷ</b>`, bDelta(cur.dong_tien, prv?.dong_tien, true))}
+      ${card('dt', 'Tổng doanh thu', cur.dt, bDelta(cur.dt, prv?.dt, true),
+        [...prevRow(prv?.dt), ['Giá trị HĐ dự kiến', tyN(K.dt)], ['Nghiệm thu lũy kế', tyN(ntLk)]],
+        meter('Tiến độ doanh thu', K.dt ? ntLk / K.dt : 0, BCOL.dt, bpct(ntLk, K.dt)))}
+      ${card('cp', 'Tổng chi phí', cur.cp, bDelta(cur.cp, prv?.cp, false),
+        [...prevRow(prv?.cp), ['Chi phí dự kiến', tyN(K.cp)], ['Trả gốc vay (ngoài CP)', tyN(list.reduce((a, d) => a + d.tra_goc.sv, 0))]],
+        meter('Chi phí / doanh thu', cur.dt ? cur.cp / cur.dt : 0, cur.cp > cur.dt ? 'var(--danger)' : BCOL.cp, bpct(cur.cp, cur.dt)))}
+      ${card('ln', 'Lợi nhuận', cur.ln, bDelta(cur.ln, prv?.ln, true),
+        [...prevRow(prv?.ln), ['LN dự kiến (HĐ)', tyN(K.dt - K.cp), K.dt - K.cp < 0 ? 'neg' : ''], ['Tỷ suất dự kiến', bpct(K.dt - K.cp, K.dt)]],
+        meter('Tỷ suất LN kỳ', Math.abs(lnPct), lnPct < 0 ? 'var(--danger)' : BCOL.dk, tyS(lnPct)))}
+      ${card('dong', 'Dòng tiền thực tế', cur.dong_tien, bDelta(cur.dong_tien, prv?.dong_tien, true),
+        [['Thu (tiền về)', tyN(cur.thu)], ['Chi', tyN(cur.chi)], ['Số dư cuối kỳ', tyN(bal), bal < 0 ? 'neg' : 'strong']],
+        `<div class="f-meter-l"><span>Tỷ lệ thu / chi</span><b>${cur.chi ? (cur.thu / cur.chi).toFixed(2).replace('.', ',') + ' lần' : '—'}</b></div>
+         <div class="f-split"><i style="width:${cur.thu + cur.chi ? (cur.thu / (cur.thu + cur.chi)) * 100 : 50}%;background:${BCOL.thu}" title="Thu"></i><i style="flex:1;background:${BCOL.chi}" title="Chi"></i></div>`)}
       <div class="f-target">
         <div class="f-target-h"><b>Mục tiêu năm ${year}</b>${BC.la_quan_tri ? `<button type="button" class="sm no-print" id="f-set-target">${anyTarget ? 'Sửa' : 'Đặt mục tiêu'}</button>` : ''}</div>
         ${bar('Doanh thu', ytd.dt, tg.dt, BCOL.dt, tyFmt)}

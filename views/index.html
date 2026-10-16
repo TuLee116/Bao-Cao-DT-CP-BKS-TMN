@@ -291,20 +291,19 @@
 
     <!-- ================= BÁO CÁO ================= -->
     <section id="tab-report" class="tab-panel" hidden>
-      <div class="card no-print">
-        <div class="toolbar b-toolbar">
-          <h2>Báo cáo tổng quan</h2>
-          <select id="b-project" class="project-select" aria-label="Phạm vi báo cáo"></select>
-          <select id="b-ky" aria-label="Kỳ báo cáo">
+      <div class="card no-print b-bar">
+        <div class="b-filters">
+          <label class="b-f"><span>Phạm vi</span><select id="b-project" aria-label="Phạm vi báo cáo"></select></label>
+          <label class="b-f"><span>Kỳ báo cáo</span><select id="b-ky" aria-label="Kỳ báo cáo">
             <option value="thang">Tháng này</option><option value="quy">Quý này</option><option value="nam">Năm nay</option>
             <option value="6t">6 tháng gần nhất</option><option value="luyke">Lũy kế đến nay</option><option value="all">Toàn bộ thời gian (All time)</option><option value="tuychon">Tùy chọn...</option>
-          </select>
-          <span id="b-ky-custom" class="b-ky-custom" hidden><input type="month" id="b-tu" aria-label="Từ tháng"> – <input type="month" id="b-den" aria-label="Đến tháng"></span>
-          <div class="seg" id="b-vat" role="group" aria-label="Cơ sở VAT">
+          </select></label>
+          <span id="b-ky-custom" class="b-ky-custom b-f" hidden><span>Từ – đến tháng</span><span class="b-ky-in"><input type="month" id="b-tu" aria-label="Từ tháng"> – <input type="month" id="b-den" aria-label="Đến tháng"></span></span>
+          <div class="b-f"><span>Cơ sở VAT</span><div class="seg" id="b-vat" role="group" aria-label="Cơ sở VAT">
             <button type="button" data-v="gt" class="on">Trước VAT</button><button type="button" data-v="sv">Sau VAT</button>
-          </div>
+          </div></div>
           <div class="b-actions">
-            <button type="button" id="b-reload" title="Lấy lại số liệu mới nhất">Làm mới</button>
+            <button type="button" id="b-reload" title="Lấy lại số liệu mới nhất">↻ Làm mới</button>
             <button type="button" id="b-print">In / PDF</button>
             <button type="button" id="b-xlsx">Excel</button>
             <button type="button" id="b-pptx" class="primary">PowerPoint</button>

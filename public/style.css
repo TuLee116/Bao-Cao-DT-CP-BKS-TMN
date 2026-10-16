@@ -329,9 +329,14 @@ tr.ngoai-cp td { color: var(--muted); font-style: italic; }
 @media (max-width: 960px) { .dash-charts { grid-template-columns: minmax(0, 1fr); } }
 
 /* ---------- Báo cáo tổng quan ---------- */
-.b-toolbar h2 { flex: 1 1 180px; }
-.b-toolbar .project-select { width: 260px; }
-.b-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.b-bar { padding: 14px 18px; }
+.b-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 14px; }
+.b-f { display: flex; flex-direction: column; gap: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); }
+.b-f select { width: auto; min-width: 180px; text-transform: none; letter-spacing: 0; font-weight: 600; }
+#b-project { min-width: 280px; max-width: 360px; }
+.b-ky-in { display: inline-flex; align-items: center; gap: 6px; text-transform: none; }
+.b-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+@media (max-width: 760px) { .b-f, .b-f select, #b-project { width: 100%; min-width: 0; max-width: none; } .b-actions { margin-left: 0; } }
 #b-msg:empty { display: none; }
 .b-toolbar { margin-bottom: 0; }
 .report { display: grid; gap: 18px; }
@@ -409,13 +414,26 @@ tr.hl-flash > td:first-child { animation: hlFlash 2.6s ease-out, hlEdge 2.6s eas
 .f-card .f-title { color: #475569; }
 .f-body { min-width: 0; flex: 1; }
 .f-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; }
-.f-val { margin: 4px 0 0; font-size: 24px; font-weight: 800; color: var(--navy); font-variant-numeric: tabular-nums; white-space: nowrap; line-height: 1.2; }
+.f-val { margin: 6px 0 0; font-size: 30px; letter-spacing: -.3px; font-weight: 800; color: var(--navy); font-variant-numeric: tabular-nums; white-space: nowrap; line-height: 1.2; }
 .f-val small { font-size: 13px; font-weight: 600; color: var(--muted); }
-.f-full { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; margin-bottom: 4px; }
+.f-full { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; margin-bottom: 6px; }
+.f-body { display: flex; flex-direction: column; }
+.f-rows { display: grid; grid-template-columns: 1fr auto; gap: 3px 10px; margin: 10px 0 0; font-size: 12px; }
+.f-rows dt { color: var(--muted); }
+.f-rows dd { margin: 0; text-align: right; font-weight: 600; color: #1e293b; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.f-rows dd.strong { color: var(--navy); font-weight: 800; }
+.f-foot { margin-top: auto; padding-top: 10px; border-top: 1px dashed var(--border); }
+.f-rows { margin-bottom: 12px; }
+.f-meter-l { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--muted); margin-bottom: 5px; }
+.f-meter-l b { color: #1e293b; font-variant-numeric: tabular-nums; }
+.f-meter { height: 7px; border-radius: 99px; background: #eef2f7; overflow: hidden; }
+.f-meter i { display: block; height: 100%; border-radius: 99px; }
+.f-split { display: flex; gap: 2px; height: 7px; border-radius: 99px; overflow: hidden; }
+.f-split i { display: block; height: 100%; }
 .f-dlg { width: min(420px, calc(100vw - 32px)); }
 .f-dlg input { text-align: left !important; letter-spacing: normal !important; font-size: 14px !important; }
 dialog.pass-dlg.f-dlg h3 { color: var(--navy); }
-.f-delta { display: block; font-size: 12.5px; font-weight: 700; }
+.f-delta { display: block; font-size: 12.5px; font-weight: 700; margin-bottom: 2px; }
 .f-delta small { font-weight: 500; color: var(--muted); }
 .f-delta.ok { color: #0a7d32; } .f-delta.bad { color: #c2410c; }
 .f-sub { margin-top: 4px; font-size: 11.5px; color: var(--muted); }

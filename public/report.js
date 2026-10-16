@@ -230,8 +230,9 @@ function bFinHtml(list, v) {
     </table></div>
     <p class="muted small f-foot-note">Thực hiện lũy kế gồm cả các dòng chưa nhập ngày · Trả nợ gốc vay ${tyN(traGoc)} không tính vào chi phí${anyTarget ? '' : ' · Chưa đặt mục tiêu năm'}.</p>
 
-    <div class="f-tier"><span>3</span>Diễn biến ${P.n > 12 ? 'theo quý' : 'theo tháng'} <small>doanh thu, chi phí (cột) · lợi nhuận (đường) · rê chuột để xem số</small></div>
-    <div class="f-box f-big"><div id="f-ch-col" class="chart"></div></div>
+    <div class="f-tier"><span>3</span>Biểu đồ doanh thu – chi phí <small>doanh thu, chi phí (cột) · lợi nhuận (đường) · rê chuột để xem số</small></div>
+    <div class="f-box f-big" id="fz-box"><div id="fz-bar" class="fz-bar"></div><div id="f-ch-col" class="chart"></div>
+      <p class="muted small fz-hint">Bấm vào cột hoặc lăn chuột lên trên biểu đồ để xem chi tiết hơn (Năm → Quý → Tháng → Ngày) · lăn xuống để thu gọn.</p></div>
 
     <div class="f-tier"><span>4</span>Cơ cấu theo công trình <small>trong kỳ · tỷ đồng</small></div>
     <div class="f-row2">
@@ -262,11 +263,131 @@ function bFinData(list, v) {
 
 function bFinDraw(list, v) {
   const P = bPeriod(list);
-  const pts = bSeries(list, v, P);
-  bColChart($('#f-ch-col'), pts, [{ key: 'dt', name: 'Doanh thu', color: BCOL.dt }, { key: 'cp', name: 'Chi phí', color: BCOL.cp }],
-    { line: { key: 'ln', name: 'Lợi nhuận', color: BCOL.dk }, tipExtra: (p) => `<tr class="sum"><td>Tỷ suất LN</td><td>${bpct(p.ln, p.dt)}</td></tr>`, height: 320, maxBar: 34 });
+  bZoomDraw(list, v, P);
   const items = list.map((d, i) => ({ label: d.ma_du_an, sub: d.ten_du_an, val: bSumRange([d], v, P.from, P.to).dt, color: PROJ_COLORS[i % PROJ_COLORS.length] }));
   bDonut($('#f-ch-donut'), items);
+}
+
+// ---------------------------------------------------------------------
+// Biểu đồ Doanh thu – Chi phí: xem theo Năm / Quý / Tháng / Ngày.
+// Phóng to: bấm cột hoặc lăn chuột lên (vào đúng cột đang trỏ); thu nhỏ: lăn xuống hoặc bấm mốc phía trên.
+// Số liệu lấy theo ngày phát sinh (thuc_hien.ngay) nên mọi cấp đều cộng khớp với tổng theo tháng.
+// ---------------------------------------------------------------------
+const ZLV = ['nam', 'quy', 'thang', 'ngay'];
+const ZTXT = { nam: 'Năm', quy: 'Quý', thang: 'Tháng', ngay: 'Ngày' };
+const ZNGAY_MAX = 186; // tối đa số ngày cho phép xem theo ngày (tránh cột quá mảnh)
+let FZ = null;         // { key, lv, from, to, stack: [{ lv, from, to, label }], label }
+const zD = (s) => new Date(s + 'T00:00:00Z');
+const zS = (d) => d.toISOString().slice(0, 10);
+const zDays = (a, b) => Math.round((zD(b) - zD(a)) / 864e5) + 1;
+const zDmy = (s) => `${s.slice(8, 10)}/${s.slice(5, 7)}/${s.slice(0, 4)}`;
+function zToday() { return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date()); }
+function zAuto(from, to) {
+  const n = zDays(from, to);
+  return n <= 62 ? 'ngay' : n <= 400 ? 'thang' : n <= 1500 ? 'quy' : 'nam';
+}
+// Khoảng [a, b] của nhóm chứa ngày s theo cấp lv
+function zBucket(s, lv) {
+  const y = Number(s.slice(0, 4)), m = Number(s.slice(5, 7));
+  const yy = String(y).slice(2);
+  if (lv === 'nam') return { k: `${y}`, a: `${y}-01-01`, b: `${y}-12-31`, label: `${y}`, title: `Năm ${y}` };
+  if (lv === 'quy') {
+    const q = Math.floor((m - 1) / 3), m1 = q * 3 + 1;
+    const a = `${y}-${String(m1).padStart(2, '0')}-01`;
+    const b = zS(new Date(Date.UTC(y, m1 + 2, 0)));
+    return { k: `${y}-Q${q + 1}`, a, b, label: `Q${q + 1}/${yy}`, title: `Quý ${ROMAN_Q[q]}/${y}` };
+  }
+  if (lv === 'thang') {
+    const ym = s.slice(0, 7);
+    return { k: ym, a: `${ym}-01`, b: `${ym}-${String(lastDay(ym)).padStart(2, '0')}`, label: `T${m}/${yy}`, title: `Tháng ${ymTxt(ym)}` };
+  }
+  return { k: s, a: s, b: s, label: `${s.slice(8, 10)}/${s.slice(5, 7)}`, title: zDmy(s) };
+}
+function zSeries(list, v, lv, from, to) {
+  const out = [], idx = {};
+  for (let s = from; s <= to;) {
+    const B = zBucket(s, lv);
+    const it = { ...B, a: B.a < from ? from : B.a, b: B.b > to ? to : B.b, dt: 0, cp: 0 };
+    idx[B.k] = it; out.push(it);
+    const nx = zD(B.b); nx.setUTCDate(nx.getUTCDate() + 1); s = zS(nx);
+  }
+  for (const d of list) {
+    for (const [k, t] of Object.entries(d.thuc_hien.ngay || {})) {
+      if (k < from || k > to) continue;
+      const it = idx[zBucket(k, lv).k];
+      if (it) { it.dt += t['dt_' + v]; it.cp += t['cp_' + v]; }
+    }
+  }
+  out.forEach((it) => { it.ln = it.dt - it.cp; });
+  // Bỏ các mốc tương lai chưa có số liệu
+  const today = zToday();
+  while (out.length > 1 && out[out.length - 1].a > today && !out[out.length - 1].dt && !out[out.length - 1].cp) out.pop();
+  return out;
+}
+function bZoomDraw(list, v, P) {
+  const key = `${BST.project}|${BST.ky}|${BST.tu}|${BST.den}`;
+  if (!FZ || FZ.key !== key) {
+    const from = `${P.from}-01`, to = `${P.to}-${String(lastDay(P.to)).padStart(2, '0')}`;
+    FZ = { key, lv: zAuto(from, to), from, to, stack: [], label: P.label };
+  }
+  const el = $('#f-ch-col'), bar = $('#fz-bar'), box = $('#fz-box');
+  if (!el || !bar) return;
+  const n = zDays(FZ.from, FZ.to);
+  if (FZ.lv === 'ngay' && n > ZNGAY_MAX) FZ.lv = 'thang';
+  const pts = zSeries(list, v, FZ.lv, FZ.from, FZ.to);
+  const canIn = FZ.lv !== 'ngay';
+  const crumbs = [...FZ.stack.map((s, i) => `<button type="button" class="link" data-zc="${i}">${esc(s.label)}</button><span class="fz-sep">›</span>`), `<b>${esc(FZ.label)}</b>`].join('');
+  bar.innerHTML = `
+    <div class="fz-crumb">${FZ.stack.length ? '<button type="button" class="fz-back" data-zb="1" title="Trở lại mức trước">‹ Trở lại</button>' : ''}${crumbs}
+      <span class="muted small">· ${zDmy(FZ.from)} – ${zDmy(FZ.to)}</span></div>
+    <div class="fz-ctl">
+      <div class="seg" role="group" aria-label="Xem theo">${ZLV.map((l) => `<button type="button" data-zl="${l}" class="${FZ.lv === l ? 'on' : ''}" ${l === 'ngay' && n > ZNGAY_MAX ? `disabled title="Khoảng thời gian dài hơn ${ZNGAY_MAX} ngày – chọn một tháng/quý để xem theo ngày"` : ''}>${ZTXT[l]}</button>`).join('')}</div>
+      <span class="fz-range"><input type="date" id="fz-tu" value="${FZ.from}" aria-label="Từ ngày"> – <input type="date" id="fz-den" value="${FZ.to}" aria-label="Đến ngày"></span>
+    </div>`;
+  bColChart(el, pts, [{ key: 'dt', name: 'Doanh thu', color: BCOL.dt }, { key: 'cp', name: 'Chi phí', color: BCOL.cp }],
+    { line: { key: 'ln', name: 'Lợi nhuận', color: BCOL.dk }, tipExtra: (p) => `<tr class="sum"><td>Tỷ suất LN</td><td>${bpct(p.ln, p.dt)}</td></tr>${canIn ? `<tr><td colspan="2" class="muted">Bấm / lăn lên để xem theo ${ZTXT[ZLV[ZLV.indexOf(FZ.lv) + 1]].toLowerCase()}</td></tr>` : ''}`,
+      height: 320, maxBar: 34, onPick: canIn ? (p) => zIn(p) : null });
+  const redraw = () => bZoomDraw(list, v, P);
+  const zIn = (p) => {
+    if (FZ.lv === 'ngay') return false;
+    FZ.stack.push({ lv: FZ.lv, from: FZ.from, to: FZ.to, label: FZ.label });
+    Object.assign(FZ, { lv: ZLV[ZLV.indexOf(FZ.lv) + 1], from: p.a, to: p.b, label: p.title, custom: false });
+    redraw(); return true;
+  };
+  const zOut = () => {
+    if (FZ.stack.length) { Object.assign(FZ, FZ.stack.pop(), { custom: false }); redraw(); return true; }
+    const i = ZLV.indexOf(FZ.lv);
+    if (i > 0) { FZ.lv = ZLV[i - 1]; redraw(); return true; }
+    return false;
+  };
+  let busy = 0;
+  el.onwheel = (e) => {
+    if (!e.deltaY) return;
+    const p = e.target.__zp;
+    const can = e.deltaY < 0 ? (FZ.lv !== 'ngay' && p) : (FZ.stack.length || FZ.lv !== 'nam');
+    if (!can) return;            // không đổi được mức -> để trang cuộn bình thường
+    e.preventDefault();
+    if (Date.now() - busy < 400) return; // chống trượt nhiều nấc do touchpad
+    busy = Date.now();
+    hideTip();
+    if (e.deltaY < 0) zIn(p); else zOut();
+  };
+  bar.onclick = (e) => {
+    const b = e.target.closest('button'); if (!b || b.disabled) return;
+    if (b.dataset.zb) return zOut();
+    if (b.dataset.zc !== undefined) { const i = Number(b.dataset.zc); Object.assign(FZ, FZ.stack[i], { custom: false }); FZ.stack = FZ.stack.slice(0, i); return redraw(); }
+    if (b.dataset.zl) { FZ.lv = b.dataset.zl; redraw(); }
+  };
+  bar.onchange = () => {
+    let a = $('#fz-tu').value, b = $('#fz-den').value;
+    if (!a || !b) return;
+    if (a > b) [a, b] = [b, a];
+    if (!FZ.custom) FZ.stack.push({ lv: FZ.lv, from: FZ.from, to: FZ.to, label: FZ.label }); // sửa tiếp khoảng tùy chọn -> không thêm mốc
+    FZ.custom = true;
+    Object.assign(FZ, { from: a, to: b, lv: zAuto(a, b), label: a === b ? zDmy(a) : 'Khoảng tùy chọn' });
+    redraw();
+  };
+  if (box) box.classList.toggle('fz-can', canIn);
 }
 
 // Biểu đồ tròn (vành khuyên) – màu theo thứ tự công trình
@@ -472,7 +593,9 @@ function bColChart(el, pts, series, opt = {}) {
   }
   for (const [p, i] of hits) {
     const hit = svgEl('rect', { x: pad.l + slot * i, y: pad.t, width: slot, height: ih, fill: 'transparent' }, svg);
-    hit.addEventListener('mousemove', (e) => showTip(`<b>${p.label}</b><table>${all.map((s) => `<tr><td><i style="background:${s.color}"></i>${s.name}</td><td class="${p[s.key] < 0 ? 'neg' : ''}">${bn(p[s.key])}</td></tr>`).join('')}
+    hit.__zp = p;
+    if (opt.onPick) { hit.style.cursor = 'zoom-in'; hit.addEventListener('click', () => { hideTip(); opt.onPick(p); }); }
+    hit.addEventListener('mousemove', (e) => showTip(`<b>${p.title || p.label}</b><table>${all.map((s) => `<tr><td><i style="background:${s.color}"></i>${s.name}</td><td class="${p[s.key] < 0 ? 'neg' : ''}">${bn(p[s.key])}</td></tr>`).join('')}
       ${opt.tipExtra ? opt.tipExtra(p) : ''}</table>`, e.clientX, e.clientY));
     hit.addEventListener('mouseleave', hideTip);
   }

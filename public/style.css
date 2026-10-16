@@ -622,3 +622,16 @@ dialog.pass-dlg.f-dlg h3 { color: var(--navy); }
   .dash-kpis .kpi .value { font-size: 16px; }
   .seg { width: 100%; } .seg button { flex: 1; }
 }
+/* Biểu đồ Doanh thu – Chi phí: thanh phóng to/thu nhỏ */
+.fz-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; margin-bottom: 6px; }
+.fz-crumb { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 13px; color: var(--navy); }
+.fz-crumb .link { padding: 0; border: 0; background: none; box-shadow: none; color: var(--accent, #2c5fa3); font-size: 13px; font-weight: 600; cursor: pointer; }
+.fz-crumb .link:hover { text-decoration: underline; }
+.fz-sep { color: var(--muted); }
+.fz-back { padding: 4px 10px; font-size: 12px; margin-right: 4px; }
+.fz-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.fz-ctl .seg button:disabled { opacity: .4; cursor: not-allowed; }
+.fz-range { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.fz-range input { padding: 5px 8px; font-size: 12px; width: auto; }
+.fz-hint { margin: 4px 0 0; }
+@media print { .fz-bar .fz-ctl, .fz-back, .fz-hint { display: none !important; } }

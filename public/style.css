@@ -263,6 +263,9 @@ tfoot td { font-weight: 700; color: var(--navy); background: #eef4fb; border-top
 
 tr.ngoai-cp td { color: var(--muted); font-style: italic; }
 
+#tp-card .tp-filter { margin-bottom: 12px; }
+#tp-card .tp-filter input { width: 320px; max-width: 100%; }
+
 /* ---------- Dashboard tổng (tab Dự án) ---------- */
 .dash-head .toolbar { margin-bottom: 16px; }
 .dash-kpis { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }

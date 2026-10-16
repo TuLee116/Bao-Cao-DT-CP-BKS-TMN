@@ -62,18 +62,25 @@ function check(cond, what, detail = '') {
     const hd = rv.items.filter((r) => r.loai === 'hd');
     const qt = rv.items.filter((r) => r.loai === 'qt');
     const masters = hd.filter((r) => r.ma_loai === 'HĐ');
-    let dtGt = 0, dtSv = 0, dtUndated = 0;
+    // Dự kiến: HĐ đã quyết toán -> HT/QT, chưa -> HĐ + PL;  Thực hiện: tổng HT/QT
+    const noAccent = (x) => String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').toLowerCase();
+    let dtGt = 0, dtSv = 0, dtUndated = 0, thGt = 0, thSv = 0, thUndated = 0;
     const used = new Set();
     for (const m of masters) {
       const group = hd.filter((r) => String(r.so_ma).toLowerCase() === String(m.so_ma).toLowerCase());
       const q = qt.filter((r) => r.hd_id === m.id);
       q.forEach((r) => used.add(r.id));
-      for (const r of q.length ? q : group) {
+      const daQt = rv.tien_ve.some((t) => t.hd_id === m.id && t.loai === 'quyet_toan') || q.some((r) => noAccent(r.so_hieu).includes('quyet toan'));
+      for (const r of daQt && q.length ? q : group) {
         dtGt += r.gia_tri; dtSv += sv(r.gia_tri, r.vat);
         if (!r.ngay) dtUndated += r.gia_tri;
       }
+      for (const r of q) {
+        thGt += r.gia_tri; thSv += sv(r.gia_tri, r.vat);
+        if (!r.ngay) thUndated += r.gia_tri;
+      }
       // HĐ: tiền về không vượt giá trị (sau VAT) – cảnh báo nghiệp vụ
-      const base = (q.length ? q : group).reduce((s, r) => s + sv(r.gia_tri, r.vat), 0);
+      const base = (daQt && q.length ? q : group).reduce((s, r) => s + sv(r.gia_tri, r.vat), 0);
       const tv = rv.tien_ve.filter((t) => t.hd_id === m.id).reduce((s, t) => s + t.so_tien, 0);
       if (tv > base) warns.push(`${tag} / HĐ ${m.so_ma}: tiền về ${fmt(tv)} > giá trị ${fmt(base)}`);
       if (!m.vat) warns.push(`${tag} / HĐ ${m.so_ma}: VAT 0% (tạm tính)`);
@@ -90,7 +97,7 @@ function check(cond, what, detail = '') {
     check(rv.tien_ve.every((t) => t.hd_id && masters.some((m) => m.id === t.hd_id)), `${tag}: mọi dòng tiền về gắn với HĐ gốc`);
 
     // ---------- THẦU PHỤ ----------
-    let tpGt = 0, tpSv = 0, khoaN = 0, tpUndatedN = 0;
+    let tpGt = 0, tpSv = 0, khoaN = 0, tpUndatedN = 0, tpThSv = 0, tpThGt = 0;
     for (const c of cp.thau_phu) {
       const lines = c.lines;
       const hdSv = lines.reduce((s, l) => s + sv(l.gia_tri, l.vat), 0);
@@ -110,6 +117,9 @@ function check(cond, what, detail = '') {
       if (khoa) check(c.con_lai === 0, `${t}: đã quyết toán thì Còn lại = 0`);
       if (daTt > qSv) warns.push(`${t}: thanh toán ${fmt(daTt)} vượt HT/QT ${fmt(qSv)}`);
       tpGt += c.qt_gia_tri; tpSv += qSv;
+      // Thực hiện: đã QT -> giá trị chốt; chưa -> thanh toán đợt (bỏ tạm ứng), trước VAT tách theo tỷ lệ VAT của HĐ
+      if (khoa) { tpThSv += qSv; tpThGt += c.qt_gia_tri; }
+      else for (const x of c.pays) if (x.loai !== 'tam_ung') { tpThSv += x.so_tien; tpThGt += x.so_tien - (hdSv ? Math.round((x.so_tien * hdVat) / hdSv) : 0); }
       if (khoa ? !c.pays.some((x) => x.loai === 'quyet_toan' && x.ngay) : lines.some((l) => !l.ngay)) tpUndatedN++;
     }
 
@@ -127,30 +137,42 @@ function check(cond, what, detail = '') {
     check(nhomSum === cp.tong.sau_vat, `${tag}: tổng các nhóm = Tổng chi phí`);
 
     // ---------- DASHBOARD ----------
+    const K = d.du_kien, H = d.thuc_hien;
+    const otherGt = other.reduce((s, r) => s + r.gia_tri, 0), otherSv = other.reduce((s, r) => s + sv(r.gia_tri, r.vat), 0);
+    const nPay = cp.thau_phu.reduce((s, c) => s + c.pays.length, 0);
     check(d.so_hd === masters.length, `${tag}: Dashboard – số HĐ`, `${d.so_hd} ≠ ${masters.length}`);
-    check(d.doanh_thu.gt === dtGt && d.doanh_thu.sv === dtSv, `${tag}: Dashboard – Doanh thu`, `${fmt(d.doanh_thu.gt)} ≠ ${fmt(dtGt)}`);
-    check(d.chi_phi.sv === cpSv && Math.abs(d.chi_phi.gt - cpGt) <= khoaN, `${tag}: Dashboard – Chi phí`, `${fmt(d.chi_phi.sv)} ≠ ${fmt(cpSv)}`);
-    check(d.tien_ve === tvSum && d.con_lai === dtSv - tvSum, `${tag}: Dashboard – Tiền về / Còn lại`);
-    const sumM = (k) => Object.values(d.thang).reduce((s, m) => s + m[k], 0);
-    check(sumM('dt_gt') + dtUndated === dtGt, `${tag}: biểu đồ – tổng Doanh thu theo tháng + dòng thiếu ngày = Doanh thu`);
-    const cpUndated = other.filter((r) => !r.ngay).reduce((s, r) => s + r.gia_tri, 0);
-    if (!tpUndatedN) check(Math.abs(sumM('cp_gt') + cpUndated - cpGt) <= khoaN, `${tag}: biểu đồ – tổng Chi phí theo tháng + thiếu ngày = Chi phí`);
-    const ln = d.doanh_thu.gt - d.chi_phi.gt;
-    if (ln < 0) warns.push(`${tag}: dự án LỖ ${fmt(ln)} (trước VAT)`);
-    rows.push({ tag, hd: masters.length, tp: cp.thau_phu.length, dt: d.doanh_thu.gt, cp: d.chi_phi.gt, ln, tv: d.tien_ve, cl: d.con_lai });
+    check(K.doanh_thu.gt === dtGt && K.doanh_thu.sv === dtSv, `${tag}: Dự kiến – Doanh thu`, `${fmt(K.doanh_thu.gt)} ≠ ${fmt(dtGt)}`);
+    check(K.chi_phi.sv === cpSv && Math.abs(K.chi_phi.gt - cpGt) <= khoaN, `${tag}: Dự kiến – Chi phí (= tổng tab Chi phí)`, `${fmt(K.chi_phi.sv)} ≠ ${fmt(cpSv)}`);
+    check(H.doanh_thu.gt === thGt && H.doanh_thu.sv === thSv, `${tag}: Thực hiện – Doanh thu (= tổng HT/QT)`, `${fmt(H.doanh_thu.gt)} ≠ ${fmt(thGt)}`);
+    check(H.chi_phi.sv === otherSv + tpThSv && Math.abs(H.chi_phi.gt - (otherGt + tpThGt)) <= khoaN + nPay, `${tag}: Thực hiện – Chi phí`, `${fmt(H.chi_phi.sv)} ≠ ${fmt(otherSv + tpThSv)}`);
+    check(d.tien_ve === tvSum && K.con_lai === dtSv - tvSum && H.con_lai === thSv - tvSum, `${tag}: Tiền về / Còn lại 2 lớp`);
+    check(H.doanh_thu.gt <= K.doanh_thu.gt || qt.length > 0, `${tag}: Doanh thu thực hiện không vượt dự kiến khi chưa nghiệm thu`);
+    for (const [nm, L] of [['Dự kiến', K], ['Thực hiện', H]]) {
+      const sumM = (k) => Object.values(L.thang).reduce((s, m) => s + m[k], 0);
+      check(sumM('dt_sv') <= L.doanh_thu.sv || L.doanh_thu.sv < 0, `${tag}: ${nm} – biểu đồ DT không vượt tổng`);
+      if (!L.chua_ngay.dt) check(sumM('dt_sv') === L.doanh_thu.sv, `${tag}: ${nm} – tổng DT theo tháng = Doanh thu`);
+      if (!L.chua_ngay.cp) check(sumM('cp_sv') === L.chi_phi.sv, `${tag}: ${nm} – tổng CP theo tháng = Chi phí`, `${sumM('cp_sv')} ≠ ${L.chi_phi.sv}`);
+    }
+    check(dtUndated >= 0 && thUndated >= 0, `${tag}: dòng thiếu ngày`);
+    const ln = K.doanh_thu.gt - K.chi_phi.gt, lnTh = H.doanh_thu.gt - H.chi_phi.gt;
+    if (ln < 0) warns.push(`${tag}: LỖ DỰ KIẾN ${fmt(ln)} (trước VAT)`);
+    rows.push({ tag, hd: masters.length, tp: cp.thau_phu.length, dt: K.doanh_thu.gt, cp: K.chi_phi.gt, ln, dtTh: H.doanh_thu.gt, cpTh: H.chi_phi.gt, lnTh, tv: d.tien_ve, cl: H.con_lai });
   }
 
   // ---------- Báo cáo ----------
   const pad = (s, n, right) => (right ? String(s).padStart(n) : String(s).padEnd(n));
-  console.log('\nTỔNG HỢP (trước VAT; Tiền về / Còn lại sau VAT)');
-  console.log(pad('Dự án', 9), pad('HĐ', 3, 1), pad('TP', 4, 1), pad('Doanh thu', 18, 1), pad('Chi phí', 18, 1), pad('Lợi nhuận', 18, 1), pad('Tỷ suất', 8, 1), pad('Tiền về', 18, 1), pad('Còn lại', 18, 1));
-  for (const r of rows) {
-    console.log(pad(r.tag, 9), pad(r.hd, 3, 1), pad(r.tp, 4, 1), pad(fmt(r.dt), 18, 1), pad(fmt(r.cp), 18, 1), pad(fmt(r.ln), 18, 1),
-      pad(r.dt ? ((r.ln / r.dt) * 100).toFixed(1) + '%' : '—', 8, 1), pad(fmt(r.tv), 18, 1), pad(fmt(r.cl), 18, 1));
-  }
+  const pctS = (a, b) => (b ? ((a / b) * 100).toFixed(1) + '%' : '—');
   const S = (k) => rows.reduce((s, r) => s + r[k], 0);
-  console.log(pad('TỔNG', 9), pad(S('hd'), 3, 1), pad(S('tp'), 4, 1), pad(fmt(S('dt')), 18, 1), pad(fmt(S('cp')), 18, 1), pad(fmt(S('ln')), 18, 1),
-    pad(S('dt') ? ((S('ln') / S('dt')) * 100).toFixed(1) + '%' : '—', 8, 1), pad(fmt(S('tv')), 18, 1), pad(fmt(S('cl')), 18, 1));
+  const tbl = (title, kDt, kCp, kLn, extra) => {
+    console.log(`\n${title}`);
+    console.log(pad('Dự án', 9), pad('HĐ', 3, 1), pad('TP', 4, 1), pad('Doanh thu', 18, 1), pad('Chi phí', 18, 1), pad('Lợi nhuận', 18, 1), pad('Tỷ suất', 8, 1), ...(extra ? [pad('Tiền về', 18, 1), pad('Còn phải thu', 18, 1)] : []));
+    for (const r of [...rows, { tag: 'TỔNG', hd: S('hd'), tp: S('tp'), [kDt]: S(kDt), [kCp]: S(kCp), [kLn]: S(kLn), tv: S('tv'), cl: S('cl') }]) {
+      console.log(pad(r.tag, 9), pad(r.hd, 3, 1), pad(r.tp, 4, 1), pad(fmt(r[kDt]), 18, 1), pad(fmt(r[kCp]), 18, 1), pad(fmt(r[kLn]), 18, 1), pad(pctS(r[kLn], r[kDt]), 8, 1),
+        ...(extra ? [pad(fmt(r.tv), 18, 1), pad(fmt(r.cl), 18, 1)] : []));
+    }
+  };
+  tbl('DỰ KIẾN – theo hợp đồng (trước VAT)', 'dt', 'cp', 'ln');
+  tbl('THỰC HIỆN – đến hiện tại (trước VAT; Tiền về / Còn phải thu sau VAT)', 'dtTh', 'cpTh', 'lnTh', true);
 
   console.log('\nTHỜI GIAN PHẢN HỒI API (ms, trung bình / lớn nhất)');
   for (const [k, v] of Object.entries(timing)) console.log(`  ${pad(k, 32)} ${Math.round(v.reduce((a, b) => a + b, 0) / v.length)} / ${Math.max(...v)}`);

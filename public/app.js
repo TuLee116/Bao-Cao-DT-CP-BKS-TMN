@@ -70,7 +70,10 @@ const canEdit = () => ['admin', 'editor'].includes(ME.role);
 
 let dash = { du_an: [] };
 const dashById = () => new Map(dash.du_an.map((d) => [d.id, d]));
-const DSTATE = { project: '', vat: 'gt', pie: 'dt' };
+const DSTATE = { project: '', vat: 'gt', pie: 'dt', lop: 'th' };
+// Lớp số liệu: dk = Dự kiến (theo hợp đồng), th = Thực hiện (đến hiện tại)
+const LOP = { dk: 'du_kien', th: 'thuc_hien' };
+const lopOf = (d, lop = DSTATE.lop) => d[LOP[lop] || 'thuc_hien'];
 try { Object.assign(DSTATE, JSON.parse(localStorage.getItem('dash') || '{}')); } catch {}
 const saveDState = () => { try { localStorage.setItem('dash', JSON.stringify(DSTATE)); } catch {} };
 
@@ -91,8 +94,8 @@ function renderProjects() {
   $('#p-tbody').innerHTML = rows.length
     ? rows.map((r) => {
       const d = by.get(r.id);
-      const dt = d ? d.doanh_thu[v] : 0;
-      const cp = d ? d.chi_phi[v] : 0;
+      const dt = d ? lopOf(d).doanh_thu[v] : 0;
+      const cp = d ? lopOf(d).chi_phi[v] : 0;
       return `
       <tr>
         <td><b class="p-ma">${esc(r.ma_du_an)}</b><div>${esc(r.ten_du_an)}</div></td>
@@ -146,17 +149,21 @@ function renderDashboard() {
   sel.value = DSTATE.project;
   $$('#d-vat button').forEach((b) => b.classList.toggle('on', b.dataset.v === DSTATE.vat));
   $$('#d-pie-by button').forEach((b) => b.classList.toggle('on', b.dataset.v === DSTATE.pie));
+  $$('#d-lop button').forEach((b) => b.classList.toggle('on', b.dataset.v === DSTATE.lop));
 
   const rows = dashRows();
   const v = DSTATE.vat;
   const sum = (f) => rows.reduce((s, d) => s + f(d), 0);
   const soHd = sum((d) => d.so_hd);
-  const dt = sum((d) => d.doanh_thu[v]);
-  const cp = sum((d) => d.chi_phi[v]);
+  const dt = sum((d) => lopOf(d).doanh_thu[v]);
+  const cp = sum((d) => lopOf(d).chi_phi[v]);
   const ln = dt - cp;
-  const dtSv = sum((d) => d.doanh_thu.sv);
+  const dtSv = sum((d) => lopOf(d).doanh_thu.sv);
   const tv = sum((d) => d.tien_ve);
-  const cl = sum((d) => d.con_lai);
+  const cl = sum((d) => lopOf(d).con_lai);
+  const khac = DSTATE.lop === 'th' ? 'dk' : 'th';
+  const dt2 = sum((d) => lopOf(d, khac).doanh_thu[v]);
+  const ln2 = dt2 - sum((d) => lopOf(d, khac).chi_phi[v]);
   const pctTxt = (a, b) => (b ? (a / b * 100).toFixed(1).replace('.', ',') + '%' : '—');
   const setK = (id, val, sub, neg) => {
     $('#d-k-' + id).textContent = typeof val === 'number' && id !== 'hd' ? fmt.format(val) : val;
@@ -164,12 +171,19 @@ function renderDashboard() {
     $('#d-k-' + id + '-sub').textContent = sub;
   };
   const basis = v === 'gt' ? 'trước VAT' : 'sau VAT';
-  setK('hd', String(soHd), `${rows.length} dự án`);
-  setK('dt', dt, `VNĐ, ${basis}`);
+  const isTh = DSTATE.lop === 'th';
+  $('#d-k-dt-label').textContent = isTh ? 'Doanh thu thực hiện' : 'Doanh thu dự kiến';
+  $('#d-k-cp-label').textContent = isTh ? 'Chi phí thực hiện' : 'Chi phí dự kiến';
+  $('#d-k-ln-label').textContent = isTh ? 'Lợi nhuận thực hiện' : 'Lợi nhuận dự kiến';
+  $('#d-k-cl-label').textContent = isTh ? 'Còn phải thu (theo nghiệm thu)' : 'Còn lại theo HĐ';
+  $('#d-line-title').textContent = `Doanh thu – Chi phí ${isTh ? 'thực hiện' : 'dự kiến'} theo tháng (lũy kế)`;
+  setK('hd', String(soHd), `${rows.length} dự án · ${sum((d) => d.so_hd_qt)} HĐ đã QT · ${sum((d) => d.so_tp)} HĐ thầu phụ`);
+  setK('dt', dt, `VNĐ, ${basis} · ${isTh ? 'đạt' : 'đã nghiệm thu'} ${isTh ? pctTxt(dt, dt2) + ' dự kiến' : pctTxt(dt2, dt)}`);
   const goc = sum((d) => d.tra_goc[v]);
   setK('cp', cp, `${pctTxt(cp, dt)} doanh thu` + (goc ? ` · không gồm trả gốc vay ${fmt.format(goc)}` : ''));
-  setK('ln', ln, `Tỷ suất LN: ${pctTxt(ln, dt)}`, ln < 0);
-  setK('cl', cl, `Đã thu ${fmt.format(tv)} (${pctTxt(tv, dtSv)}), sau VAT`, cl < 0);
+  setK('ln', ln, `Tỷ suất LN: ${pctTxt(ln, dt)} · ${isTh ? 'Dự kiến' : 'Thực hiện'}: ${fmt.format(ln2)} (${pctTxt(ln2, dt2)})`, ln < 0);
+  setK('cl', cl, `Đã thu ${fmt.format(tv)} (${pctTxt(tv, dtSv)}), sau VAT` +
+    (cl < 0 ? ' · số âm: CĐT đã tạm ứng / thanh toán vượt giá trị ' + (isTh ? 'nghiệm thu' : 'HĐ') : ''), cl < 0);
 
   drawLine();
   drawPie();
@@ -218,8 +232,9 @@ function drawLine() {
   const byMonth = {};
   let noDt = 0, noCp = 0;
   for (const d of rows) {
-    noDt += d.chua_ngay.dt; noCp += d.chua_ngay.cp;
-    for (const [m, t] of Object.entries(d.thang)) {
+    const L = lopOf(d);
+    noDt += L.chua_ngay.dt; noCp += L.chua_ngay.cp;
+    for (const [m, t] of Object.entries(L.thang)) {
       const o = (byMonth[m] ||= { dt: 0, cp: 0 });
       o.dt += t['dt_' + v]; o.cp += t['cp_' + v];
     }
@@ -325,7 +340,7 @@ function drawPie() {
   const f = DSTATE.pie;
   const v = DSTATE.vat;
   const name = f === 'dt' ? 'doanh thu' : 'chi phí';
-  const all = dash.du_an.map((d) => ({ id: d.id, ma: d.ma_du_an, ten: d.ten_du_an, val: (f === 'dt' ? d.doanh_thu : d.chi_phi)[v] }));
+  const all = dash.du_an.map((d) => ({ id: d.id, ma: d.ma_du_an, ten: d.ten_du_an, val: (f === 'dt' ? lopOf(d).doanh_thu : lopOf(d).chi_phi)[v] }));
   const pos = all.filter((d) => d.val > 0).sort((a, b) => b.val - a.val);
   const neg = all.filter((d) => d.val < 0).length;
   box.innerHTML = '';
@@ -402,6 +417,14 @@ $('#d-vat').addEventListener('click', (e) => {
   renderDashboard();
   renderProjects();
 });
+$('#d-lop').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  DSTATE.lop = b.dataset.v;
+  saveDState();
+  renderDashboard();
+  renderProjects();
+});
 $('#d-pie-by').addEventListener('click', (e) => {
   const b = e.target.closest('button');
   if (!b) return;
@@ -470,11 +493,16 @@ $('#p-csv').addEventListener('click', () => {
   const by = dashById();
   const v = DSTATE.vat;
   const vt = v === 'gt' ? ' (trước VAT)' : ' (sau VAT)';
-  const head = ['Mã DA', 'Tên dự án', 'Chủ đầu tư', 'Số HĐ', 'Doanh thu' + vt, 'Chi phí' + vt, 'Lợi nhuận' + vt, 'Tiền về', 'Còn lại (phải thu)', 'Tiến độ %', 'Trạng thái', 'Ngày bắt đầu', 'Ngày kết thúc'];
+  const head = ['Mã DA', 'Tên dự án', 'Chủ đầu tư', 'Số HĐ',
+    'DT dự kiến' + vt, 'CP dự kiến' + vt, 'LN dự kiến' + vt, 'DT thực hiện' + vt, 'CP thực hiện' + vt, 'LN thực hiện' + vt,
+    'Tiền về', 'Còn lại theo HĐ', 'Còn phải thu (theo nghiệm thu)', 'Tiến độ %', 'Trạng thái', 'Ngày bắt đầu', 'Ngày kết thúc'];
   const line = (r) => {
-    const d = by.get(r.id) || { so_hd: 0, doanh_thu: { gt: 0, sv: 0 }, chi_phi: { gt: 0, sv: 0 }, tien_ve: 0, con_lai: 0 };
-    return [r.ma_du_an, r.ten_du_an, r.chu_dau_tu, d.so_hd, d.doanh_thu[v], d.chi_phi[v], d.doanh_thu[v] - d.chi_phi[v], d.tien_ve, d.con_lai,
-      r.tien_do, r.trang_thai, r.ngay_bat_dau, r.ngay_ket_thuc];
+    const d = by.get(r.id);
+    if (!d) return [r.ma_du_an, r.ten_du_an, r.chu_dau_tu, '', '', '', '', '', '', '', '', '', '', r.tien_do, r.trang_thai, r.ngay_bat_dau, r.ngay_ket_thuc];
+    const k = d.du_kien, t = d.thuc_hien;
+    return [r.ma_du_an, r.ten_du_an, r.chu_dau_tu, d.so_hd,
+      k.doanh_thu[v], k.chi_phi[v], k.doanh_thu[v] - k.chi_phi[v], t.doanh_thu[v], t.chi_phi[v], t.doanh_thu[v] - t.chi_phi[v],
+      d.tien_ve, k.con_lai, t.con_lai, r.tien_do, r.trang_thai, r.ngay_bat_dau, r.ngay_ket_thuc];
   };
   const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const csv = [head.map(q).join(','), ...projects.map((r) => line(r).map(q).join(','))].join('\r\n');
@@ -1562,14 +1590,28 @@ $('#tab-cost').addEventListener('click', async (e) => {
 // ---------------------------------------------------------------------
 // 1. THẦU PHỤ theo hợp đồng
 // ---------------------------------------------------------------------
+// Bộ lọc bảng thầu phụ: từ khóa + trạng thái quyết toán
+const tpFilter = { q: '', loc: '' };
+const tpDaQt = (c) => c.khoa || c.da_qt;
 function renderTpCard() {
-  const list = costData.thau_phu;
-  const T = costData.tong_tp;
+  const all = costData.thau_phu;
   const edit = canEdit();
-  $('#tp-total').textContent = money(T.con_lai);
-  $('#tp-tbody').innerHTML = list.length ? list.map((c, i) => `
+  const nDa = all.filter(tpDaQt).length;
+  $$('#tp-loc button').forEach((b) => {
+    b.classList.toggle('on', b.dataset.v === tpFilter.loc);
+    b.textContent = { '': `Tất cả (${all.length})`, chua: `Chưa QT (${all.length - nDa})`, da: `Đã QT (${nDa})` }[b.dataset.v];
+  });
+  const q = normVn(tpFilter.q);
+  const list = all.map((c, i) => ({ ...c, stt: i + 1 })).filter((c) =>
+    (!tpFilter.loc || (tpFilter.loc === 'da') === tpDaQt(c)) &&
+    (!q || normVn(`${c.so_ma} ${c.doi_tac} ${c.ghi_chu}`).includes(q)));
+  const filtered = list.length !== all.length;
+  const sumF = (f) => list.reduce((s, c) => s + c[f], 0);
+  const T = filtered ? { so_hd: list.length, hd_sau_vat: sumF('hd_sau_vat'), qt_sau_vat: sumF('qt_sau_vat'), da_tt: sumF('da_tt'), con_lai: sumF('con_lai') } : costData.tong_tp;
+  $('#tp-total').textContent = money(costData.tong_tp.con_lai);
+  $('#tp-tbody').innerHTML = list.length ? list.map((c) => `
     <tr>
-      <td class="num muted">${i + 1}</td>
+      <td class="num muted">${c.stt}</td>
       <td><b class="tp-open so-ma-pick" data-tp="${c.id}" title="Nhấp đúp để mở bảng nhập chi tiết">${esc(c.so_ma)}</b>
         ${c.so_pl ? `<span class="muted small">(+${c.so_pl} PL)</span>` : ''}
         ${c.khoa ? '<span class="st st-lock" title="Đã quyết toán – khóa số">🔒 Đã QT</span>' : c.da_qt ? '<span class="st st-hoan-thanh">Đã QT</span>' : '<span class="st">Chưa QT</span>'}</td>
@@ -1580,11 +1622,19 @@ function renderTpCard() {
       <td class="num strong ${c.con_lai < 0 ? 'neg' : ''}">${money(c.con_lai)}</td>
       <td class="c-note">${esc(c.ghi_chu)}</td>
       <td class="row-actions"><button class="sm" data-tpopen="${c.id}">Chi tiết</button>${edit ? `<button class="danger sm" data-tpdel="${c.id}">Xóa</button>` : ''}</td>
-    </tr>`).join('') : `<tr><td colspan="9" class="empty">Chưa có hợp đồng thầu phụ. ${edit ? 'Chọn nhóm "1. Thầu phụ" ở form trên để tạo.' : ''}</td></tr>`;
-  $('#tp-tfoot').innerHTML = `<tr><td></td><td colspan="2">TỔNG THẦU PHỤ (${T.so_hd} HĐ)</td>
+    </tr>`).join('') : `<tr><td colspan="9" class="empty">${all.length ? 'Không có HĐ thầu phụ phù hợp bộ lọc' : `Chưa có hợp đồng thầu phụ. ${edit ? 'Chọn nhóm "1. Thầu phụ" ở form trên để tạo.' : ''}`}</td></tr>`;
+  $('#tp-tfoot').innerHTML = `<tr><td></td><td colspan="2">${filtered ? `TỔNG ĐANG LỌC (${T.so_hd}/${all.length} HĐ)` : `TỔNG THẦU PHỤ (${T.so_hd} HĐ)`}</td>
     <td class="num">${money(T.hd_sau_vat)}</td><td class="num">${money(T.qt_sau_vat)}</td><td class="num">${money(T.da_tt)}</td>
     <td class="num ${T.con_lai < 0 ? 'neg' : ''}">${money(T.con_lai)}</td><td colspan="2"></td></tr>`;
 }
+
+$('#tp-q').addEventListener('input', (e) => { tpFilter.q = e.target.value; if (costData) renderTpCard(); });
+$('#tp-loc').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  tpFilter.loc = b.dataset.v;
+  if (costData) renderTpCard();
+});
 
 async function deleteTp(id) {
   const c = costData.thau_phu.find((x) => x.id === id);

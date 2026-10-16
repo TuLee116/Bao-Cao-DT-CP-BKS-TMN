@@ -48,15 +48,19 @@ Web quản lý dự án xây dựng có đăng nhập, phân quyền, khởi t�
 - Xóa HĐ thầu phụ hoặc PL cần Passcode; dòng HĐ gốc chỉ xóa cùng cả hợp đồng.
 
 ### Dashboard tổng (tab Dự án)
-Số liệu lấy tự động từ tab Doanh thu và Chi phí (API `GET /api/dashboard`, công thức ở `lib/dashboard.js`):
-- **Tổng số HĐ**: số Hợp đồng gốc (không đếm PL).
-- **Doanh thu**: HĐ đã có Giá trị HT/QT → lấy tổng HT/QT; chưa có → giá trị HĐ + các PL.
-- **Chi phí**: tổng tab Chi phí (trực tiếp + gián tiếp + tài chính; thầu phụ theo HT/QT).
-  **Trả nợ gốc vay** không phải chi phí (chỉ là dòng tiền trả nợ) nên không tính vào chi phí / lợi nhuận; **Trả lãi vay** có tính. Trả nợ vay không chịu VAT.
-- **Lợi nhuận** = Doanh thu − Chi phí; **Còn lại (phải thu)** = Doanh thu sau VAT − Tiền về.
-- Chọn cơ sở **Trước VAT / Sau VAT**; lọc theo dự án (hoặc bấm vào biểu đồ quạt).
-- Biểu đồ đường: Doanh thu – Chi phí lũy kế theo tháng (theo ngày chứng từ; dòng thiếu ngày vẫn tính trong số tổng).
-- Biểu đồ quạt: tỷ trọng doanh thu / chi phí của các dự án (7 dự án lớn nhất + "Khác").
+Số liệu lấy tự động từ tab Doanh thu và Chi phí (API `GET /api/dashboard`, công thức ở `lib/dashboard.js`), 2 lớp:
+
+| | Dự kiến (hiệu quả hợp đồng) | Thực hiện (đến hiện tại) |
+|---|---|---|
+| Doanh thu | HĐ đã quyết toán → giá trị QT; chưa → HĐ + PL | Tổng giá trị đã nghiệm thu (HT/QT) |
+| Thầu phụ | Giá trị HĐTP + PL (đã QT → giá trị chốt) | Thanh toán đợt, không tính tạm ứng (đã QT → giá trị chốt) |
+| Chi phí khác | Các khoản đã ghi nhận | Các khoản đã ghi nhận |
+| Còn lại | Giá trị HĐ (sau VAT) − Tiền về | Giá trị nghiệm thu (sau VAT) − Tiền về (âm = CĐT ứng trước) |
+
+- HĐ CĐT "đã quyết toán": có tiền về loại Quyết toán hoặc dòng HT/QT ghi "Quyết toán".
+- Trả nợ gốc vay không tính vào chi phí; Trả lãi vay có tính. Chọn Trước / Sau VAT; lọc theo dự án.
+- Biểu đồ đường lũy kế theo tháng; biểu đồ quạt tỷ trọng dự án (7 lớn nhất + "Khác").
+- Tab Chi phí: bảng Thầu phụ có ô tìm (số HĐ, nhà thầu, ghi chú/HĐ CĐT) và lọc Chưa QT / Đã QT.
 
 ### Dữ liệu mẫu & Tester
 - **Cài đặt → Dữ liệu mẫu** (Quản trị): tạo 5 dự án `DEMO-01…05` – mỗi dự án 5–10 HĐ chủ đầu tư (mới ký / đang thi công / đã quyết toán), mỗi HĐ 5–10 HĐ thầu phụ (tạm ứng / thanh toán đợt / quyết toán khóa sổ) và chi phí trực tiếp, gián tiếp, tài chính. Xóa toàn bộ bằng Passcode; dữ liệu thật không bị ảnh hưởng.

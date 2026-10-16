@@ -47,7 +47,7 @@ function applyBranding(s) {
 // =====================================================================
 // Tab
 // =====================================================================
-const loaders = { projects: loadProjects, revenue: loadRevenueTab, cost: loadCostTab, users: loadUsers, settings: loadSettings, profile: async () => {}, contact: loadContact };
+const loaders = { projects: loadProjects, revenue: loadRevenueTab, cost: loadCostTab, users: loadUsers, settings: loadSettings, profile: async () => {}, contact: loadContact, report: () => loadReport() };
 
 function showTab(name) {
   $$('#tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));

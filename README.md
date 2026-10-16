@@ -62,6 +62,14 @@ Số liệu lấy tự động từ tab Doanh thu và Chi phí (API `GET /api/da
 - Biểu đồ đường lũy kế theo tháng; biểu đồ quạt tỷ trọng dự án (7 lớn nhất + "Khác").
 - Tab Chi phí: bảng Thầu phụ **gộp theo HĐ chủ đầu tư** (dòng tổng HĐ CĐT, các HĐTP là tập con thu gọn được), có ô tìm và lọc Chưa QT / Đã QT. Mỗi HĐTP chọn "Thuộc HĐ chủ đầu tư" khi tạo hoặc trong bảng chi tiết; xóa HĐ CĐT thì HĐTP chuyển về nhóm "Chưa gắn HĐ CĐT".
 
+### Báo cáo tổng quan (tab Báo cáo)
+Tổng hợp toàn bộ số liệu liên kết (API `GET /api/bao-cao`, `lib/report.js`, giao diện `public/report.js`), chọn phạm vi (tất cả / 1 dự án) và cơ sở VAT:
+- **I. Tổng quan**: Dự kiến / Thực hiện (Doanh thu, Chi phí, Lợi nhuận, tỷ suất), Dòng tiền & công nợ (Tiền về, Còn phải thu, Còn phải trả thầu phụ, trả nợ gốc).
+- **II. Biểu đồ**: DT–CP thực hiện lũy kế, dòng tiền thu/chi theo tháng, cơ cấu chi phí, lợi nhuận theo dự án (hoặc lãi gộp theo HĐ CĐT).
+- **III. Tổng hợp theo dự án**, **IV. Chi tiết từng dự án** (từng HĐ CĐT: HĐ+PL, nghiệm thu, % HT, tiền về, phải thu, thầu phụ, lãi gộp dự kiến; cơ cấu chi phí), **V. Cảnh báo**.
+- Xuất: **In / PDF** (A4 ngang, mỗi dự án 1 trang mới), **Excel** (9 sheet gồm toàn bộ dòng chi tiết), **PowerPoint** (bìa, tổng quan, biểu đồ gốc sửa được, bảng tổng hợp, từng dự án, cảnh báo).
+- Thư viện xuất nhúng sẵn tại `public/vendor` (SheetJS 0.18.5 – Apache 2.0, PptxGenJS 3.12.0 – MIT), chỉ tải khi bấm xuất.
+
 ### Dữ liệu mẫu & Tester
 - **Cài đặt → Dữ liệu mẫu** (Quản trị): tạo 5 dự án `DEMO-01…05` – mỗi dự án 5–10 HĐ chủ đầu tư (mới ký / đang thi công / đã quyết toán), mỗi HĐ 5–10 HĐ thầu phụ (tạm ứng / thanh toán đợt / quyết toán khóa sổ) và chi phí trực tiếp, gián tiếp, tài chính. Xóa toàn bộ bằng Passcode; dữ liệu thật không bị ảnh hưởng.
 - **Tester** đối chiếu độc lập toàn bộ số liệu (Doanh thu, Thầu phụ, Chi phí, Dashboard, biểu đồ):

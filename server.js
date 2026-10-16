@@ -7,6 +7,7 @@ const { TRANG_THAI, ROLES, validateProject, validateUser, validateSettings, vali
 const { buildContracts, summarizeContracts } = require('./lib/subcontract');
 const { KHOI_CHI_PHI, NHOM_CHI_PHI, summarizeCost, sortCost, costLine } = require('./lib/cost');
 const { summarizeProject } = require('./lib/dashboard');
+const { projectReport } = require('./lib/report');
 const { DEMO_PREFIX, seedDemo } = require('./lib/demo');
 const PHIEN_BAN = require('./lib/version').readVersion(); // đọc 1 lần khi khởi động
 const { LOAI_DOANH_THU, calcLine, summarize, sortRevenue, tienVeLabel, sortTienVe, summarizeTienVe } = require('./lib/revenue');
@@ -358,6 +359,22 @@ api.get('/dashboard', wrap(async (_req, res) => {
     };
   }));
   res.json({ du_an });
+}));
+
+// ---------- Báo cáo tổng quan (tab Báo cáo): toàn bộ số liệu liên kết + dòng chi tiết để xuất ----------
+api.get('/bao-cao', wrap(async (req, res) => {
+  const list = await store.listProjects();
+  const du_an = await Promise.all(list.map(async (p) => {
+    const [rev, tienVe, cost, tp] = await Promise.all([
+      store.listRevenue(p.id), store.listTienVe(p.id), store.listCost(p.id), store.listTp(p.id)]);
+    return projectReport(p, { rev: sortRevenue(rev).map(calcLine), tienVe: sortTienVe(tienVe), cost: sortCost(cost).map(costLine), tp: buildContracts(tp) });
+  }));
+  const s = await store.getSettings();
+  res.json({
+    lap_luc: new Date().toISOString(), nguoi_lap: req.user.full_name || req.user.username,
+    ten_cong_ty: s.ten_cong_ty, ten_he_thong: s.ten_he_thong, phien_ban: PHIEN_BAN.ma,
+    khoi: KHOI_CHI_PHI.map((k) => ({ code: k.code, ten: k.ten })), du_an,
+  });
 }));
 
 // ---------- Dữ liệu mẫu (tester) – chỉ Quản trị ----------

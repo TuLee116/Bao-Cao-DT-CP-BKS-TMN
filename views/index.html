@@ -23,6 +23,7 @@
       <button data-tab="projects" class="active">Dự án</button>
       <button data-tab="revenue">Doanh thu</button>
       <button data-tab="cost">Chi phí</button>
+      <button data-tab="report">Báo cáo</button>
       <button data-tab="users" data-role="admin">Tài khoản</button>
       <button data-tab="settings" data-role="admin">Cài đặt</button>
       <button data-tab="profile">Cá nhân</button>
@@ -77,7 +78,6 @@
           <div id="d-pie" class="chart"></div>
         </div>
       </div>
-      <div id="d-tip" class="chart-tip" hidden></div>
 
       <div class="card" data-role="admin editor">
         <h2 id="p-form-title">Thêm dự án</h2>
@@ -287,6 +287,27 @@
       </div>
     </section>
 
+    <!-- ================= BÁO CÁO ================= -->
+    <section id="tab-report" class="tab-panel" hidden>
+      <div class="card no-print">
+        <div class="toolbar b-toolbar">
+          <h2>Báo cáo tổng quan</h2>
+          <select id="b-project" class="project-select" aria-label="Phạm vi báo cáo"></select>
+          <div class="seg" id="b-vat" role="group" aria-label="Cơ sở VAT">
+            <button type="button" data-v="gt" class="on">Trước VAT</button><button type="button" data-v="sv">Sau VAT</button>
+          </div>
+          <div class="b-actions">
+            <button type="button" id="b-reload" title="Lấy lại số liệu mới nhất">Làm mới</button>
+            <button type="button" id="b-print">In / PDF</button>
+            <button type="button" id="b-xlsx">Excel</button>
+            <button type="button" id="b-pptx" class="primary">PowerPoint</button>
+          </div>
+        </div>
+        <div id="b-msg" class="msg" role="alert"></div>
+      </div>
+      <div id="b-report" class="report"></div>
+    </section>
+
     <!-- ================= LIÊN HỆ ================= -->
     <section id="tab-contact" class="tab-panel" hidden>
       <div class="card narrow">
@@ -331,7 +352,9 @@
 
   <footer class="site-foot">Produced by the Supervisory Board of Tan Minh Nhan Corporation®</footer>
 
+  <div id="d-tip" class="chart-tip" hidden></div>
   <script src="/common.js"></script>
   <script src="/app.js"></script>
+  <script src="/report.js"></script>
 </body>
 </html>

@@ -181,3 +181,44 @@ function attachAutocomplete(input, hiddenInput, getOptions) {
   });
   return { set: (id) => choose(getOptions().find((o) => o.id === Number(id)) || null), clear: () => choose(null) };
 }
+
+// ---------- Danh sách chọn nhanh (nhấp đúp hoặc phím ↓), vẫn cho gõ tự do ----------
+// getOptions() -> [{ value, label, sub }]; onPick(option) khi chọn
+function attachQuickPicker(input, getOptions, onPick, emptyText = 'Chưa có dữ liệu') {
+  const wrap = document.createElement('div');
+  wrap.className = 'ac';
+  input.parentNode.insertBefore(wrap, input);
+  wrap.appendChild(input);
+  const list = document.createElement('ul');
+  list.className = 'ac-list';
+  list.hidden = true;
+  wrap.appendChild(list);
+  let items = [];
+  let active = 0;
+  const open = () => {
+    items = getOptions();
+    active = 0;
+    list.innerHTML = items.length
+      ? items.map((o, i) => `<li data-i="${i}" class="${i === 0 ? 'active' : ''}"><b>${esc(o.label)}</b>${o.sub ? `<span>${esc(o.sub)}</span>` : ''}</li>`).join('')
+      : `<li class="ac-empty">${esc(emptyText)}</li>`;
+    list.hidden = false;
+  };
+  const close = () => { list.hidden = true; };
+  const pick = (o) => { close(); if (o) onPick(o); };
+  const highlight = () => $$('li[data-i]', list).forEach((li) => li.classList.toggle('active', Number(li.dataset.i) === active));
+  input.addEventListener('dblclick', (e) => { e.preventDefault(); open(); });
+  input.addEventListener('keydown', (e) => {
+    if (list.hidden) { if (e.key === 'ArrowDown') { e.preventDefault(); open(); } return; }
+    if (e.key === 'ArrowDown') { e.preventDefault(); active = Math.min(items.length - 1, active + 1); highlight(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); active = Math.max(0, active - 1); highlight(); }
+    else if (e.key === 'Enter') { e.preventDefault(); pick(items[active]); }
+    else if (e.key === 'Escape') close();
+  });
+  input.addEventListener('input', close);
+  input.addEventListener('blur', close);
+  list.addEventListener('mousedown', (e) => {
+    const li = e.target.closest('li[data-i]');
+    if (li) { e.preventDefault(); pick(items[Number(li.dataset.i)]); }
+  });
+  return { open, close };
+}

@@ -199,7 +199,7 @@ function buildRevenueSections() {
         <input type="hidden" name="id">
         ${loai === 'hd' ? `
         <label>Loại *<select name="ma_loai"></select></label>
-        <label>Số mã HĐ *<input name="so_ma" maxlength="120" placeholder="VD: ABC-123, 01/2026/HĐXD-TMN"><span class="calc-note so-preview"></span></label>` : `
+        <label>Số mã HĐ *<input name="so_ma" maxlength="120" placeholder="Số mới: gõ · Số đã có: nhấp đúp" title="Số HĐ mới: gõ trực tiếp. Số HĐ đã có: nhấp đúp (hoặc phím ↓) để chọn, hệ thống tự chọn PL kế tiếp"><span class="calc-note so-preview"></span></label>` : `
         <label>${L.so}<input name="so_hieu" required maxlength="150" placeholder="${L.soPh}"></label>`}
         ${loai === 'qt' ? `<label>Số HĐ *<input name="hd_ref" placeholder="Gõ để tìm Số HĐ ở mục 1"><input type="hidden" name="hd_id"></label>` : ''}
         <label>Ngày<input name="ngay" class="date-dmy"></label>
@@ -232,8 +232,9 @@ function buildRevenueSections() {
     attachDateInput(f.elements.ngay);
     if (f.elements.hd_ref) f._hdAc = attachAutocomplete(f.elements.hd_ref, f.elements.hd_id, hdOptions);
     if (f.elements.ma_loai) {
-      f.elements.ma_loai.addEventListener('change', () => { autoFillSoMa(f); updateSoPreview(f); });
-      f.elements.so_ma.addEventListener('input', () => updateSoPreview(f));
+      attachQuickPicker(f.elements.so_ma, soMaOptions, (o) => pickExistingSoMa(f, o.value), 'Chưa có số HĐ nào – hãy gõ số mới');
+      f.elements.ma_loai.addEventListener('change', () => { f._manualLoai = true; fillMaLoaiOptions(f); updateSoPreview(f); });
+      f.elements.so_ma.addEventListener('input', () => syncMaLoai(f));
     }
     const update = () => updateRevPreview(f);
     f.elements.gia_tri.addEventListener('input', update);
@@ -242,6 +243,17 @@ function buildRevenueSections() {
     $('.rev-cancel', f).addEventListener('click', () => resetRevForm(f));
   });
   wrap.addEventListener('click', onRevTableClick);
+  // Nhấp đúp vào Số mã trong bảng mục 1 -> điền sẵn form với PL kế tiếp
+  wrap.addEventListener('dblclick', (e) => {
+    const el = e.target.closest('.so-ma-pick');
+    const f = $('.rev-form[data-loai="hd"]');
+    if (!el || !f) return;
+    window.getSelection?.().removeAllRanges();
+    resetRevForm(f);
+    pickExistingSoMa(f, el.dataset.soma);
+    showMsg($('.msg', f), `Thêm ${f.elements.ma_loai.value} cho ${el.dataset.soma} – nhập giá trị rồi bấm Thêm dòng`);
+    f.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
   bindTienVe();
 }
 
@@ -279,28 +291,51 @@ function hdOptions() {
   });
 }
 
-// Ô chọn Loại: HĐ, PL01, PL02... (luôn dư vài PL so với số đang có)
+// Ô chọn Loại: HĐ, PL01, PL02...; "(đã có)" tính theo Số mã đang nhập
 function hdRows() { return (revData?.items || []).filter((r) => r.loai === 'hd'); }
 function fillMaLoaiOptions(f, keep) {
-  const maxPl = Math.max(0, ...hdRows().map((r) => (r.ma_loai || '').startsWith('PL') ? Number(r.ma_loai.slice(2)) : 0),
-    keep && keep.startsWith('PL') ? Number(keep.slice(2)) : 0);
-  const n = Math.max(10, maxPl + 5);
-  const used = new Set(hdRows().map((r) => r.ma_loai));
+  const cur = keep ?? f.elements.ma_loai.value;
+  const so = normVn(f.elements.so_ma.value);
+  const same = so ? hdRows().filter((r) => normVn(r.so_ma) === so && r.id !== Number(f.elements.id.value)) : [];
+  const plNum = (l) => (String(l || '').startsWith('PL') ? Number(l.slice(2)) : 0);
+  const n = Math.max(10, Math.max(0, ...same.map((r) => plNum(r.ma_loai)), plNum(cur)) + 5);
+  const used = new Set(same.map((r) => r.ma_loai));
   const opts = ['HĐ', ...Array.from({ length: n }, (_, i) => 'PL' + String(i + 1).padStart(2, '0'))];
-  f.elements.ma_loai.innerHTML = opts.map((o) => `<option value="${o}">${o}${used.has(o) && o !== keep ? ' (đã có)' : ''}</option>`).join('');
+  f.elements.ma_loai.innerHTML = opts.map((o) => `<option value="${o}">${o}${used.has(o) ? ' (đã có)' : ''}</option>`).join('');
+  if (cur) f.elements.ma_loai.value = cur;
 }
-// Mặc định: chưa có HĐ -> HĐ; đã có -> PL kế tiếp
-function nextMaLoai() {
-  const rows = hdRows();
+// Loại tự theo Số mã: số mới -> HĐ; số đã có -> PL kế tiếp (trừ khi người dùng đã tự chọn Loại)
+function syncMaLoai(f) {
+  if (f.elements.id.value) return updateSoPreview(f);
+  const so = f.elements.so_ma.value.trim();
+  const auto = so ? nextPlFor(so) : 'HĐ';
+  fillMaLoaiOptions(f, f._manualLoai ? f.elements.ma_loai.value : auto);
+  updateSoPreview(f);
+}
+// Danh sách Số mã HĐ đã có (để nhấp đúp chọn lại, tránh gõ sai)
+function soMaOptions() {
+  return hdGroups(hdRows()).map((g) => {
+    const tong = [g.head, ...g.pls].filter(Boolean).reduce((s, r) => s + r.sau_vat, 0);
+    const pls = g.pls.map((r) => r.ma_loai).join(', ');
+    return {
+      value: g.so_ma,
+      label: g.so_ma,
+      sub: `${g.head ? 'Có HĐ' : 'Chưa có HĐ gốc'}${pls ? ' · ' + pls : ''} · Tổng ${money(tong)} đ sau VAT · Tiếp theo: ${nextPlFor(g.so_ma)}`,
+    };
+  });
+}
+// PL kế tiếp của một Số mã: chưa có HĐ gốc -> HĐ; có rồi -> PL lớn nhất + 1
+function nextPlFor(soMa) {
+  const rows = hdRows().filter((r) => normVn(r.so_ma) === normVn(soMa));
   if (!rows.some((r) => r.ma_loai === 'HĐ')) return 'HĐ';
   const maxPl = Math.max(0, ...rows.map((r) => (r.ma_loai || '').startsWith('PL') ? Number(r.ma_loai.slice(2)) : 0));
   return 'PL' + String(maxPl + 1).padStart(2, '0');
 }
-// Chọn PL mà chưa nhập Số mã -> lấy Số mã của HĐ chính
-function autoFillSoMa(f) {
-  if (f.elements.so_ma.value.trim() || !f.elements.ma_loai.value.startsWith('PL')) return;
-  const hd = hdRows().find((r) => r.ma_loai === 'HĐ');
-  if (hd) f.elements.so_ma.value = hd.so_ma;
+function pickExistingSoMa(f, soMa) {
+  f._manualLoai = false;
+  f.elements.so_ma.value = soMa;
+  syncMaLoai(f);
+  f.elements.gia_tri.focus({ preventScroll: true });
 }
 function updateSoPreview(f) {
   const so = f.elements.so_ma.value.trim();
@@ -312,10 +347,8 @@ function resetRevForm(f) {
   f.elements.id.value = '';
   if (f._hdAc) f._hdAc.clear();
   if (f.elements.ma_loai) {
-    fillMaLoaiOptions(f);
-    f.elements.ma_loai.value = nextMaLoai();
-    autoFillSoMa(f);
-    updateSoPreview(f);
+    f._manualLoai = false;
+    syncMaLoai(f);
   }
   $('button[type=submit]', f).textContent = 'Thêm dòng';
   showMsg($('.msg', f), '');
@@ -358,14 +391,7 @@ async function loadRevenue() {
   renderRevenue();
   // Cập nhật ô chọn Loại theo dữ liệu mới, không xóa nội dung đang nhập
   const fHd = $('.rev-form[data-loai="hd"]');
-  if (fHd && !fHd.elements.id.value) {
-    const typing = fHd.elements.so_ma.value.trim();
-    const cur = fHd.elements.ma_loai.value;
-    fillMaLoaiOptions(fHd);
-    fHd.elements.ma_loai.value = typing && cur ? cur : nextMaLoai();
-    autoFillSoMa(fHd);
-    updateSoPreview(fHd);
-  }
+  if (fHd && !fHd.elements.id.value) syncMaLoai(fHd);
 }
 
 function renderRevenue() {
@@ -435,7 +461,7 @@ function hdRowHtml(r, stt, { child = false, head = false, toggle = '' } = {}) {
   return `
     <tr class="${child ? 'hd-child' : 'hd-head'}" ${child ? `data-grp-child="${esc(hdKey(r))}"` : ''}>
       <td class="num muted">${stt}</td>
-      <td class="${child ? 'indent' : ''}">${toggle}${child ? '<span class="tree">└</span>' : ''}<span class="kind-tag ${r.ma_loai === 'HĐ' ? 'kind-hd' : ''}">${esc(r.ma_loai || '')}</span> <b>${esc(r.so_ma || r.so_hieu)}</b></td>
+      <td class="${child ? 'indent' : ''}">${toggle}${child ? '<span class="tree">└</span>' : ''}<span class="kind-tag ${r.ma_loai === 'HĐ' ? 'kind-hd' : ''}">${esc(r.ma_loai || '')}</span> ${canEdit() ? `<b class="so-ma-pick" data-soma="${esc(r.so_ma || '')}" title="Nhấp đúp để thêm phụ lục cho ${esc(r.so_ma || '')}">${esc(r.so_ma || r.so_hieu)}</b>` : `<b>${esc(r.so_ma || r.so_hieu)}</b>`}</td>
       <td>${dmy(r.ngay)}</td>
       <td class="num">${money(r.gia_tri)}</td>
       <td class="num">${vatBadge(r.vat)}</td>
@@ -457,7 +483,7 @@ function hdGroupsHtml(rows) {
       : '<span class="grp-toggle-sp"></span>';
     let html = '';
     if (g.head) html += hdRowHtml(g.head, n, { toggle });
-    else html += `<tr class="hd-head hd-orphan"><td class="num muted">${n}</td><td colspan="${canEdit() ? 9 : 8}">${toggle}<b>${esc(g.so_ma)}</b> <span class="st st-tam-tinh">Chưa có HĐ gốc</span></td></tr>`;
+    else html += `<tr class="hd-head hd-orphan"><td class="num muted">${n}</td><td colspan="${canEdit() ? 9 : 8}">${toggle}${canEdit() ? `<b class="so-ma-pick" data-soma="${esc(g.so_ma)}" title="Nhấp đúp để thêm dòng cho ${esc(g.so_ma)}">${esc(g.so_ma)}</b>` : `<b>${esc(g.so_ma)}</b>`} <span class="st st-tam-tinh">Chưa có HĐ gốc</span></td></tr>`;
     if (!closed) g.pls.forEach((r, i) => { html += hdRowHtml(r, `${n}.${i + 1}`, { child: true }); });
     if (g.pls.length) {
       const sum = (f) => members.reduce((s, r) => s + r[f], 0);
@@ -517,9 +543,9 @@ async function onRevTableClick(e) {
     const f = $(`.rev-form[data-loai="${r.loai}"]`);
     f.elements.id.value = r.id;
     if (f.elements.ma_loai) {
-      fillMaLoaiOptions(f, r.ma_loai);
-      f.elements.ma_loai.value = r.ma_loai;
+      f._manualLoai = true;
       f.elements.so_ma.value = r.so_ma || '';
+      fillMaLoaiOptions(f, r.ma_loai);
       updateSoPreview(f);
     } else {
       f.elements.so_hieu.value = r.so_hieu;

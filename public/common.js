@@ -120,3 +120,64 @@ function attachDateInput(input) {
     input.classList.toggle('invalid', dmyToIso(input.value) === null);
   });
 }
+
+// ---------- Ô tìm kiếm có gợi ý (chọn từ danh sách) ----------
+// getOptions() -> [{ id, label, sub }]; ô ẩn hiddenInput lưu id đã chọn
+const normVn = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/gi, 'd').toLowerCase().replace(/\s+/g, ' ').trim();
+
+function attachAutocomplete(input, hiddenInput, getOptions) {
+  const wrap = document.createElement('div');
+  wrap.className = 'ac';
+  input.parentNode.insertBefore(wrap, input);
+  wrap.appendChild(input);
+  const list = document.createElement('ul');
+  list.className = 'ac-list';
+  list.hidden = true;
+  wrap.appendChild(list);
+  input.setAttribute('autocomplete', 'off');
+  input.setAttribute('role', 'combobox');
+  let items = [];
+  let active = -1;
+
+  const choose = (opt) => {
+    input.value = opt ? opt.label : '';
+    hiddenInput.value = opt ? opt.id : '';
+    input.classList.toggle('ac-ok', Boolean(opt));
+    input.classList.remove('invalid');
+    list.hidden = true;
+  };
+  const render = () => {
+    const q = normVn(input.value);
+    const all = getOptions();
+    items = all.filter((o) => !q || normVn(o.label + ' ' + (o.sub || '')).includes(q)).slice(0, 50);
+    active = items.length ? 0 : -1;
+    list.innerHTML = items.length
+      ? items.map((o, i) => `<li data-i="${i}" class="${i === active ? 'active' : ''}"><b>${esc(o.label)}</b>${o.sub ? `<span>${esc(o.sub)}</span>` : ''}</li>`).join('')
+      : `<li class="ac-empty">${all.length ? 'Không tìm thấy' : 'Chưa có Số HĐ/PL nào ở mục 1'}</li>`;
+    list.hidden = false;
+  };
+  const highlight = () => $$('li[data-i]', list).forEach((li) => li.classList.toggle('active', Number(li.dataset.i) === active));
+
+  input.addEventListener('focus', render);
+  input.addEventListener('input', () => { hiddenInput.value = ''; input.classList.remove('ac-ok'); render(); });
+  input.addEventListener('keydown', (e) => {
+    if (list.hidden) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); active = Math.min(items.length - 1, active + 1); highlight(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); active = Math.max(0, active - 1); highlight(); }
+    else if (e.key === 'Enter') { if (active >= 0) { e.preventDefault(); choose(items[active]); } }
+    else if (e.key === 'Escape') { list.hidden = true; }
+  });
+  list.addEventListener('mousedown', (e) => {
+    const li = e.target.closest('li[data-i]');
+    if (li) { e.preventDefault(); choose(items[Number(li.dataset.i)]); }
+  });
+  input.addEventListener('blur', () => {
+    list.hidden = true;
+    if (hiddenInput.value) return;
+    // Gõ đúng nguyên văn một số HĐ/PL thì tự chọn
+    const exact = getOptions().filter((o) => normVn(o.label) === normVn(input.value));
+    if (exact.length === 1) choose(exact[0]);
+    else if (input.value.trim()) input.classList.add('invalid');
+  });
+  return { set: (id) => choose(getOptions().find((o) => o.id === Number(id)) || null), clear: () => choose(null) };
+}

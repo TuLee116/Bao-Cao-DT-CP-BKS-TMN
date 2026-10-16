@@ -181,6 +181,18 @@ tr.tv-dirty td { background: #f0fdfa; }
 .tv-tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
 .tv-tools .spacer { flex: 1; }
 button.sm { padding: 5px 10px; font-size: 12px; }
+/* Ô tìm kiếm có gợi ý */
+.ac { position: relative; }
+.ac-list { position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 4px); max-height: 260px; overflow-y: auto; margin: 0; padding: 4px; list-style: none; background: #fff; border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 12px 30px rgba(19,38,74,.18); }
+.ac-list li { padding: 8px 10px; border-radius: 8px; cursor: pointer; display: flex; flex-direction: column; gap: 2px; color: var(--text); font-size: 13px; text-transform: none; letter-spacing: 0; }
+.ac-list li span { font-size: 11px; font-weight: 500; color: var(--muted); }
+.ac-list li.active, .ac-list li:hover { background: #e9f7f5; }
+.ac-list li.ac-empty { cursor: default; color: var(--muted); font-style: italic; }
+input.ac-ok { border-color: var(--teal); background: #f0fdfa; }
+.kind-tag { display: inline-block; min-width: 42px; text-align: center; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; color: #0b7a7a; background: #d6f4f1; }
+.kind-tag.kind-hd { color: #fff; background: var(--grad-btn); }
+.so-preview { color: var(--teal); font-weight: 600; }
+.hd-tag { color: var(--navy); background: #e8eefc; white-space: nowrap; }
 input.invalid { border-color: var(--danger); background: #fff5f5; }
 tfoot td { font-weight: 700; color: var(--navy); background: #eef4fb; border-top: 2px solid #c9d8ee; border-bottom: 0; }
 

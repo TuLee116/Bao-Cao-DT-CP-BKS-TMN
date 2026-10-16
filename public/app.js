@@ -197,11 +197,15 @@ function buildRevenueSections() {
       ${canEdit() ? `
       <form class="grid-form rev-form" data-loai="${loai}" novalidate>
         <input type="hidden" name="id">
-        <label>${L.so}<input name="so_hieu" required maxlength="150" placeholder="${L.soPh}"></label>
+        ${loai === 'hd' ? `
+        <label>Loại *<select name="ma_loai"></select></label>
+        <label>Số mã HĐ *<input name="so_ma" maxlength="120" placeholder="VD: ABC-123, 01/2026/HĐXD-TMN"><span class="calc-note so-preview"></span></label>` : `
+        <label>${L.so}<input name="so_hieu" required maxlength="150" placeholder="${L.soPh}"></label>`}
+        ${loai === 'qt' ? `<label>Số HĐ/PL *<input name="hd_ref" placeholder="Gõ để tìm Số HĐ/PL ở mục 1"><input type="hidden" name="hd_id"></label>` : ''}
         <label>Ngày<input name="ngay" class="date-dmy"></label>
         <label>Giá trị ${L.short} (trước VAT) *<input name="gia_tri" class="money" required placeholder="0"></label>
         <label>VAT (%)<input name="vat" type="number" min="0" max="100" step="1" placeholder="0 = chưa có VAT"></label>
-        <label>Giá trị ${L.short} (sau VAT)<output class="calc" name="sau_vat">0</output><span class="calc-note"></span></label>
+        <label>Giá trị ${L.short} (sau VAT)<output class="calc" name="sau_vat">0</output><span class="calc-note vat-note"></span></label>
         <label class="span-2">Ghi chú<input name="ghi_chu" maxlength="500"></label>
         <div class="actions">
           <button type="submit" class="primary">Thêm dòng</button>
@@ -212,7 +216,7 @@ function buildRevenueSections() {
       <div class="table-wrap">
         <table class="rev-table">
           <thead><tr>
-            <th class="num">#</th><th>${L.short === 'HĐ/PL' ? 'Số HĐ / Phụ lục' : 'Đợt / Hồ sơ'}</th><th>Ngày</th>
+            <th class="num">#</th><th>${loai === 'hd' ? 'Số HĐ / Phụ lục' : 'Đợt / Hồ sơ'}</th>${loai === 'qt' ? '<th>Số HĐ/PL</th>' : ''}<th>Ngày</th>
             <th class="num">Trước VAT</th><th class="num">VAT</th><th class="num">Tiền VAT</th>
             <th class="num">Sau VAT</th><th>Ghi chú</th><th>Người cập nhật</th>${canEdit() ? '<th></th>' : ''}
           </tr></thead>
@@ -226,6 +230,11 @@ function buildRevenueSections() {
   $$('.rev-form', wrap).forEach((f) => {
     attachMoneyInput(f.elements.gia_tri);
     attachDateInput(f.elements.ngay);
+    if (f.elements.hd_ref) f._hdAc = attachAutocomplete(f.elements.hd_ref, f.elements.hd_id, hdOptions);
+    if (f.elements.ma_loai) {
+      f.elements.ma_loai.addEventListener('change', () => { autoFillSoMa(f); updateSoPreview(f); });
+      f.elements.so_ma.addEventListener('input', () => updateSoPreview(f));
+    }
     const update = () => updateRevPreview(f);
     f.elements.gia_tri.addEventListener('input', update);
     f.elements.vat.addEventListener('input', update);
@@ -243,22 +252,66 @@ function updateRevPreview(f) {
   const vatStr = f.elements.vat.value.trim();
   const vat = vatStr === '' ? 0 : Number(vatStr);
   const out = f.elements.sau_vat;
-  const note = $('.calc-note', f);
+  const note = $('.vat-note', f);
   if (!Number.isInteger(vat) || vat < 0 || vat > 100) {
     out.value = '—';
     note.textContent = 'VAT phải là số nguyên 0–100';
-    note.className = 'calc-note err';
+    note.className = 'calc-note vat-note err';
     return;
   }
   const tv = calcVat(gt, vat);
   out.value = money(gt + tv);
   note.textContent = vat ? `Tiền VAT: ${money(tv)}` : 'Tạm tính (chưa có VAT)';
-  note.className = 'calc-note' + (vat ? '' : ' warn');
+  note.className = 'calc-note vat-note' + (vat ? '' : ' warn');
+}
+
+// Danh sách gợi ý Số HĐ/PL = các dòng ở mục 1 của công trình đang chọn
+function hdOptions() {
+  return (revData?.items || []).filter((r) => r.loai === 'hd').map((r) => ({
+    id: r.id,
+    label: r.so_hieu,
+    sub: `${money(r.sau_vat)} đ sau VAT${r.ngay ? ' · ' + dmy(r.ngay) : ''}`,
+  }));
+}
+
+// Ô chọn Loại: HĐ, PL01, PL02... (luôn dư vài PL so với số đang có)
+function hdRows() { return (revData?.items || []).filter((r) => r.loai === 'hd'); }
+function fillMaLoaiOptions(f, keep) {
+  const maxPl = Math.max(0, ...hdRows().map((r) => (r.ma_loai || '').startsWith('PL') ? Number(r.ma_loai.slice(2)) : 0),
+    keep && keep.startsWith('PL') ? Number(keep.slice(2)) : 0);
+  const n = Math.max(10, maxPl + 5);
+  const used = new Set(hdRows().map((r) => r.ma_loai));
+  const opts = ['HĐ', ...Array.from({ length: n }, (_, i) => 'PL' + String(i + 1).padStart(2, '0'))];
+  f.elements.ma_loai.innerHTML = opts.map((o) => `<option value="${o}">${o}${used.has(o) && o !== keep ? ' (đã có)' : ''}</option>`).join('');
+}
+// Mặc định: chưa có HĐ -> HĐ; đã có -> PL kế tiếp
+function nextMaLoai() {
+  const rows = hdRows();
+  if (!rows.some((r) => r.ma_loai === 'HĐ')) return 'HĐ';
+  const maxPl = Math.max(0, ...rows.map((r) => (r.ma_loai || '').startsWith('PL') ? Number(r.ma_loai.slice(2)) : 0));
+  return 'PL' + String(maxPl + 1).padStart(2, '0');
+}
+// Chọn PL mà chưa nhập Số mã -> lấy Số mã của HĐ chính
+function autoFillSoMa(f) {
+  if (f.elements.so_ma.value.trim() || !f.elements.ma_loai.value.startsWith('PL')) return;
+  const hd = hdRows().find((r) => r.ma_loai === 'HĐ');
+  if (hd) f.elements.so_ma.value = hd.so_ma;
+}
+function updateSoPreview(f) {
+  const so = f.elements.so_ma.value.trim();
+  $('.so-preview', f).textContent = so ? `Hiển thị: ${f.elements.ma_loai.value} ${so}` : '';
 }
 
 function resetRevForm(f) {
   f.reset();
   f.elements.id.value = '';
+  if (f._hdAc) f._hdAc.clear();
+  if (f.elements.ma_loai) {
+    fillMaLoaiOptions(f);
+    f.elements.ma_loai.value = nextMaLoai();
+    autoFillSoMa(f);
+    updateSoPreview(f);
+  }
   $('button[type=submit]', f).textContent = 'Thêm dòng';
   showMsg($('.msg', f), '');
   updateRevPreview(f);
@@ -298,6 +351,16 @@ async function loadRevenue() {
   $('#r-project-info').innerHTML = `Mã: <b>${esc(p.ma_du_an)}</b> · Chủ đầu tư: <b>${esc(p.chu_dau_tu || '—')}</b>`;
   $('#r-body').hidden = false;
   renderRevenue();
+  // Cập nhật ô chọn Loại theo dữ liệu mới, không xóa nội dung đang nhập
+  const fHd = $('.rev-form[data-loai="hd"]');
+  if (fHd && !fHd.elements.id.value) {
+    const typing = fHd.elements.so_ma.value.trim();
+    const cur = fHd.elements.ma_loai.value;
+    fillMaLoaiOptions(fHd);
+    fHd.elements.ma_loai.value = typing && cur ? cur : nextMaLoai();
+    autoFillSoMa(fHd);
+    updateSoPreview(fHd);
+  }
 }
 
 function renderRevenue() {
@@ -311,14 +374,15 @@ function renderRevenue() {
   $('#r-k-tv').textContent = money(tv.tong);
   $('#r-k-tv-sub').textContent = `Tạm ứng ${money(tv.tam_ung)} · Thanh toán ${money(tv.thanh_toan)} · Quyết toán ${money(tv.quyet_toan)}`;
 
-  const cols = canEdit() ? 10 : 9;
   for (const loai of Object.keys(REV_LABEL)) {
+    const cols = (canEdit() ? 10 : 9) + (loai === 'qt' ? 1 : 0);
     const card = $(`.rev-card[data-loai="${loai}"]`);
     const rows = items.filter((r) => r.loai === loai);
     $('tbody', card).innerHTML = rows.length ? rows.map((r, i) => `
       <tr>
         <td class="num muted">${i + 1}</td>
-        <td><b>${esc(r.so_hieu)}</b></td>
+        <td>${r.loai === 'hd' && r.ma_loai ? `<span class="kind-tag ${r.ma_loai === 'HĐ' ? 'kind-hd' : ''}">${esc(r.ma_loai)}</span> <b>${esc(r.so_ma)}</b>` : `<b>${esc(r.so_hieu)}</b>`}</td>
+        ${loai === 'qt' ? `<td>${r.hd_so_hieu ? `<span class="st hd-tag">${esc(r.hd_so_hieu)}</span>` : '<span class="muted">—</span>'}</td>` : ''}
         <td>${dmy(r.ngay)}</td>
         <td class="num">${money(r.gia_tri)}</td>
         <td class="num">${vatBadge(r.vat)}</td>
@@ -331,7 +395,7 @@ function renderRevenue() {
     const t = tong[loai];
     $('tfoot', card).innerHTML = `
       <tr>
-        <td></td><td colspan="2">TỔNG ${REV_LABEL[loai].short}${t.tam_tinh ? ' <span class="st st-tam-tinh">Có tạm tính</span>' : ''}</td>
+        <td></td><td colspan="${loai === 'qt' ? 3 : 2}">TỔNG ${REV_LABEL[loai].short}${t.tam_tinh ? ' <span class="st st-tam-tinh">Có tạm tính</span>' : ''}</td>
         <td class="num">${money(t.gia_tri)}</td><td></td>
         <td class="num">${money(t.tien_vat)}</td>
         <td class="num">${money(t.sau_vat)}</td>
@@ -348,12 +412,18 @@ async function saveRevenue(f) {
   if (ngay === null) return showMsg(msgEl, 'Ngày không hợp lệ, nhập theo dạng dd/mm/yyyy', 'err');
   const body = {
     loai: f.dataset.loai,
-    so_hieu: f.elements.so_hieu.value,
+    ...(f.elements.ma_loai
+      ? { ma_loai: f.elements.ma_loai.value, so_ma: f.elements.so_ma.value }
+      : { so_hieu: f.elements.so_hieu.value }),
     ngay,
     gia_tri: parseMoney(f.elements.gia_tri.value),
     vat: f.elements.vat.value,
     ghi_chu: f.elements.ghi_chu.value,
   };
+  if (f.elements.hd_id) {
+    if (!f.elements.hd_id.value) return showMsg(msgEl, 'Chọn Số HĐ/PL từ danh sách gợi ý (nhập ở mục 1 trước nếu chưa có)', 'err');
+    body.hd_id = f.elements.hd_id.value;
+  }
   try {
     await api(id ? `/api/doanh-thu/${id}` : `/api/du-an/${revProjectId}/doanh-thu`,
       { method: id ? 'PUT' : 'POST', body: JSON.stringify(body) });
@@ -371,11 +441,19 @@ async function onRevTableClick(e) {
     const r = revData.items.find((x) => x.id === Number(redit));
     const f = $(`.rev-form[data-loai="${r.loai}"]`);
     f.elements.id.value = r.id;
-    f.elements.so_hieu.value = r.so_hieu;
+    if (f.elements.ma_loai) {
+      fillMaLoaiOptions(f, r.ma_loai);
+      f.elements.ma_loai.value = r.ma_loai;
+      f.elements.so_ma.value = r.so_ma || '';
+      updateSoPreview(f);
+    } else {
+      f.elements.so_hieu.value = r.so_hieu;
+    }
     f.elements.ngay.value = isoToDmy(r.ngay);
     f.elements.gia_tri.value = money(r.gia_tri);
     f.elements.vat.value = r.vat;
     f.elements.ghi_chu.value = r.ghi_chu || '';
+    if (f._hdAc) f._hdAc.set(r.hd_id);
     $('button[type=submit]', f).textContent = 'Lưu thay đổi';
     showMsg($('.msg', f), 'Đang sửa: ' + r.so_hieu);
     updateRevPreview(f);

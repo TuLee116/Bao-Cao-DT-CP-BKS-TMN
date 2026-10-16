@@ -21,6 +21,12 @@ Web quản lý dự án xây dựng có đăng nhập, phân quyền, khởi t�
 - **VAT = 0%** (hoặc để trống) → chưa có VAT: Giá trị sau VAT = Giá trị trước VAT, đánh dấu **Tạm tính**
 - Cho phép giá trị âm (phụ lục giảm). Tính bằng số nguyên chính xác, không sai lệch làm tròn số thực.
 
+### Liên kết HĐ/PL
+- Mục 1: chọn **Loại** (HĐ, PL01, PL02...) + nhập **Số mã HĐ** → hiển thị "HĐ ABC-123", "PL01 ABC-123". Không trùng trong cùng công trình. Chọn PL khi chưa nhập Số mã sẽ tự lấy Số mã của HĐ.
+- Mục 2: mỗi dòng HT/QT bắt buộc chọn **Số HĐ/PL** từ ô tìm kiếm có gợi ý (lấy từ mục 1 của cùng công trình).
+- Không xóa được HĐ/PL đang được dòng HT/QT tham chiếu.
+- Dữ liệu cũ dạng "HĐ ABC-123" tự tách thành Loại + Số mã khi máy chủ khởi động.
+
 ### Phân quyền
 | Quyền | Xem dự án | Thêm/sửa/xóa dự án | Quản lý tài khoản & cài đặt |
 |---|:-:|:-:|:-:|

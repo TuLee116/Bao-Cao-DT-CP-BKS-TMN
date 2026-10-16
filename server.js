@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const store = require('./lib/db');
 const auth = require('./lib/auth');
 const { TRANG_THAI, ROLES, validateProject, validateUser, validateSettings, validateRevenue, validateTienVe, passwordErrors } = require('./lib/validate');
-const { LOAI_DOANH_THU, calcLine, summarize, tienVeLabel, sortTienVe, summarizeTienVe } = require('./lib/revenue');
+const { LOAI_DOANH_THU, calcLine, summarize, sortRevenue, tienVeLabel, sortTienVe, summarizeTienVe } = require('./lib/revenue');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -253,7 +253,7 @@ api.get('/du-an/:id/doanh-thu', wrap(async (req, res) => {
   if (!id) return bad(res, 'ID không hợp lệ');
   const du_an = await store.getProject(id);
   if (!du_an) return bad(res, 'Không tìm thấy công trình', 404);
-  const items = (await store.listRevenue(id)).map(calcLine);
+  const items = sortRevenue(await store.listRevenue(id)).map(calcLine);
   const tien_ve = sortTienVe(await store.listTienVe(id)).map((r) => ({ ...r, nhan: tienVeLabel(r) }));
   res.json({ du_an, items, tong: summarize(items), tien_ve, tong_tien_ve: summarizeTienVe(tien_ve) });
 }));
@@ -290,14 +290,33 @@ api.post('/du-an/:id/doanh-thu', canEdit, wrap(async (req, res) => {
   if (!(await store.getProject(id))) return bad(res, 'Không tìm thấy công trình', 404);
   const { data, errors } = validateRevenue(req.body || {});
   if (errors.length) return bad(res, errors);
+  const refErr = await checkHdRef(data, id);
+  if (refErr) return bad(res, refErr);
   res.status(201).json(await store.createRevenue(id, data, req.user.id));
 }));
+
+// Mục 1: không trùng tên "HĐ/PL + Số mã" trong cùng công trình
+// Mục 2: dòng HT/QT phải tham chiếu 1 dòng HĐ/PL của cùng công trình
+async function checkHdRef(data, duAnId, selfId = 0) {
+  if (data.loai === 'hd') {
+    const dup = (await store.listRevenue(duAnId)).some((r) =>
+      r.loai === 'hd' && r.id !== selfId && String(r.so_hieu).toLowerCase() === data.so_hieu.toLowerCase());
+    return dup ? `"${data.so_hieu}" đã có trong công trình này` : null;
+  }
+  const hd = await store.getRevenue(data.hd_id);
+  return hd && hd.loai === 'hd' && hd.du_an_id === duAnId ? null : 'Số HĐ/PL không thuộc công trình này, hãy chọn lại từ danh sách gợi ý';
+}
 
 api.put('/doanh-thu/:id', canEdit, wrap(async (req, res) => {
   const id = parseId(req.params.id);
   if (!id) return bad(res, 'ID không hợp lệ');
-  const { data, errors } = validateRevenue(req.body || {});
+  const cur = await store.getRevenue(id);
+  if (!cur) return bad(res, 'Không tìm thấy dòng doanh thu', 404);
+  // Không cho đổi loại dòng (HĐ/PL ↔ HT/QT) khi sửa
+  const { data, errors } = validateRevenue({ ...(req.body || {}), loai: cur.loai });
   if (errors.length) return bad(res, errors);
+  const refErr = await checkHdRef(data, cur.du_an_id, id);
+  if (refErr) return bad(res, refErr);
   const ok = await store.updateRevenue(id, data, req.user.id);
   ok ? res.json({ id }) : bad(res, 'Không tìm thấy dòng doanh thu', 404);
 }));
@@ -305,6 +324,12 @@ api.put('/doanh-thu/:id', canEdit, wrap(async (req, res) => {
 api.delete('/doanh-thu/:id', canEdit, wrap(async (req, res) => {
   const id = parseId(req.params.id);
   if (!id) return bad(res, 'ID không hợp lệ');
+  const cur = await store.getRevenue(id);
+  if (!cur) return bad(res, 'Không tìm thấy dòng doanh thu', 404);
+  if (cur.loai === 'hd') {
+    const n = await store.countRevenueRefs(id);
+    if (n) return bad(res, `Không xóa được "${cur.so_hieu}": đang được ${n} dòng Hoàn thành/Quyết toán tham chiếu. Hãy đổi Số HĐ/PL của các dòng đó trước.`, 409);
+  }
   const ok = await store.deleteRevenue(id);
   ok ? res.status(204).end() : bad(res, 'Không tìm thấy dòng doanh thu', 404);
 }));
@@ -364,6 +389,8 @@ app.listen(PORT, '0.0.0.0', () => console.log(`Server chạy tại cổng ${PORT
     dbState.attempts++;
     try {
       await store.init();
+      const n = await store.migrateHdCodes();
+      if (n) console.log(`Đã tách Loại/Số mã cho ${n} dòng HĐ/PL cũ`);
       dbState.ready = true;
       dbState.error = null;
       console.log(`Đã kết nối CSDL (${store.kind}) sau ${dbState.attempts} lần thử`);

@@ -155,6 +155,15 @@ function bDelta(cur, prev, good = true) {
   return `<span class="f-delta ${ok ? 'ok' : 'bad'}">${up ? '▲' : '▼'} ${Math.abs(p * 100).toFixed(1).replace('.', ',')}% <small>so với kỳ trước</small></span>`;
 }
 const PROJ_COLORS = ['#2c5fa3', '#c27a3e', '#16968a', '#7e5aa6', '#9a8a2e', '#b04f5a', '#3f8fbf'];
+const KHAC_COLOR = '#b5b3ab';
+// Màu công trình theo thứ hạng doanh thu trong kỳ (khớp biểu đồ tròn): > 7 công trình -> 6 lớn nhất có màu riêng, còn lại xám "Khác"
+function bPrjColors(list, v, P) {
+  const rk = list.map((d) => ({ id: d.id, dt: bSumRange([d], v, P.from, P.to).dt })).sort((a, b) => b.dt - a.dt);
+  const pos = rk.filter((x) => x.dt > 0).length;
+  const m = new Map();
+  rk.forEach((x, i) => m.set(x.id, x.dt > 0 && (pos <= 7 || i < 6) ? PROJ_COLORS[i] : KHAC_COLOR));
+  return m;
+}
 
 function bFinHtml(list, v) {
   const P = bPeriod(list);
@@ -194,6 +203,7 @@ function bFinHtml(list, v) {
   const tRow = (name, color, k, lk, pk, t, y, pt) => `<tr><td><span class="f-dot" style="background:${color}"></span><b>${name}</b></td>
       <td class="num">${k}</td><td class="num">${lk}</td>${pk}<td class="num f-sep">${t}</td><td class="num">${y}</td>${pt}</tr>`;
 
+  const prjCol = bPrjColors(list, v, P);
   const prjRows = list.map((d) => ({ d, ...bSumRange([d], v, P.from, P.to) }));
   const tot = prjRows.reduce((a, x) => ({ dt: a.dt + x.dt, cp: a.cp + x.cp, ln: a.ln + x.ln }), { dt: 0, cp: 0, ln: 0 });
   const undated = list.reduce((a, d) => a + d.thuc_hien.chua_ngay.dt + d.thuc_hien.chua_ngay.cp, 0);
@@ -240,7 +250,7 @@ function bFinHtml(list, v) {
       <div class="f-box"><h3>Hiệu quả từng công trình</h3>
         <div class="table-wrap"><table class="b-table f-eff">
           <thead><tr><th>Công trình</th><th class="num">Doanh thu</th><th class="num">Chi phí</th><th class="num">Lợi nhuận</th><th class="num">Tỷ suất</th></tr></thead>
-          <tbody>${prjRows.map((x, k) => `<tr><td title="${esc(x.d.ten_du_an)}"><span class="f-dot" style="background:${PROJ_COLORS[k % PROJ_COLORS.length]}"></span><b>${esc(x.d.ma_du_an)}</b> <span class="muted small">${esc(x.d.ten_du_an)}</span></td>
+          <tbody>${prjRows.map((x, k) => `<tr><td title="${esc(x.d.ten_du_an)}"><span class="f-dot" style="background:${prjCol.get(x.d.id)}"></span><b>${esc(x.d.ma_du_an)}</b> <span class="muted small">${esc(x.d.ten_du_an)}</span></td>
             <td class="num">${bTy(x.dt)}</td><td class="num">${bTy(x.cp)}</td><td class="num strong ${x.ln < 0 ? 'neg' : 'pos'}">${bTy(x.ln)}</td><td class="num">${x.dt ? tyS(x.ln / x.dt) : '—'}</td></tr>`).join('')}</tbody>
           <tfoot><tr><td>Tổng cộng</td><td class="num">${bTy(tot.dt)}</td><td class="num">${bTy(tot.cp)}</td><td class="num ${tot.ln < 0 ? 'neg' : ''}">${bTy(tot.ln)}</td><td class="num">${tot.dt ? tyS(tot.ln / tot.dt) : '—'}</td></tr></tfoot>
         </table></div></div>
@@ -257,14 +267,16 @@ function bFinData(list, v) {
   const year = P.to.slice(0, 4);
   const ytd = bSumRange(list, v, `${year}-01`, P.to);
   const tg = (BC.muc_tieu || {})[year] || {};
-  const rows = list.map((d, i) => ({ d, color: PROJ_COLORS[i % PROJ_COLORS.length], ...bSumRange([d], v, P.from, P.to) }));
+  const prjCol = bPrjColors(list, v, P);
+  const rows = list.map((d) => ({ d, color: prjCol.get(d.id), ...bSumRange([d], v, P.from, P.to) }));
   return { P, cur, prv, year, ytd, tg, bal: bBalance(list, P.to), series: bSeries(list, v, P), rows };
 }
 
 function bFinDraw(list, v) {
   const P = bPeriod(list);
   bZoomDraw(list, v, P);
-  const items = list.map((d, i) => ({ label: d.ma_du_an, sub: d.ten_du_an, val: bSumRange([d], v, P.from, P.to).dt, color: PROJ_COLORS[i % PROJ_COLORS.length] }));
+  const prjCol = bPrjColors(list, v, P);
+  const items = list.map((d) => ({ label: d.ma_du_an, sub: d.ten_du_an, val: bSumRange([d], v, P.from, P.to).dt, color: prjCol.get(d.id) }));
   bDonut($('#f-ch-donut'), items);
 }
 
@@ -395,7 +407,7 @@ function bDonut(el, all) {
   const pos = all.filter((x) => x.val > 0).sort((a, b) => b.val - a.val);
   if (!pos.length) return bEmpty(el, 'Chưa có doanh thu trong kỳ');
   let items = pos;
-  if (pos.length > 7) { const rest = pos.slice(6); items = [...pos.slice(0, 6), { label: 'Khác', sub: `${rest.length} công trình`, val: rest.reduce((s, x) => s + x.val, 0), color: '#b5b3ab' }]; }
+  if (pos.length > 7) { const rest = pos.slice(6); items = [...pos.slice(0, 6), { label: 'Khác', sub: `${rest.length} công trình`, val: rest.reduce((s, x) => s + x.val, 0), color: KHAC_COLOR }]; }
   const total = items.reduce((s, x) => s + x.val, 0);
   const S = 200, R = 92, r0 = 56, c = S / 2;
   el.innerHTML = '<div class="pie-wrap f-donut"></div>';

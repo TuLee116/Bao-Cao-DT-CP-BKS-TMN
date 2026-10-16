@@ -1902,7 +1902,7 @@ async function loadDemoStatus() {
   $('#demo-del').disabled = count === 0;
 }
 $('#demo-seed')?.addEventListener('click', async (e) => {
-  if (!confirm('Tạo 5 dự án mẫu DEMO-01…05 để chạy thử?')) return;
+  if (!confirm('Tạo 12 dự án mẫu DEMO-01…12 để chạy thử?')) return;
   e.target.disabled = true;
   showMsg($('#demo-msg'), 'Đang tạo dữ liệu mẫu, vui lòng chờ...');
   try {

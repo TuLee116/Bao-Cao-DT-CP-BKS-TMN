@@ -37,12 +37,41 @@
   <main>
     <!-- ================= DỰ ÁN ================= -->
     <section id="tab-projects" class="tab-panel">
-      <div class="kpis">
-        <div class="kpi"><div class="label">Số dự án</div><div class="value" id="k-count">0</div></div>
-        <div class="kpi"><div class="label">Tổng giá trị HĐ (VNĐ)</div><div class="value" id="k-hd">0</div></div>
-        <div class="kpi"><div class="label">Đã giải ngân (VNĐ)</div><div class="value" id="k-gn">0</div></div>
-        <div class="kpi"><div class="label">Tỷ lệ giải ngân</div><div class="value" id="k-tl">0%</div></div>
+      <div class="card dash-head">
+        <div class="toolbar">
+          <h2>Tổng quan dự án</h2>
+          <select id="d-project" class="project-select" aria-label="Lọc dự án"></select>
+          <div class="seg" id="d-vat" role="group" aria-label="Cơ sở VAT">
+            <button type="button" data-v="gt" class="on">Trước VAT</button><button type="button" data-v="sv">Sau VAT</button>
+          </div>
+        </div>
+        <div class="kpis dash-kpis">
+          <div class="kpi"><div class="label">Tổng số HĐ</div><div class="value" id="d-k-hd">0</div><div class="sub" id="d-k-hd-sub"></div></div>
+          <div class="kpi"><div class="label">Tổng doanh thu</div><div class="value" id="d-k-dt">0</div><div class="sub" id="d-k-dt-sub"></div></div>
+          <div class="kpi"><div class="label">Tổng chi phí</div><div class="value" id="d-k-cp">0</div><div class="sub" id="d-k-cp-sub"></div></div>
+          <div class="kpi"><div class="label">Tổng lợi nhuận</div><div class="value" id="d-k-ln">0</div><div class="sub" id="d-k-ln-sub"></div></div>
+          <div class="kpi"><div class="label">Tổng còn lại (phải thu)</div><div class="value" id="d-k-cl">0</div><div class="sub" id="d-k-cl-sub"></div></div>
+        </div>
+        <p class="muted small dash-note">Doanh thu: HĐ đã có Giá trị HT/QT lấy theo HT/QT, chưa có lấy theo giá trị HĐ + PL · Lợi nhuận = Doanh thu − Chi phí · Còn lại = Doanh thu (sau VAT) − Tiền về.</p>
       </div>
+
+      <div class="dash-charts">
+        <div class="card">
+          <div class="toolbar"><h2>Doanh thu – Chi phí theo tháng (lũy kế)</h2></div>
+          <div id="d-line" class="chart"></div>
+          <div id="d-line-note" class="muted small"></div>
+        </div>
+        <div class="card">
+          <div class="toolbar">
+            <h2>Tỷ trọng các dự án</h2>
+            <div class="seg" id="d-pie-by" role="group" aria-label="Tỷ trọng theo">
+              <button type="button" data-v="dt" class="on">Doanh thu</button><button type="button" data-v="cp">Chi phí</button>
+            </div>
+          </div>
+          <div id="d-pie" class="chart"></div>
+        </div>
+      </div>
+      <div id="d-tip" class="chart-tip" hidden></div>
 
       <div class="card" data-role="admin editor">
         <h2 id="p-form-title">Thêm dự án</h2>
@@ -51,8 +80,6 @@
           <label>Mã dự án *<input name="ma_du_an" required maxlength="50"></label>
           <label>Tên dự án *<input name="ten_du_an" required maxlength="255"></label>
           <label>Chủ đầu tư<input name="chu_dau_tu" maxlength="255"></label>
-          <label>Giá trị HĐ (VNĐ)<input name="gia_tri_hd" type="number" min="0" step="1" value="0"></label>
-          <label>Đã giải ngân (VNĐ)<input name="da_giai_ngan" type="number" min="0" step="1" value="0"></label>
           <label>Tiến độ (%)<input name="tien_do" type="number" min="0" max="100" step="0.01" value="0"></label>
           <label>Trạng thái<select name="trang_thai"></select></label>
           <label>Ngày bắt đầu<input name="ngay_bat_dau" type="date"></label>
@@ -76,7 +103,7 @@
             <thead>
               <tr>
                 <th>Mã</th><th>Tên dự án</th><th>Chủ đầu tư</th>
-                <th class="num">Giá trị HĐ</th><th class="num">Đã giải ngân</th><th class="num">% GN</th>
+                <th class="num">Doanh thu</th><th class="num">Chi phí</th><th class="num">Lợi nhuận</th>
                 <th>Tiến độ</th><th>Trạng thái</th><th>Thời gian</th><th>Cập nhật bởi</th><th></th>
               </tr>
             </thead>

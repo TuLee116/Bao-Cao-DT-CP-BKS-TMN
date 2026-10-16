@@ -47,6 +47,16 @@ Web quản lý dự án xây dựng có đăng nhập, phân quyền, khởi t�
 - Nhóm 1 trong tổng chi phí = tổng giá trị HT/QT của các HĐ thầu phụ.
 - Xóa HĐ thầu phụ hoặc PL cần Passcode; dòng HĐ gốc chỉ xóa cùng cả hợp đồng.
 
+### Dashboard tổng (tab Dự án)
+Số liệu lấy tự động từ tab Doanh thu và Chi phí (API `GET /api/dashboard`, công thức ở `lib/dashboard.js`):
+- **Tổng số HĐ**: số Hợp đồng gốc (không đếm PL).
+- **Doanh thu**: HĐ đã có Giá trị HT/QT → lấy tổng HT/QT; chưa có → giá trị HĐ + các PL.
+- **Chi phí**: tổng tab Chi phí (trực tiếp + gián tiếp + tài chính; thầu phụ theo HT/QT).
+- **Lợi nhuận** = Doanh thu − Chi phí; **Còn lại (phải thu)** = Doanh thu sau VAT − Tiền về.
+- Chọn cơ sở **Trước VAT / Sau VAT**; lọc theo dự án (hoặc bấm vào biểu đồ quạt).
+- Biểu đồ đường: Doanh thu – Chi phí lũy kế theo tháng (theo ngày chứng từ; dòng thiếu ngày vẫn tính trong số tổng).
+- Biểu đồ quạt: tỷ trọng doanh thu / chi phí của các dự án (7 dự án lớn nhất + "Khác").
+
 ### Phân quyền
 | Quyền | Xem dự án | Thêm/sửa/xóa dự án | Quản lý tài khoản & cài đặt |
 |---|:-:|:-:|:-:|

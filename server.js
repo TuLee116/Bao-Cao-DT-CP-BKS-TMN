@@ -6,6 +6,7 @@ const auth = require('./lib/auth');
 const { TRANG_THAI, ROLES, validateProject, validateUser, validateSettings, validateRevenue, validateTienVe, validateCost, validateTp, validateTpLine, validateTpPay, passwordErrors, passcodeErrors } = require('./lib/validate');
 const { buildContracts, summarizeContracts } = require('./lib/subcontract');
 const { KHOI_CHI_PHI, NHOM_CHI_PHI, summarizeCost, sortCost } = require('./lib/cost');
+const { summarizeProject } = require('./lib/dashboard');
 const { LOAI_DOANH_THU, calcLine, summarize, sortRevenue, tienVeLabel, sortTienVe, summarizeTienVe } = require('./lib/revenue');
 
 const app = express();
@@ -295,6 +296,20 @@ api.delete('/du-an/:id', canEdit, wrap(async (req, res) => {
   if (!id) return bad(res, 'ID không hợp lệ');
   const ok = await store.deleteProject(id);
   ok ? res.status(204).end() : bad(res, 'Không tìm thấy dự án', 404);
+}));
+
+// ---------- Dashboard tổng: số liệu từ Doanh thu + Chi phí của mọi dự án ----------
+api.get('/dashboard', wrap(async (_req, res) => {
+  const list = await store.listProjects();
+  const du_an = await Promise.all(list.map(async (p) => {
+    const [rev, tienVe, cost, tp] = await Promise.all([
+      store.listRevenue(p.id), store.listTienVe(p.id), store.listCost(p.id), store.listTp(p.id)]);
+    return {
+      id: p.id, ma_du_an: p.ma_du_an, ten_du_an: p.ten_du_an,
+      ...summarizeProject({ rev: rev.map(calcLine), tienVe, cost: cost.map(calcLine), tp: buildContracts(tp) }),
+    };
+  }));
+  res.json({ du_an });
 }));
 
 // ---------- Doanh thu theo công trình ----------

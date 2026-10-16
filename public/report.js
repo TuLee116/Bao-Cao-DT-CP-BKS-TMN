@@ -140,13 +140,6 @@ function bSeries(list, v, P) {
   return out;
 }
 
-const ICON = {
-  dt: '<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/>',
-  cp: '<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M16 11h5v5h-5a2.5 2.5 0 0 1 0-5zM6 6l9-3 1.5 3"/>',
-  ln: '<path d="M4 20V12M10 20V8M16 20v-6M3 20h18M13 6l4-3 4 3M17 3v7"/>',
-  dong: '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M6 9h.01M18 15h.01"/>',
-};
-const bIcon = (k) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[k]}</svg>`;
 // So với kỳ trước: good = tăng là tốt
 function bDelta(cur, prev, good = true) {
   if (prev === null || prev === undefined) return '';
@@ -167,7 +160,6 @@ function bFinHtml(list, v) {
   const ytd = bSumRange(list, v, `${year}-01`, P.to);
   const tg = (BC.muc_tieu || {})[year] || {};
   const card = (k, title, val, sub, delta) => `<div class="f-card f-${k}">
-      <div class="f-ic">${bIcon(k)}</div>
       <div class="f-body"><div class="f-title">${title}</div><div class="f-val ${val < 0 ? 'neg' : ''}">${bTy(val)} <small>tỷ</small></div>
         <div class="f-full">${bn(val)} đ</div>${delta}${sub ? `<div class="f-sub">${sub}</div>` : ''}</div></div>`;
   const bar = (label, act, target, color, fmtFn) => {

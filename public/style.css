@@ -189,6 +189,16 @@ tr.tv-child td { background: #fff; }
 tr.tv-child td.indent { padding-left: 34px; }
 tr.tv-child select.tv-hd { margin-right: 8px; }
 #tv-toggle-all { margin-left: auto; margin-right: 12px; }
+/* Chi phí: bảng cây */
+tr.c-g1 td { background: #f3f7fd; border-top: 2px solid #dbe6f5; font-size: 13.5px; color: var(--navy); }
+tr.c-g2 td { background: #fafcff; font-size: 13px; font-weight: 600; }
+tr.c-row td { background: #fff; font-size: 13px; }
+.cost-table th, .cost-table td { padding: 9px 7px; }
+.cost-table td.c-dt { white-space: normal; min-width: 120px; max-width: 200px; }
+.cost-table td.c-note { white-space: normal; max-width: 150px; font-size: 12px; color: var(--muted); }
+.cost-table td.indent-2 { white-space: normal; min-width: 180px; }
+td.indent-1 { padding-left: 30px !important; }
+td.indent-2 { padding-left: 56px !important; }
 .tv-tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
 .tv-tools .spacer { flex: 1; }
 button.sm { padding: 5px 10px; font-size: 12px; }

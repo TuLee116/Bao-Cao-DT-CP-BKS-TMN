@@ -22,6 +22,7 @@
     <nav id="tabs" class="tabs">
       <button data-tab="projects" class="active">Dự án</button>
       <button data-tab="revenue">Doanh thu</button>
+      <button data-tab="cost">Chi phí</button>
       <button data-tab="users" data-role="admin">Tài khoản</button>
       <button data-tab="settings" data-role="admin">Cài đặt</button>
       <button data-tab="profile">Cá nhân</button>
@@ -104,6 +105,66 @@
         <div id="r-sections" class="section-stack"></div>
       </div>
       <div id="r-empty" class="card empty" hidden>Chưa có công trình nào. Hãy thêm công trình ở tab <b>Dự án</b> trước.</div>
+    </section>
+
+    <!-- ================= CHI PHÍ ================= -->
+    <section id="tab-cost" class="tab-panel" hidden>
+      <div class="card">
+        <div class="toolbar">
+          <h2>Chi phí công trình</h2>
+          <select id="c-project" class="project-select" aria-label="Chọn công trình"></select>
+        </div>
+        <div id="c-project-info" class="muted small"></div>
+      </div>
+
+      <div id="c-body" class="section-stack" hidden>
+        <div class="kpis">
+          <div class="kpi"><div class="label">Tổng chi phí sau VAT</div><div class="value" id="c-k-sau">0</div><div class="sub" id="c-k-sub"></div></div>
+          <div class="kpi"><div class="label">Tổng trước VAT</div><div class="value" id="c-k-truoc">0</div></div>
+          <div class="kpi"><div class="label">Tiền VAT</div><div class="value" id="c-k-vat">0</div></div>
+        </div>
+
+        <div class="card" data-role="admin editor">
+          <h2 id="c-form-title">Thêm chi phí</h2>
+          <form id="c-form" class="grid-form" novalidate>
+            <input type="hidden" name="id">
+            <label>Nhóm chi phí *<select name="nhom"></select></label>
+            <label id="c-sub-wrap">Hạng mục *<select name="nhom_con"></select></label>
+            <label class="span-2">Nội dung *<input name="noi_dung" maxlength="300" placeholder="VD: Thép D16 đợt 1, Thi công cọc khoan nhồi..."></label>
+            <label>Đối tác / Nhà cung cấp<input name="doi_tac" maxlength="200"></label>
+            <label>Số HĐ / Chứng từ<input name="so_ct" maxlength="100"></label>
+            <label>Ngày<input name="ngay" class="date-dmy"></label>
+            <label>Giá trị (trước VAT) *<input name="gia_tri" placeholder="0"></label>
+            <label>VAT (%)<input name="vat" type="number" min="0" max="100" step="1" placeholder="0 = chưa có VAT"></label>
+            <label>Giá trị (sau VAT)<output class="calc" name="sau_vat">0</output><span class="calc-note vat-note"></span></label>
+            <label class="span-2">Ghi chú<input name="ghi_chu" maxlength="500"></label>
+            <div class="actions">
+              <button type="submit" class="primary">Thêm dòng</button>
+              <button type="button" id="c-cancel">Hủy</button>
+            </div>
+            <div class="msg" id="c-msg" role="alert"></div>
+          </form>
+        </div>
+
+        <div class="card">
+          <div class="toolbar tv-head">
+            <h2>Bảng chi phí theo nhóm</h2>
+            <button type="button" class="sm" id="c-toggle-all">Mở tất cả</button>
+            <div class="tv-total">Tổng: <b id="c-total">0</b></div>
+          </div>
+          <div class="table-wrap">
+            <table class="cost-table">
+              <thead><tr>
+                <th class="num">#</th><th>Nội dung</th><th>Đối tác / Số HĐ-CT</th><th>Ngày</th>
+                <th class="num">Trước VAT</th><th class="num">VAT</th><th class="num">Tiền VAT</th><th class="num">Sau VAT</th><th class="num">Tỷ trọng</th><th>Ghi chú</th><th></th>
+              </tr></thead>
+              <tbody id="c-tbody"></tbody>
+              <tfoot id="c-tfoot"></tfoot>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div id="c-empty" class="card empty" hidden>Chưa có công trình nào. Hãy thêm công trình ở tab <b>Dự án</b> trước.</div>
     </section>
 
     <!-- ================= TÀI KHOẢN ================= -->

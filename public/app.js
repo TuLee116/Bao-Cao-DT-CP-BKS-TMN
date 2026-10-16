@@ -47,7 +47,7 @@ function applyBranding(s) {
 // =====================================================================
 // Tab
 // =====================================================================
-const loaders = { projects: loadProjects, revenue: loadRevenueTab, users: loadUsers, settings: loadSettings, profile: async () => {} };
+const loaders = { projects: loadProjects, revenue: loadRevenueTab, cost: loadCostTab, users: loadUsers, settings: loadSettings, profile: async () => {} };
 
 function showTab(name) {
   $$('#tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
@@ -894,6 +894,218 @@ function bindTienVe() {
     e.target.disabled = false;
   });
 }
+
+// =====================================================================
+// CHI PHÍ theo công trình (dùng chung công trình đang chọn với tab Doanh thu)
+// =====================================================================
+let costData = null;
+const costOpen = new Set();          // nhóm / hạng mục đang mở: 'thau_phu', 'vat_tu', 'vat_tu:chinh'...
+const cForm = $('#c-form');
+const NHOM = () => META.nhom_chi_phi || [];
+
+async function loadCostTab() {
+  projects = await api('/api/du-an');
+  const sel = $('#c-project');
+  $('#c-empty').hidden = projects.length > 0;
+  $('#c-body').hidden = true;
+  sel.hidden = !projects.length;
+  if (!projects.length) return;
+  if (!projects.some((p) => p.id === revProjectId)) revProjectId = projects[0].id;
+  sel.innerHTML = projects.map((p) => `<option value="${p.id}">${esc(p.ma_du_an)} – ${esc(p.ten_du_an)}</option>`).join('');
+  sel.value = revProjectId;
+  if (cForm && !cForm.dataset.ready) initCostForm();
+  await loadCost();
+}
+
+$('#c-project').addEventListener('change', (e) => {
+  revProjectId = Number(e.target.value);
+  if (cForm) resetCostForm();
+  loadCost().catch((err) => alert(err.message));
+});
+
+async function loadCost() {
+  try { localStorage.setItem('revProject', revProjectId); } catch {}
+  costData = await api(`/api/du-an/${revProjectId}/chi-phi`);
+  const p = costData.du_an;
+  $('#c-project-info').innerHTML = `Mã: <b>${esc(p.ma_du_an)}</b> · Chủ đầu tư: <b>${esc(p.chu_dau_tu || '—')}</b>`;
+  $('#c-body').hidden = false;
+  renderCost();
+}
+
+// ---------- Form nhập ----------
+function fillSubOptions(nhomCode, keep) {
+  const n = NHOM().find((x) => x.code === nhomCode);
+  const has = Boolean(n?.sub.length);
+  $('#c-sub-wrap').hidden = !has;
+  cForm.elements.nhom_con.innerHTML = has ? n.sub.map((s) => `<option value="${s.code}">${esc(s.ten)}</option>`).join('') : '';
+  if (has && keep && n.sub.some((s) => s.code === keep)) cForm.elements.nhom_con.value = keep;
+}
+
+function updateCostPreview() {
+  const raw = parseMoney(cForm.elements.gia_tri.value);
+  const gt = raw && raw !== '-' ? Number(raw) : 0;
+  const vs = cForm.elements.vat.value.trim();
+  const vat = vs === '' ? 0 : Number(vs);
+  const note = $('.vat-note', cForm);
+  if (!Number.isInteger(vat) || vat < 0 || vat > 100) {
+    cForm.elements.sau_vat.value = '—';
+    note.textContent = 'VAT phải là số nguyên 0–100';
+    note.className = 'calc-note vat-note err';
+    return;
+  }
+  const tv = calcVat(gt, vat);
+  cForm.elements.sau_vat.value = money(gt + tv);
+  note.textContent = vat ? `Tiền VAT: ${money(tv)}` : 'Tạm tính (chưa có VAT)';
+  note.className = 'calc-note vat-note' + (vat ? '' : ' warn');
+}
+
+function initCostForm() {
+  cForm.dataset.ready = '1';
+  cForm.elements.nhom.innerHTML = NHOM().map((n, i) => `<option value="${n.code}">${i + 1}. ${esc(n.ten)}</option>`).join('');
+  fillSubOptions(cForm.elements.nhom.value);
+  cForm.elements.nhom.addEventListener('change', () => fillSubOptions(cForm.elements.nhom.value));
+  attachMoneyInput(cForm.elements.gia_tri);
+  attachDateInput(cForm.elements.ngay);
+  cForm.elements.gia_tri.addEventListener('input', updateCostPreview);
+  cForm.elements.vat.addEventListener('input', updateCostPreview);
+  cForm.addEventListener('submit', (e) => { e.preventDefault(); saveCost(); });
+  $('#c-cancel').addEventListener('click', () => { resetCostForm(); showMsg($('#c-msg'), ''); });
+  updateCostPreview();
+}
+
+function resetCostForm(nhom, sub) {
+  const keepNhom = nhom || cForm.elements.nhom.value;
+  const keepSub = sub || cForm.elements.nhom_con.value;
+  cForm.reset();
+  cForm.elements.id.value = '';
+  cForm.elements.nhom.value = keepNhom;
+  fillSubOptions(keepNhom, keepSub);
+  $('#c-form-title').textContent = 'Thêm chi phí';
+  $('button[type=submit]', cForm).textContent = 'Thêm dòng';
+  updateCostPreview();
+}
+
+async function saveCost() {
+  const msg = $('#c-msg');
+  const id = cForm.elements.id.value;
+  const ngay = dmyToIso(cForm.elements.ngay.value);
+  if (ngay === null) return showMsg(msg, 'Ngày không hợp lệ, nhập theo dạng dd/mm/yyyy', 'err');
+  const e = cForm.elements;
+  const body = {
+    nhom: e.nhom.value, nhom_con: e.nhom_con.value, noi_dung: e.noi_dung.value, doi_tac: e.doi_tac.value,
+    so_ct: e.so_ct.value, ngay, gia_tri: parseMoney(e.gia_tri.value), vat: e.vat.value, ghi_chu: e.ghi_chu.value,
+  };
+  try {
+    await api(id ? `/api/chi-phi/${id}` : `/api/du-an/${revProjectId}/chi-phi`, { method: id ? 'PUT' : 'POST', body: JSON.stringify(body) });
+    costOpen.add(body.nhom);
+    if (body.nhom_con) costOpen.add(`${body.nhom}:${body.nhom_con}`);
+    resetCostForm(body.nhom, body.nhom_con);
+    showMsg(msg, id ? 'Đã cập nhật' : 'Đã thêm dòng');
+    await loadCost();
+  } catch (err) {
+    showMsg(msg, err.message, 'err');
+  }
+}
+
+// ---------- Bảng cây: Nhóm -> Hạng mục -> Chi tiết ----------
+function renderCost() {
+  const { items, tong } = costData;
+  const edit = canEdit();
+  const pct = (v) => (tong.sau_vat ? ((v / tong.sau_vat) * 100).toFixed(1) + '%' : '—');
+  $('#c-k-sau').textContent = money(tong.sau_vat);
+  $('#c-k-truoc').textContent = money(tong.gia_tri);
+  $('#c-k-vat').textContent = money(tong.tien_vat);
+  $('#c-k-sub').innerHTML = `${tong.so_dong} dòng${tong.tam_tinh ? ' · <span class="warn-text">có dòng tạm tính</span>' : ''}`;
+  $('#c-total').textContent = money(tong.sau_vat);
+
+  const sumCells = (t, cls = '') => `
+      <td class="num ${cls}">${money(t.gia_tri)}</td><td></td>
+      <td class="num ${cls}">${money(t.tien_vat)}</td>
+      <td class="num ${cls}">${money(t.sau_vat)}</td>
+      <td class="num">${pct(t.sau_vat)}</td>`;
+  const toggle = (key, n) => (n ? `<button class="grp-toggle" data-cgrp="${key}">${costOpen.has(key) ? '▾' : '▸'}</button>` : '<span class="grp-toggle-sp"></span>');
+  const addBtn = (nhom, sub) => (edit ? `<button class="sm" data-cadd="${nhom}" data-csub="${sub || ''}" title="Thêm chi phí vào mục này">+</button>` : '');
+  const detail = (r, stt, indent) => `
+    <tr class="c-row" title="${esc(r.nguoi_cap_nhat ? 'Cập nhật bởi ' + r.nguoi_cap_nhat : '')}">
+      <td class="num muted">${stt}</td>
+      <td class="indent-${indent}"><span class="tree">└</span>${esc(r.noi_dung)}</td>
+      <td class="c-dt">${esc(r.doi_tac)}${r.so_ct ? `<div class="muted small">${esc(r.so_ct)}</div>` : ''}</td><td>${dmy(r.ngay)}</td>
+      <td class="num">${money(r.gia_tri)}</td><td class="num">${vatBadge(r.vat)}</td>
+      <td class="num">${money(r.tien_vat)}</td><td class="num strong">${money(r.sau_vat)}</td>
+      <td class="num muted">${pct(r.sau_vat)}</td>
+      <td class="c-note">${esc(r.ghi_chu)}</td>
+      <td class="row-actions">${edit ? `<button class="sm" data-cedit="${r.id}">Sửa</button><button class="danger sm" data-cdel="${r.id}">Xóa</button>` : ''}</td>
+    </tr>`;
+
+  let html = '';
+  NHOM().forEach((n, i) => {
+    const g = tong.theo_nhom[n.code];
+    const rows = items.filter((r) => r.nhom === n.code);
+    const open = costOpen.has(n.code);
+    html += `<tr class="c-g1"><td class="num">${i + 1}</td>
+      <td colspan="3">${toggle(n.code, rows.length || n.sub.length)}<b>${esc(n.ten)}</b> <span class="muted small">(${g.so_dong} dòng)</span>${g.tam_tinh ? ' <span class="st st-tam-tinh">Có tạm tính</span>' : ''}</td>
+      ${sumCells(g, 'strong')}<td></td><td class="row-actions">${addBtn(n.code, n.sub[0]?.code)}</td></tr>`;
+    if (!open) return;
+    if (!n.sub.length) {
+      rows.forEach((r, k) => { html += detail(r, `${i + 1}.${k + 1}`, 1); });
+      return;
+    }
+    n.sub.forEach((s, j) => {
+      const key = `${n.code}:${s.code}`;
+      const sr = rows.filter((r) => r.nhom_con === s.code);
+      const st = g.sub[s.code];
+      html += `<tr class="c-g2"><td class="num muted">${i + 1}.${j + 1}</td>
+        <td colspan="3" class="indent-1">${toggle(key, sr.length)}${esc(s.ten)} <span class="muted small">(${st.so_dong} dòng)</span></td>
+        ${sumCells(st)}<td></td><td class="row-actions">${addBtn(n.code, s.code)}</td></tr>`;
+      if (costOpen.has(key)) sr.forEach((r, k) => { html += detail(r, `${i + 1}.${j + 1}.${k + 1}`, 2); });
+    });
+  });
+  $('#c-tbody').innerHTML = html;
+  $('#c-tfoot').innerHTML = `<tr><td></td><td colspan="3">TỔNG CHI PHÍ${tong.tam_tinh ? ' <span class="st st-tam-tinh">Có tạm tính</span>' : ''}</td>${sumCells(tong)}<td colspan="2"></td></tr>`;
+  const keys = NHOM().flatMap((n) => [n.code, ...n.sub.map((s) => `${n.code}:${s.code}`)]);
+  $('#c-toggle-all').textContent = keys.every((k) => costOpen.has(k)) ? 'Thu gọn tất cả' : 'Mở tất cả';
+}
+
+$('#tab-cost').addEventListener('click', async (e) => {
+  const { cgrp, cadd, csub, cedit, cdel } = e.target.dataset;
+  if (cgrp) { costOpen.has(cgrp) ? costOpen.delete(cgrp) : costOpen.add(cgrp); return renderCost(); }
+  if (e.target.id === 'c-toggle-all') {
+    const keys = NHOM().flatMap((n) => [n.code, ...n.sub.map((s) => `${n.code}:${s.code}`)]);
+    const close = keys.every((k) => costOpen.has(k));
+    keys.forEach((k) => (close ? costOpen.delete(k) : costOpen.add(k)));
+    return renderCost();
+  }
+  if (cadd) {
+    costOpen.add(cadd);
+    resetCostForm(cadd, csub);
+    showMsg($('#c-msg'), `Thêm vào: ${NHOM().find((n) => n.code === cadd).ten}${csub ? ' › ' + NHOM().find((n) => n.code === cadd).sub.find((s) => s.code === csub).ten : ''}`);
+    cForm.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    cForm.elements.noi_dung.focus({ preventScroll: true });
+  }
+  if (cedit) {
+    const r = costData.items.find((x) => x.id === Number(cedit));
+    if (!r) return;
+    const el = cForm.elements;
+    el.id.value = r.id;
+    el.nhom.value = r.nhom;
+    fillSubOptions(r.nhom, r.nhom_con);
+    el.noi_dung.value = r.noi_dung; el.doi_tac.value = r.doi_tac || ''; el.so_ct.value = r.so_ct || '';
+    el.ngay.value = isoToDmy(r.ngay); el.gia_tri.value = money(r.gia_tri); el.vat.value = r.vat; el.ghi_chu.value = r.ghi_chu || '';
+    $('#c-form-title').textContent = 'Sửa chi phí';
+    $('button[type=submit]', cForm).textContent = 'Lưu thay đổi';
+    showMsg($('#c-msg'), 'Đang sửa: ' + r.noi_dung);
+    updateCostPreview();
+    cForm.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+  if (cdel) {
+    const r = costData.items.find((x) => x.id === Number(cdel));
+    if (!r || !confirm(`Xóa chi phí "${r.noi_dung}" (${money(r.sau_vat)} đ)?`)) return;
+    try {
+      await api(`/api/chi-phi/${r.id}`, { method: 'DELETE' });
+      await loadCost();
+    } catch (err) { alert(err.message); }
+  }
+});
 
 // =====================================================================
 // TÀI KHOẢN (Quản trị)

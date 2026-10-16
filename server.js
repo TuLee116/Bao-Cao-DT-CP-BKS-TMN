@@ -3,7 +3,8 @@ const path = require('path');
 const crypto = require('crypto');
 const store = require('./lib/db');
 const auth = require('./lib/auth');
-const { TRANG_THAI, ROLES, validateProject, validateUser, validateSettings, validateRevenue, validateTienVe, passwordErrors, passcodeErrors } = require('./lib/validate');
+const { TRANG_THAI, ROLES, validateProject, validateUser, validateSettings, validateRevenue, validateTienVe, validateCost, passwordErrors, passcodeErrors } = require('./lib/validate');
+const { NHOM_CHI_PHI, summarizeCost, sortCost } = require('./lib/cost');
 const { LOAI_DOANH_THU, calcLine, summarize, sortRevenue, tienVeLabel, sortTienVe, summarizeTienVe } = require('./lib/revenue');
 
 const app = express();
@@ -91,6 +92,7 @@ api.get('/meta', wrap(async (_req, res) => {
   res.json({
     trang_thai: TRANG_THAI,
     loai_doanh_thu: LOAI_DOANH_THU,
+    nhom_chi_phi: NHOM_CHI_PHI,
     roles: ROLES,
     db: store.kind,
     ten_cong_ty: s.ten_cong_ty,
@@ -435,6 +437,41 @@ api.delete('/doanh-thu/:id', canEdit, wrap(async (req, res) => {
   const ok = await store.deleteRevenue(id);
   if (ok && cur.loai === 'hd') console.log(`[NHẬT KÝ] ${new Date().toISOString()} ${req.user.username} đã xóa "${cur.so_hieu}" (công trình #${cur.du_an_id}, dòng #${id})`);
   ok ? res.status(204).end() : bad(res, 'Không tìm thấy dòng doanh thu', 404);
+}));
+
+// ---------- Chi phí công trình ----------
+api.get('/du-an/:id/chi-phi', wrap(async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) return bad(res, 'ID không hợp lệ');
+  const du_an = await store.getProject(id);
+  if (!du_an) return bad(res, 'Không tìm thấy công trình', 404);
+  const items = sortCost(await store.listCost(id)).map(calcLine);
+  res.json({ du_an, items, tong: summarizeCost(items) });
+}));
+
+api.post('/du-an/:id/chi-phi', canEdit, wrap(async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) return bad(res, 'ID không hợp lệ');
+  if (!(await store.getProject(id))) return bad(res, 'Không tìm thấy công trình', 404);
+  const { data, errors } = validateCost(req.body || {});
+  if (errors.length) return bad(res, errors);
+  res.status(201).json(await store.createCost(id, data, req.user.id));
+}));
+
+api.put('/chi-phi/:id', canEdit, wrap(async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) return bad(res, 'ID không hợp lệ');
+  const { data, errors } = validateCost(req.body || {});
+  if (errors.length) return bad(res, errors);
+  const ok = await store.updateCost(id, data, req.user.id);
+  ok ? res.json({ id }) : bad(res, 'Không tìm thấy dòng chi phí', 404);
+}));
+
+api.delete('/chi-phi/:id', canEdit, wrap(async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) return bad(res, 'ID không hợp lệ');
+  const ok = await store.deleteCost(id);
+  ok ? res.status(204).end() : bad(res, 'Không tìm thấy dòng chi phí', 404);
 }));
 
 app.use('/api', api);

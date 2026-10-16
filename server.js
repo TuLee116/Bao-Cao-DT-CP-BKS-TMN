@@ -3,7 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const store = require('./lib/db');
 const auth = require('./lib/auth');
-const { TRANG_THAI, ROLES, validateProject, validateUser, validateSettings, validateRevenue, validateTienVe, validateCost, validateTp, validateTpLine, validateTpPay, passwordErrors, passcodeErrors } = require('./lib/validate');
+const { TRANG_THAI, ROLES, validateProject, validateUser, validateSettings, validateContact, validateRevenue, validateTienVe, validateCost, validateTp, validateTpLine, validateTpPay, passwordErrors, passcodeErrors } = require('./lib/validate');
 const { buildContracts, summarizeContracts } = require('./lib/subcontract');
 const { KHOI_CHI_PHI, NHOM_CHI_PHI, summarizeCost, sortCost, costLine } = require('./lib/cost');
 const { summarizeProject } = require('./lib/dashboard');
@@ -222,6 +222,29 @@ api.put('/settings', auth.requireRole('admin'), wrap(async (req, res) => {
   if (errors.length) return bad(res, errors);
   await store.saveSettings(data);
   res.json(data);
+}));
+
+// ---------- Tab Liên hệ: Thông tin hệ thống & hỗ trợ ----------
+//   Phiên bản tự động theo version.json; Quản trị có thể ghi đè – bản ghi đè chỉ áp dụng đến lần phát hành kế tiếp
+const CONTACT_KEY = 'lien_he';
+const CONTACT_DEFAULT = { ten: 'Hệ thống nội bộ', so_huu: 'Ban Kiểm soát - TMN', phat_trien: 'Le Phan Vinh Tu', sdt: '0794 570 057', mail: 'lephanvinhtu.tu@gmail.com' };
+async function readContact() {
+  let saved = {};
+  try { saved = JSON.parse((await store.getSettings())[CONTACT_KEY] || '{}'); } catch {}
+  const info = { ...CONTACT_DEFAULT, ...saved };
+  const override = saved.phien_ban && saved.phien_ban_goc === PHIEN_BAN.ma ? saved.phien_ban : '';
+  delete info.phien_ban; delete info.phien_ban_goc;
+  return { ...info, phien_ban: override ? { ma: override, tu_dong: PHIEN_BAN.ma, ghi_de: true } : { ...PHIEN_BAN, ghi_de: false } };
+}
+api.get('/lien-he', wrap(async (_req, res) => res.json(await readContact())));
+api.put('/lien-he', auth.requireRole('admin'), wrap(async (req, res) => {
+  const { data, errors } = validateContact(req.body || {});
+  if (errors.length) return bad(res, errors);
+  const save = { ...data, phien_ban_goc: data.phien_ban ? PHIEN_BAN.ma : '' };
+  if (data.phien_ban === PHIEN_BAN.ma) { save.phien_ban = ''; save.phien_ban_goc = ''; } // trùng số tự động -> không cần ghi đè
+  await store.saveSettings({ [CONTACT_KEY]: JSON.stringify(save) });
+  console.log(`[NHẬT KÝ] ${req.user.username} sửa thông tin Liên hệ${save.phien_ban ? ` (ghi đè phiên bản ${save.phien_ban})` : ''}`);
+  res.json(await readContact());
 }));
 
 // ---------- Quản lý tài khoản (chỉ Quản trị) ----------

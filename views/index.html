@@ -288,11 +288,26 @@
     <!-- ================= LIÊN HỆ ================= -->
     <section id="tab-contact" class="tab-panel" hidden>
       <div class="card narrow">
-        <h2>Thông tin hệ thống</h2>
-        <dl class="info-list" id="sys-info"></dl>
-        <hr>
-        <h2>Liên hệ hỗ trợ</h2>
-        <dl class="info-list" id="sys-contact"></dl>
+        <div id="lh-view">
+          <div class="toolbar"><h2>Thông tin hệ thống</h2><button type="button" class="sm" id="lh-edit" data-role="admin">Sửa</button></div>
+          <dl class="info-list" id="sys-info"></dl>
+          <hr>
+          <h2>Liên hệ hỗ trợ</h2>
+          <dl class="info-list" id="sys-contact"></dl>
+        </div>
+        <form id="lh-form" class="stack" hidden data-role="admin">
+          <h2>Sửa thông tin hệ thống</h2>
+          <label>Tên hệ thống/Website *<input name="ten" required maxlength="150"></label>
+          <label>Đơn vị sở hữu *<input name="so_huu" required maxlength="150"></label>
+          <label>Đơn vị phát triển<input name="phat_trien" maxlength="150"></label>
+          <label>Phiên bản hiện tại<input name="phien_ban" maxlength="20" placeholder="Để trống = tự động"></label>
+          <p class="muted small" id="lh-pb-note"></p>
+          <h2>Liên hệ hỗ trợ</h2>
+          <label>SĐT<input name="sdt" maxlength="50" inputmode="tel"></label>
+          <label>Mail<input name="mail" type="email" maxlength="150"></label>
+          <div class="actions"><button type="submit" class="primary">Lưu</button><button type="button" id="lh-cancel">Hủy</button></div>
+          <div id="lh-msg" class="msg" role="alert"></div>
+        </form>
       </div>
     </section>
 

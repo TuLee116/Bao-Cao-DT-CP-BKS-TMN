@@ -1959,29 +1959,54 @@ $('#u-tbody')?.addEventListener('click', async (e) => {
 // =====================================================================
 const sForm = $('#s-form');
 
-// Thông tin hệ thống (Phiên bản lấy từ máy chủ: version.json)
-const SYS_INFO = {
-  ten: 'Hệ thống nội bộ',
-  so_huu: 'Ban Kiểm soát - TMN',
-  phat_trien: 'Le Phan Vinh Tu',
-  sdt: '0794 570 057',
-  mail: 'lephanvinhtu.tu@gmail.com',
-};
-
-// Tab Liên hệ: mọi tài khoản đều xem được
-function loadContact() {
-  const row = (k, v) => `<dt>${k}</dt><dd>${v}</dd>`;
-  $('#sys-info').innerHTML =
-    row('Tên hệ thống/Website', esc(SYS_INFO.ten)) +
-    row('Đơn vị sở hữu', esc(SYS_INFO.so_huu)) +
-    row('Đơn vị phát triển', esc(SYS_INFO.phat_trien)) +
-    row('Phiên bản hiện tại', META.phien_ban
-      ? `${esc(META.phien_ban.ma)}<div class="muted small">Cập nhật lần ${META.phien_ban.lan} trong ngày ${esc(META.phien_ban.ngay)}</div>`
-      : '—');
-  $('#sys-contact').innerHTML =
-    row('SĐT', `<a href="tel:${SYS_INFO.sdt.replace(/\s/g, '')}">${esc(SYS_INFO.sdt)}</a>`) +
-    row('Mail', `<a href="mailto:${esc(SYS_INFO.mail)}">${esc(SYS_INFO.mail)}</a>`);
+// =====================================================================
+// LIÊN HỆ – Thông tin hệ thống & hỗ trợ (mọi tài khoản xem; Quản trị sửa)
+// Phiên bản tự động theo version.json; Quản trị ghi đè được đến lần phát hành kế tiếp
+// =====================================================================
+let LH = null;
+async function loadContact() {
+  LH = await api('/api/lien-he');
+  renderContact();
 }
+function renderContact() {
+  const row = (k, v) => `<dt>${k}</dt><dd>${v || '<span class="muted">—</span>'}</dd>`;
+  const pb = LH.phien_ban;
+  const pbNote = pb.ghi_de
+    ? `Quản trị đặt thủ công (số tự động: ${esc(pb.tu_dong)})`
+    : pb.lan ? `Cập nhật lần ${pb.lan} trong ngày ${esc(pb.ngay)}` : '';
+  $('#sys-info').innerHTML =
+    row('Tên hệ thống/Website', esc(LH.ten)) +
+    row('Đơn vị sở hữu', esc(LH.so_huu)) +
+    row('Đơn vị phát triển', esc(LH.phat_trien)) +
+    row('Phiên bản hiện tại', `${esc(pb.ma)}${pbNote ? `<div class="muted small">${pbNote}</div>` : ''}`);
+  $('#sys-contact').innerHTML =
+    row('SĐT', LH.sdt ? `<a href="tel:${esc(LH.sdt.replace(/[^0-9+]/g, ''))}">${esc(LH.sdt)}</a>` : '') +
+    row('Mail', LH.mail ? `<a href="mailto:${esc(LH.mail)}">${esc(LH.mail)}</a>` : '');
+  $('#lh-view').hidden = false;
+  const f = $('#lh-form');
+  if (f) f.hidden = true;
+}
+const lhForm = $('#lh-form');
+$('#lh-edit')?.addEventListener('click', () => {
+  for (const k of ['ten', 'so_huu', 'phat_trien', 'sdt', 'mail']) lhForm.elements[k].value = LH[k] || '';
+  const pb = LH.phien_ban;
+  lhForm.elements.phien_ban.value = pb.ghi_de ? pb.ma : '';
+  lhForm.elements.phien_ban.placeholder = `Để trống = tự động (${pb.ghi_de ? pb.tu_dong : pb.ma})`;
+  $('#lh-pb-note').textContent = 'Phiên bản dạng V[lần cập nhật trong ngày].[dd].[mm].[yy], vd V02.16.10.26. Hệ thống tự tăng mỗi lần phát hành; số nhập tay chỉ áp dụng đến lần phát hành kế tiếp.';
+  showMsg($('#lh-msg'), '');
+  $('#lh-view').hidden = true;
+  lhForm.hidden = false;
+});
+$('#lh-cancel')?.addEventListener('click', renderContact);
+lhForm?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    LH = await api('/api/lien-he', { method: 'PUT', body: JSON.stringify(formData(lhForm)) });
+    renderContact();
+  } catch (err) {
+    showMsg($('#lh-msg'), err.message, 'err');
+  }
+});
 
 async function loadDemoStatus() {
   const { count } = await api('/api/demo');

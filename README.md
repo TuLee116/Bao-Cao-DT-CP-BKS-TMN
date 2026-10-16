@@ -90,6 +90,7 @@ Các ràng buộc an toàn:
 ## Phiên bản
 Dạng **V[lần cập nhật trong ngày].[dd].[mm].[yy]**, ví dụ `V01.16.10.26` = lần cập nhật thứ 1 trong ngày 16/10/2026; lần 2 cùng ngày là `V02.16.10.26`; sang ngày mới quay về `V01`.
 Lưu trong `version.json`, hiển thị ở tab **Liên hệ**. Trước mỗi lần phát hành chạy `node scripts/bump-version.js` (tự tính theo giờ Việt Nam).
+Tab Liên hệ: Quản trị bấm **Sửa** để đổi Tên hệ thống, Đơn vị sở hữu / phát triển, SĐT, Mail và có thể ghi đè Phiên bản (chỉ áp dụng đến lần phát hành kế tiếp; để trống = tự động).
 
 ## Cấu trúc
 ```

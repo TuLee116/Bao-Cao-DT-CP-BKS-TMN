@@ -904,6 +904,8 @@ const cForm = $('#c-form');
 const NHOM = () => META.nhom_chi_phi || [];
 const KHOI = () => META.khoi_chi_phi || [];
 const nhomOf = (khoi) => NHOM().filter((n) => n.khoi === khoi);
+const BANKS = ['Vietcombank', 'VietinBank', 'BIDV', 'Agribank', 'Techcombank', 'MB Bank', 'ACB', 'VPBank', 'Sacombank',
+  'SHB', 'TPBank', 'HDBank', 'VIB', 'OCB', 'MSB', 'SeABank', 'Eximbank', 'LPBank', 'NCB', 'Nam A Bank', 'Bac A Bank', 'PVcomBank', 'ABBANK', 'KienlongBank'];
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
 const stt = (k, i) => (k.danh_so === 'la_ma' ? ROMAN[i] || String(i + 1) : String(i + 1));
 
@@ -944,7 +946,20 @@ function setCostMode() {
   $$('.c-tp', cForm).forEach((el) => (el.hidden = !tp));
   $$('.c-gen', cForm).forEach((el) => (el.hidden = tp));
   if (tp) $('#c-sub-wrap').hidden = true;
-  $('#c-dt-label').textContent = tp ? 'Nhà thầu phụ' : 'Đối tác / Nhà cung cấp';
+  const req = NHOM().find((n) => n.code === cForm.elements.nhom.value)?.bat_buoc_doi_tac;
+  $('#c-dt-label').textContent = tp ? 'Nhà thầu phụ' : req ? `${req} *` : 'Đối tác / Nhà cung cấp';
+  // Trả nợ vay ngân hàng: gợi ý tên ngân hàng (đã nhập trước đó + ngân hàng phổ biến)
+  const dt = cForm.elements.doi_tac;
+  if (req && !tp) {
+    const used = (costData?.items || []).filter((r) => r.nhom === cForm.elements.nhom.value && r.doi_tac).map((r) => r.doi_tac);
+    const banks = [...new Set([...used, ...BANKS])];
+    $('#bank-list').innerHTML = banks.map((b) => `<option value="${esc(b)}">`).join('');
+    dt.setAttribute('list', 'bank-list');
+    dt.placeholder = 'Gõ hoặc chọn tên ngân hàng';
+  } else {
+    dt.removeAttribute('list');
+    dt.placeholder = '';
+  }
   $('#c-ngay-label').textContent = tp ? 'Ngày ký HĐ' : 'Ngày';
   $('#c-gt-label').textContent = tp ? 'Giá trị HĐ (trước VAT) *' : 'Giá trị (trước VAT) *';
   $('button[type=submit]', cForm).textContent = cForm.elements.id.value ? 'Lưu thay đổi' : tp ? 'Tạo HĐ thầu phụ' : 'Thêm dòng';
@@ -979,7 +994,7 @@ function updateCostPreview() {
 
 function initCostForm() {
   cForm.dataset.ready = '1';
-  cForm.elements.nhom.innerHTML = KHOI().map((k) => `<optgroup label="${k.code}. ${esc(k.ten)}">${
+  cForm.elements.nhom.innerHTML = KHOI().map((k) => `<optgroup label="${esc(k.ten)}">${
     nhomOf(k.code).map((n, i) => `<option value="${n.code}">${stt(k, i)}. ${esc(n.ten)}</option>`).join('')}</optgroup>`).join('');
   fillSubOptions(cForm.elements.nhom.value);
   cForm.elements.nhom.addEventListener('change', () => fillSubOptions(cForm.elements.nhom.value));
@@ -1013,6 +1028,8 @@ async function saveCost() {
   const ngay = dmyToIso(cForm.elements.ngay.value);
   if (ngay === null) return showMsg(msg, 'Ngày không hợp lệ, nhập theo dạng dd/mm/yyyy', 'err');
   const e = cForm.elements;
+  const reqDt = NHOM().find((n) => n.code === e.nhom.value)?.bat_buoc_doi_tac;
+  if (reqDt && !costTpMode() && !e.doi_tac.value.trim()) return showMsg(msg, `Nhập ${reqDt.toLowerCase()}`, 'err');
   if (costTpMode()) {
     // Tạo hợp đồng thầu phụ kèm dòng HĐ gốc
     try {
@@ -1125,7 +1142,7 @@ function renderCost() {
     wrap.innerHTML = KHOI().map((k) => `
       <div class="card c-block" data-khoi="${k.code}">
         <div class="toolbar tv-head">
-          <h2>${k.code}. ${esc(k.ten)}</h2>
+          <h2>${esc(k.ten)}</h2>
           <button type="button" class="sm" data-ctoggle="${k.code}">Mở tất cả</button>
           <div class="tv-total">Tổng: <b data-ktotal>0</b></div>
         </div>
@@ -1145,7 +1162,7 @@ function renderCost() {
     const t = tong.theo_khoi[k.code];
     $('[data-ktotal]', card).textContent = money(t.sau_vat);
     $('tbody', card).innerHTML = blockRows(k);
-    $('tfoot', card).innerHTML = `<tr><td></td><td colspan="3">TỔNG ${k.code}. ${esc(k.ten)}${t.tam_tinh ? ' <span class="st st-tam-tinh">Có tạm tính</span>' : ''}</td>${sumCells(t)}<td colspan="2"></td></tr>`;
+    $('tfoot', card).innerHTML = `<tr><td></td><td colspan="3">TỔNG ${esc(k.ten)}${t.tam_tinh ? ' <span class="st st-tam-tinh">Có tạm tính</span>' : ''}</td>${sumCells(t)}<td colspan="2"></td></tr>`;
     $('[data-ctoggle]', card).textContent = blockKeys(k.code).every((x) => costOpen.has(x)) ? 'Thu gọn tất cả' : 'Mở tất cả';
   }
   renderTpCard();

@@ -540,7 +540,7 @@ function buildRevenueSections() {
   wrap.dataset.built = '1';
   wrap.innerHTML = Object.entries(REV_LABEL).map(([loai, L]) => `
     <div class="card rev-card" data-loai="${loai}">
-      <h2>${L.title}</h2>
+      ${loai === 'qt' ? `<div class="toolbar tv-head"><h2>${L.title}</h2><button type="button" class="sm" id="qt-toggle-all">Mở tất cả</button></div>` : `<h2>${L.title}</h2>`}
       ${canEdit() ? `
       <form class="grid-form rev-form" data-loai="${loai}" novalidate>
         <input type="hidden" name="id">
@@ -563,7 +563,7 @@ function buildRevenueSections() {
       <div class="table-wrap">
         <table class="rev-table">
           <thead><tr>
-            <th class="num">#</th><th>${loai === 'hd' ? 'Số HĐ / Phụ lục' : 'Đợt / Hồ sơ'}</th>${loai === 'qt' ? '<th>Số HĐ</th>' : ''}<th>Ngày</th>
+            <th class="num">#</th><th>${loai === 'hd' ? 'Số HĐ / Phụ lục' : 'Số HĐ / Đợt – Hồ sơ'}</th><th>Ngày</th>
             <th class="num">Trước VAT</th><th class="num">VAT</th><th class="num">Tiền VAT</th>
             <th class="num">Sau VAT</th><th>Ghi chú</th><th>Người cập nhật</th>${canEdit() ? '<th></th>' : ''}
           </tr></thead>
@@ -753,16 +753,78 @@ function renderRevenue() {
   $('#r-k-tv-sub').textContent = `Tạm ứng ${money(tv.tam_ung)} · Thanh toán ${money(tv.thanh_toan)} · Quyết toán ${money(tv.quyet_toan)}`;
 
   for (const loai of Object.keys(REV_LABEL)) {
-    const cols = (canEdit() ? 10 : 9) + (loai === 'qt' ? 1 : 0);
+    const cols = canEdit() ? 10 : 9;
     const card = $(`.rev-card[data-loai="${loai}"]`);
     const rows = items.filter((r) => r.loai === loai);
     if (loai === 'hd') {
       $('tbody', card).innerHTML = rows.length ? hdGroupsHtml(rows) : `<tr><td colspan="${cols}" class="empty">Chưa có dữ liệu</td></tr>`;
-    } else $('tbody', card).innerHTML = rows.length ? rows.map((r, i) => `
+    } else $('tbody', card).innerHTML = rows.length ? qtGroupsHtml(rows) : `<tr><td colspan="${cols}" class="empty">Chưa có dữ liệu</td></tr>`;
+    const t = tong[loai];
+    $('tfoot', card).innerHTML = `
       <tr>
-        <td class="num muted">${i + 1}</td>
-        <td><b>${esc(r.so_hieu)}</b></td>
-        ${loai === 'qt' ? `<td>${r.hd_so_hieu ? `<span class="st hd-tag">${esc(r.hd_so_hieu)}</span>` : '<span class="muted">—</span>'}</td>` : ''}
+        <td></td><td colspan="2">TỔNG ${REV_LABEL[loai].short}${t.tam_tinh ? ' <span class="st st-tam-tinh">Có tạm tính</span>' : ''}</td>
+        <td class="num">${money(t.gia_tri)}</td><td></td>
+        <td class="num">${money(t.tien_vat)}</td>
+        <td class="num">${money(t.sau_vat)}</td>
+        <td colspan="${canEdit() ? 3 : 2}"></td>
+      </tr>`;
+  }
+  updateQtToggleAll();
+  renderTienVe();
+}
+
+// ---------- Mục 2: gộp HT/QT theo hợp đồng (dòng tổng HĐ, các đợt là tập con, mặc định thu gọn) ----------
+const qtOpen = new Set();
+function qtGroupList(rows) {
+  const heads = tvHeads();
+  const order = new Map(heads.map((h, i) => [h.id, i]));
+  const groups = new Map();
+  for (const r of rows) {
+    const k = r.hd_id && order.has(r.hd_id) ? r.hd_id : 0; // 0 = chưa gắn HĐ (dữ liệu cũ)
+    if (!groups.has(k)) groups.set(k, { k, head: heads.find((h) => h.id === k) || null, rows: [] });
+    groups.get(k).rows.push(r);
+  }
+  // Trong 1 HĐ: các đợt theo số thứ tự (đợt 2 trước đợt 10), Quyết toán luôn ở cuối, rồi theo ngày
+  const coll = new Intl.Collator('vi', { numeric: true, sensitivity: 'base' });
+  const isQt = (r) => normVn(r.so_hieu).includes('quyet toan');
+  for (const g of groups.values()) {
+    g.rows.sort((a, b) => isQt(a) - isQt(b) || coll.compare(a.so_hieu, b.so_hieu) ||
+      String(a.ngay || '9999').localeCompare(String(b.ngay || '9999')) || a.id - b.id);
+  }
+  return [...groups.values()].sort((a, b) => (a.k ? order.get(a.k) : 1e6) - (b.k ? order.get(b.k) : 1e6));
+}
+function qtGroupsHtml(rows) {
+  const edit = canEdit();
+  // Giá trị HĐ (gồm PL, sau VAT) của từng HĐ để tính % đã nghiệm thu
+  const hdVal = new Map();
+  for (const g of hdGroups(revData.items.filter((r) => r.loai === 'hd'))) {
+    if (g.head) hdVal.set(g.head.id, [g.head, ...g.pls].reduce((s, r) => s + r.sau_vat, 0));
+  }
+  return qtGroupList(rows).map((g, gi) => {
+    const n = gi + 1;
+    const open = !g.k || qtOpen.has(g.k);
+    const sum = (f) => g.rows.reduce((s, r) => s + r[f], 0);
+    const daQt = g.rows.some((r) => normVn(r.so_hieu).includes('quyet toan'));
+    const tamTinh = g.rows.some((r) => r.tam_tinh);
+    const base = hdVal.get(g.k);
+    const pctHd = base ? ` · đạt ${(sum('sau_vat') / base * 100).toFixed(1).replace('.', ',')}% giá trị HĐ` : '';
+    const head = `<tr class="tv-head-row ${g.k ? '' : 'tv-sub-warn'}">
+      <td class="num">${n}</td>
+      <td>${g.k ? `<button class="grp-toggle" data-qtgrp="${g.k}" title="${open ? 'Thu gọn' : 'Mở chi tiết'}">${open ? '▾' : '▸'}</button>
+        <span class="kind-tag kind-hd">HĐ</span> <b>${esc(g.head.so_ma || g.head.so_hieu)}</b>` : '<span class="st st-tam-tinh">Chưa gắn HĐ</span>'}
+        <span class="muted small">(${g.rows.length} đợt)</span>
+        ${daQt ? ' <span class="st st-hoan-thanh">Đã quyết toán</span>' : ''}${tamTinh ? ' <span class="st st-tam-tinh">Có tạm tính</span>' : ''}</td>
+      <td></td>
+      <td class="num strong">${money(sum('gia_tri'))}</td><td></td>
+      <td class="num strong">${money(sum('tien_vat'))}</td>
+      <td class="num tv-head-sum">${money(sum('sau_vat'))}</td>
+      <td colspan="2" class="muted small">${g.rows.length} đợt${pctHd}</td>
+      ${edit ? `<td class="row-actions">${g.k && !daQt ? `<button class="sm" data-qtadd="${g.k}" title="Thêm đợt nghiệm thu / quyết toán cho HĐ này">+ Đợt</button>` : ''}</td>` : ''}
+    </tr>`;
+    return head + (open ? g.rows.map((r, i) => `
+      <tr class="tv-child">
+        <td class="num muted">${n}.${i + 1}</td>
+        <td class="indent"><span class="tree">└</span><b>${esc(r.so_hieu)}</b></td>
         <td>${dmy(r.ngay)}</td>
         <td class="num">${money(r.gia_tri)}</td>
         <td class="num">${vatBadge(r.vat)}</td>
@@ -770,19 +832,16 @@ function renderRevenue() {
         <td class="num strong">${money(r.sau_vat)}</td>
         <td class="wrap">${esc(r.ghi_chu)}</td>
         <td class="muted">${esc(r.nguoi_cap_nhat || '')}</td>
-        ${canEdit() ? `<td class="row-actions"><button data-redit="${r.id}">Sửa</button><button class="danger" data-rdel="${r.id}">Xóa</button></td>` : ''}
-      </tr>`).join('') : `<tr><td colspan="${cols}" class="empty">Chưa có dữ liệu</td></tr>`;
-    const t = tong[loai];
-    $('tfoot', card).innerHTML = `
-      <tr>
-        <td></td><td colspan="${loai === 'qt' ? 3 : 2}">TỔNG ${REV_LABEL[loai].short}${t.tam_tinh ? ' <span class="st st-tam-tinh">Có tạm tính</span>' : ''}</td>
-        <td class="num">${money(t.gia_tri)}</td><td></td>
-        <td class="num">${money(t.tien_vat)}</td>
-        <td class="num">${money(t.sau_vat)}</td>
-        <td colspan="${canEdit() ? 3 : 2}"></td>
-      </tr>`;
-  }
-  renderTienVe();
+        ${edit ? `<td class="row-actions"><button data-redit="${r.id}">Sửa</button><button class="danger" data-rdel="${r.id}">Xóa</button></td>` : ''}
+      </tr>`).join('') : '');
+  }).join('');
+}
+function updateQtToggleAll() {
+  const btn = $('#qt-toggle-all');
+  if (!btn) return;
+  const ks = qtGroupList(revData.items.filter((r) => r.loai === 'qt')).map((g) => g.k).filter(Boolean);
+  btn.hidden = !ks.length;
+  btn.textContent = ks.some((k) => !qtOpen.has(k)) ? 'Mở tất cả' : 'Thu gọn tất cả';
 }
 
 // ---------- Mục 1: nhóm PL theo Số mã HĐ (HĐ là dòng cha, PL là tập con) ----------
@@ -871,6 +930,7 @@ async function saveRevenue(f) {
   try {
     await api(id ? `/api/doanh-thu/${id}` : `/api/du-an/${revProjectId}/doanh-thu`,
       { method: id ? 'PUT' : 'POST', body: JSON.stringify(body) });
+    if (body.hd_id) qtOpen.add(Number(body.hd_id)); // mở nhóm HĐ vừa nhập
     resetRevForm(f);
     showMsg(msgEl, id ? 'Đã cập nhật' : 'Đã thêm dòng');
     await loadRevenue();
@@ -880,7 +940,32 @@ async function saveRevenue(f) {
 }
 
 async function onRevTableClick(e) {
-  const { redit, rdel, grp } = e.target.dataset;
+  const { redit, rdel, grp, qtgrp, qtadd } = e.target.dataset;
+  if (qtgrp !== undefined) {
+    const k = Number(qtgrp);
+    qtOpen.has(k) ? qtOpen.delete(k) : qtOpen.add(k);
+    return renderRevenue();
+  }
+  if (e.target.id === 'qt-toggle-all') {
+    const ks = qtGroupList(revData.items.filter((r) => r.loai === 'qt')).map((g) => g.k).filter(Boolean);
+    const close = ks.every((k) => qtOpen.has(k));
+    ks.forEach((k) => (close ? qtOpen.delete(k) : qtOpen.add(k)));
+    return renderRevenue();
+  }
+  if (qtadd) {
+    // Thêm đợt cho HĐ: điền sẵn Số HĐ và tên đợt kế tiếp
+    const f = $('.rev-form[data-loai="qt"]');
+    if (!f) return;
+    resetRevForm(f);
+    const k = Number(qtadd);
+    const n = revData.items.filter((r) => r.loai === 'qt' && r.hd_id === k).length;
+    f._hdAc?.set(k);
+    f.elements.so_hieu.value = `Nghiệm thu đợt ${n + 1}`;
+    showMsg($('.msg', f), 'Nhập giá trị đợt mới (đổi tên thành "Quyết toán" nếu là hồ sơ quyết toán)');
+    f.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => f.elements.gia_tri.focus(), 300);
+    return;
+  }
   if (grp !== undefined) {
     hdCollapsed.has(grp) ? hdCollapsed.delete(grp) : hdCollapsed.add(grp);
     return renderRevenue();

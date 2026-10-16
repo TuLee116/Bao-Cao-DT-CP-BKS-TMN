@@ -3,7 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const store = require('./lib/db');
 const auth = require('./lib/auth');
-const { TRANG_THAI, ROLES, validateProject, validateUser, validateSettings, validateRevenue, validateTienVe, passwordErrors } = require('./lib/validate');
+const { TRANG_THAI, ROLES, validateProject, validateUser, validateSettings, validateRevenue, validateTienVe, passwordErrors, passcodeErrors } = require('./lib/validate');
 const { LOAI_DOANH_THU, calcLine, summarize, sortRevenue, tienVeLabel, sortTienVe, summarizeTienVe } = require('./lib/revenue');
 
 const app = express();
@@ -162,7 +162,39 @@ api.post('/auth/change-password', wrap(async (req, res) => {
 }));
 
 // ---------- Cài đặt hệ thống ----------
-api.get('/settings', wrap(async (_req, res) => res.json(await store.getSettings())));
+const PASSCODE_KEY = 'xoa_hd_passcode';
+api.get('/settings', wrap(async (_req, res) => {
+  const s = await store.getSettings();
+  res.json({ ten_cong_ty: s.ten_cong_ty, ten_he_thong: s.ten_he_thong, passcode_set: Boolean(s[PASSCODE_KEY]) });
+}));
+
+// Đặt / đổi Passcode xóa HĐ/PL (chỉ Quản trị, phải nhập lại mật khẩu đăng nhập)
+api.put('/settings/passcode', auth.requireRole('admin'), wrap(async (req, res) => {
+  const { current_password, passcode, passcode2 } = req.body || {};
+  const hash = await store.getPasswordHash(req.user.id);
+  if (!(await auth.verifyPassword(current_password || '', hash))) return bad(res, 'Mật khẩu đăng nhập không đúng');
+  if (String(passcode) !== String(passcode2)) return bad(res, 'Passcode nhập lại không khớp');
+  const errors = passcodeErrors(passcode);
+  if (errors.length) return bad(res, errors);
+  await store.saveSettings({ [PASSCODE_KEY]: await auth.hashPassword(String(passcode)) });
+  console.log(`[NHẬT KÝ] ${new Date().toISOString()} ${req.user.username} đã đặt/đổi Passcode xóa HĐ/PL`);
+  res.json({ ok: true });
+}));
+
+// Chống dò passcode: sai 5 lần / 15 phút / tài khoản -> khóa xóa
+const passFails = new Map();
+const PASS_WINDOW = 15 * 60e3;
+function passcodeLocked(uid) {
+  const a = passFails.get(uid);
+  if (!a || Date.now() - a.first > PASS_WINDOW) return 0;
+  return a.count >= 5 ? Math.ceil((a.first + PASS_WINDOW - Date.now()) / 60e3) : 0;
+}
+function passcodeFailed(uid) {
+  const a = passFails.get(uid);
+  if (!a || Date.now() - a.first > PASS_WINDOW) passFails.set(uid, { first: Date.now(), count: 1 });
+  else a.count++;
+  return 5 - passFails.get(uid).count;
+}
 api.put('/settings', auth.requireRole('admin'), wrap(async (req, res) => {
   const { data, errors } = validateSettings(req.body || {});
   if (errors.length) return bad(res, errors);
@@ -356,8 +388,19 @@ api.delete('/doanh-thu/:id', canEdit, wrap(async (req, res) => {
       const parts = [qt && `${qt} dòng Hoàn thành/Quyết toán`, tv && `${tv} dòng Tiền về`].filter(Boolean).join(' và ');
       return bad(res, `Không xóa được "${cur.so_hieu}": đang được ${parts} tham chiếu. Hãy đổi Số HĐ của các dòng đó trước.`, 409);
     }
+    // Xóa Số HĐ/PL phải nhập Passcode do Quản trị đặt
+    const stored = (await store.getSettings())[PASSCODE_KEY];
+    if (!stored) return bad(res, 'Quản trị chưa đặt Passcode xóa HĐ/PL (tab Cài đặt). Chưa thể xóa.', 403);
+    const wait = passcodeLocked(req.user.id);
+    if (wait) return bad(res, `Nhập sai Passcode quá nhiều lần. Thử lại sau ${wait} phút`, 429);
+    if (!(await auth.verifyPassword(String(req.body?.passcode ?? ''), stored))) {
+      const left = passcodeFailed(req.user.id);
+      return bad(res, left > 0 ? `Passcode không đúng (còn ${left} lần thử)` : 'Passcode không đúng. Đã khóa chức năng xóa 15 phút', 403);
+    }
+    passFails.delete(req.user.id);
   }
   const ok = await store.deleteRevenue(id);
+  if (ok && cur.loai === 'hd') console.log(`[NHẬT KÝ] ${new Date().toISOString()} ${req.user.username} đã xóa "${cur.so_hieu}" (công trình #${cur.du_an_id}, dòng #${id})`);
   ok ? res.status(204).end() : bad(res, 'Không tìm thấy dòng doanh thu', 404);
 }));
 

@@ -562,9 +562,16 @@ async function onRevTableClick(e) {
   }
   if (rdel) {
     const r = revData.items.find((x) => x.id === Number(rdel));
-    if (!r || !confirm(`Xóa dòng "${r.so_hieu}"?`)) return;
+    if (!r) return;
+    let body;
+    if (r.loai === 'hd') {
+      // Xóa Số HĐ/PL: bắt buộc Passcode do Quản trị đặt
+      const pc = await askPasscode(`Xóa "${r.so_hieu}"?`, `Giá trị sau VAT: ${money(r.sau_vat)} đ. Thao tác này không hoàn tác được.`);
+      if (pc === null) return;
+      body = JSON.stringify({ passcode: pc });
+    } else if (!confirm(`Xóa dòng "${r.so_hieu}"?`)) return;
     try {
-      await api(`/api/doanh-thu/${rdel}`, { method: 'DELETE' });
+      await api(`/api/doanh-thu/${rdel}`, { method: 'DELETE', body });
       await loadRevenue();
     } catch (err) {
       alert(err.message);
@@ -967,6 +974,10 @@ async function loadSettings() {
   const s = await api('/api/settings');
   sForm.elements.ten_cong_ty.value = s.ten_cong_ty || '';
   sForm.elements.ten_he_thong.value = s.ten_he_thong || '';
+  $('#pc-status').innerHTML = s.passcode_set
+    ? '<span class="st st-hoan-thanh">Đã đặt</span> Nhân viên Nhập liệu / Quản trị phải nhập passcode khi xóa Số HĐ/PL.'
+    : '<span class="st st-tam-dung">Chưa đặt</span> Hiện chưa ai xóa được Số HĐ/PL cho đến khi đặt passcode.';
+  $('#pc-submit').textContent = s.passcode_set ? 'Đổi passcode' : 'Đặt passcode';
   $('#sys-info').innerHTML = `
     Cơ sở dữ liệu: <b>${META.db === 'postgres' ? 'PostgreSQL' : 'Bộ nhớ tạm (chưa kết nối CSDL)'}</b><br>
     Mã khởi tạo (SETUP_TOKEN): ${META.setup_token_required ? 'đã đặt' : 'không đặt'}`;
@@ -980,6 +991,23 @@ sForm?.addEventListener('submit', async (e) => {
     showMsg($('#s-msg'), 'Đã lưu cài đặt');
   } catch (err) {
     showMsg($('#s-msg'), err.message, 'err');
+  }
+});
+
+$('#pc-form')?.querySelectorAll('input[inputmode=numeric]').forEach((i) =>
+  i.addEventListener('input', () => { i.value = i.value.replace(/\D/g, '').slice(0, 8); }));
+$('#pc-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const d = formData(e.target);
+  if (!/^\d{8}$/.test(d.passcode)) return showMsg($('#pc-msg'), 'Passcode phải gồm đúng 8 chữ số', 'err');
+  if (d.passcode !== d.passcode2) return showMsg($('#pc-msg'), 'Passcode nhập lại không khớp', 'err');
+  try {
+    await api('/api/settings/passcode', { method: 'PUT', body: JSON.stringify(d) });
+    e.target.reset();
+    showMsg($('#pc-msg'), 'Đã lưu Passcode xóa HĐ/PL');
+    await loadSettings();
+  } catch (err) {
+    showMsg($('#pc-msg'), err.message, 'err');
   }
 });
 

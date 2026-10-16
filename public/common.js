@@ -222,3 +222,38 @@ function attachQuickPicker(input, getOptions, onPick, emptyText = 'Chưa có d�
   });
   return { open, close };
 }
+
+// ---------- Hộp nhập Passcode 8 số (ẩn ký tự) ----------
+// Trả về Promise<string|null>: passcode hoặc null nếu hủy
+function askPasscode(title, detail = '') {
+  return new Promise((resolve) => {
+    const dlg = document.createElement('dialog');
+    dlg.className = 'pass-dlg';
+    dlg.innerHTML = `
+      <form method="dialog" class="stack">
+        <h3>${esc(title)}</h3>
+        ${detail ? `<p class="muted small">${esc(detail)}</p>` : ''}
+        <label>Passcode xóa (8 số)
+          <input name="pc" type="password" inputmode="numeric" maxlength="8" autocomplete="off" pattern="\\d{8}" required placeholder="••••••••">
+        </label>
+        <div class="msg err" role="alert"></div>
+        <div class="actions">
+          <button type="submit" class="danger-solid">Xác nhận xóa</button>
+          <button type="button" data-cancel>Hủy</button>
+        </div>
+      </form>`;
+    document.body.appendChild(dlg);
+    const input = dlg.querySelector('[name=pc]');
+    const done = (v) => { dlg.close(); dlg.remove(); resolve(v); };
+    input.addEventListener('input', () => { input.value = input.value.replace(/\D/g, '').slice(0, 8); });
+    dlg.querySelector('[data-cancel]').addEventListener('click', () => done(null));
+    dlg.addEventListener('cancel', (e) => { e.preventDefault(); done(null); });
+    dlg.querySelector('form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (!/^\d{8}$/.test(input.value)) { dlg.querySelector('.msg').textContent = 'Passcode phải gồm đúng 8 chữ số'; return; }
+      done(input.value);
+    });
+    dlg.showModal();
+    input.focus();
+  });
+}

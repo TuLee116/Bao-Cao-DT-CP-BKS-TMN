@@ -28,6 +28,12 @@ Web quản lý dự án xây dựng có đăng nhập, phân quyền, khởi t�
 - Không xóa được (và không đổi thành PL) một HĐ đang được dòng HT/QT hoặc Tiền về tham chiếu.
 - Dữ liệu cũ dạng "HĐ ABC-123" tự tách thành Loại + Số mã khi máy chủ khởi động.
 
+### Passcode xóa Số HĐ/PL
+- Quản trị đặt/đổi ở tab **Cài đặt** (phải nhập lại mật khẩu đăng nhập). Passcode gồm đúng 8 chữ số, chặn dãy dễ đoán; lưu dạng mã hóa một chiều.
+- Xóa dòng HĐ/PL ở mục 1 bắt buộc nhập passcode; chưa đặt passcode thì không ai xóa được.
+- Sai 5 lần / 15 phút → khóa chức năng xóa của tài khoản đó 15 phút.
+- Mọi lần đặt passcode và xóa HĐ/PL đều ghi nhật ký `[NHẬT KÝ]` trong log máy chủ (Railway → Deploy Logs).
+
 ### Phân quyền
 | Quyền | Xem dự án | Thêm/sửa/xóa dự án | Quản lý tài khoản & cài đặt |
 |---|:-:|:-:|:-:|

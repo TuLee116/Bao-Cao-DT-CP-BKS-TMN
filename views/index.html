@@ -153,6 +153,17 @@
           <div id="s-msg" class="msg" role="alert"></div>
         </form>
         <hr>
+        <h2>Passcode xóa Số HĐ/PL</h2>
+        <p id="pc-status" class="small"></p>
+        <form id="pc-form" class="stack" autocomplete="off">
+          <label>Mật khẩu đăng nhập của bạn *<input name="current_password" type="password" required autocomplete="current-password"></label>
+          <label>Passcode mới (8 chữ số) *<input name="passcode" type="password" inputmode="numeric" maxlength="8" required autocomplete="new-password"></label>
+          <label>Nhập lại passcode *<input name="passcode2" type="password" inputmode="numeric" maxlength="8" required autocomplete="new-password"></label>
+          <p class="muted small">Không dùng dãy dễ đoán (11111111, 12345678...). Passcode được mã hóa, không ai xem lại được; quên thì đặt mã mới.</p>
+          <div class="actions"><button type="submit" class="primary" id="pc-submit">Đặt passcode</button></div>
+          <div id="pc-msg" class="msg" role="alert"></div>
+        </form>
+        <hr>
         <h2>Thông tin hệ thống</h2>
         <div id="sys-info" class="muted"></div>
       </div>

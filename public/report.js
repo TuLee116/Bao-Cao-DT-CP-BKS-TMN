@@ -196,7 +196,7 @@ function bFinHtml(list, v) {
   <section class="card b-sec f-sec">
     <div class="f-head">
       <h2>Tổng quan tài chính · ${esc(P.label)}</h2>
-      <div class="f-range">📅 ${P.range}${P.prev ? ` <span class="muted">· so với ${ymTxt(P.prev.from)}${P.prev.n !== 1 && P.prev.from !== P.prev.to ? ' – ' + ymTxt(P.prev.to) : ''}</span>` : ''}</div>
+      <button type="button" class="f-range f-range-btn" data-kypick title="Bấm để chọn kỳ báo cáo">📅 ${P.range}${P.prev ? ` <span class="muted">· so với ${ymTxt(P.prev.from)}${P.prev.from !== P.prev.to ? ' – ' + ymTxt(P.prev.to) : ''}</span>` : ''} <span class="f-caret">▾</span></button>
     </div>
     <div class="f-grid">
       ${card('dt', 'Tổng doanh thu', cur.dt, bDelta(cur.dt, prv?.dt, true),
@@ -291,6 +291,41 @@ function bDonut(el, all) {
 }
 
 // Hộp thoại đặt mục tiêu năm (Quản trị)
+// Bảng chọn kỳ (bấm vào ô khoảng ngày): chọn nhanh hoặc từ tháng – đến tháng
+function bKyPopover(btn) {
+  $('.ky-pop')?.remove();
+  const P = bPeriod(bScope().list);
+  const pop = document.createElement('div');
+  pop.className = 'ky-pop';
+  pop.innerHTML = `<div class="ky-pop-h">Chọn kỳ báo cáo</div>
+    <div class="ky-quick">${KY_OPTS.filter(([k]) => k !== 'tuychon').map(([k, t]) => `<button type="button" data-kq="${k}" class="${BST.ky === k ? 'on' : ''}">${t.replace(' (All time)', '')}</button>`).join('')}</div>
+    <div class="ky-pop-h">Hoặc chọn khoảng tháng</div>
+    <div class="ky-range"><label>Từ tháng<input type="month" data-kf="tu" value="${P.from}"></label><label>Đến tháng<input type="month" data-kf="den" value="${P.to}"></label></div>
+    <div class="msg" role="alert"></div>
+    <div class="ky-pop-a"><button type="button" data-kx>Đóng</button><button type="button" class="primary" data-ka>Áp dụng</button></div>
+    <div class="muted small">Số liệu tổng hợp theo tháng: từ ngày 01 của tháng đầu đến ngày cuối của tháng cuối.</div>`;
+  document.body.appendChild(pop);
+  const r = btn.getBoundingClientRect();
+  pop.style.top = `${window.scrollY + r.bottom + 6}px`;
+  pop.style.left = `${Math.max(8, Math.min(window.scrollX + r.right - pop.offsetWidth, window.scrollX + document.documentElement.clientWidth - pop.offsetWidth - 8))}px`;
+  const close = () => { pop.remove(); document.removeEventListener('mousedown', outside, true); document.removeEventListener('keydown', esc_); };
+  const outside = (e) => { if (!pop.contains(e.target) && !e.target.closest('[data-kypick]')) close(); };
+  const esc_ = (e) => { if (e.key === 'Escape') close(); };
+  setTimeout(() => { document.addEventListener('mousedown', outside, true); document.addEventListener('keydown', esc_); });
+  pop.addEventListener('click', (e) => {
+    const q = e.target.closest('[data-kq]');
+    if (q) { BST.ky = q.dataset.kq; bSave(); close(); return renderReport(); }
+    if (e.target.closest('[data-kx]')) return close();
+    if (e.target.closest('[data-ka]')) {
+      const tu = $('[data-kf=tu]', pop).value, den = $('[data-kf=den]', pop).value;
+      if (!tu || !den) return showMsg($('.msg', pop), 'Chọn đủ từ tháng và đến tháng', 'err');
+      if (tu > den) return showMsg($('.msg', pop), 'Từ tháng phải trước hoặc bằng đến tháng', 'err');
+      Object.assign(BST, { ky: 'tuychon', tu, den });
+      bSave(); close(); renderReport();
+    }
+  });
+}
+
 function bTargetDialog() {
   const year = bPeriod(BC.du_an).to.slice(0, 4);
   const t = (BC.muc_tieu || {})[year] || {};
@@ -739,7 +774,7 @@ function bPcSection(list, v) {
       <div class="pc-ky no-print">
         <label>Kỳ<select id="pc-ky" aria-label="Kỳ báo cáo">${KY_OPTS.map(([k, t]) => `<option value="${k}" ${k === BST.ky ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
         ${BST.ky === 'tuychon' ? `<span class="b-ky-custom"><input type="month" id="pc-tu" value="${P.from}" aria-label="Từ tháng"> – <input type="month" id="pc-den" value="${P.to}" aria-label="Đến tháng"></span>` : ''}
-        <span class="f-range">${P.range}</span>
+        <button type="button" class="f-range f-range-btn" data-kypick title="Bấm để chọn kỳ báo cáo">📅 ${P.range} <span class="f-caret">▾</span></button>
       </div>
       <div class="f-range print-only">Kỳ: ${esc(P.label)} · ${P.range}</div>
     </div>
@@ -942,6 +977,8 @@ $('#b-reload').addEventListener('click', () => loadReport().catch((err) => alert
 $('#b-report').addEventListener('click', (e) => {
   if (e.target.id === 'b-open-all' || e.target.id === 'b-close-all') $$('#b-report details.b-proj').forEach((d) => (d.open = e.target.id === 'b-open-all'));
   if (e.target.id === 'f-set-target') return bTargetDialog();
+  const kp = e.target.closest('[data-kypick]');
+  if (kp) return $('.ky-pop') ? $('.ky-pop').remove() : bKyPopover(kp);
   if (e.target.id === 'b-detail-toggle') return bSetDetail(!BST.chi_tiet);
   if (e.target.id === 'pc-back') {
     BST.project = ''; bSave(); renderReport();

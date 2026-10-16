@@ -468,6 +468,20 @@ dialog.pass-dlg.f-dlg h3 { color: var(--navy); }
 @media (max-width: 760px) { .f-grid, .f-row2 { grid-template-columns: minmax(0, 1fr); } .b-ky-custom input { width: 130px; } }
 @media print { .f-grid { grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(0, 1.15fr); } .f-row2 { grid-template-columns: 0.85fr 1.15fr; } .f-big .chart { min-height: 0; } .f-val { font-size: 15px; } .f-sec { break-after: page; } }
 
+/* ---------- Ô khoảng ngày bấm được + bảng chọn kỳ ---------- */
+.f-range-btn { cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; color: var(--navy); box-shadow: none; }
+.f-range-btn:hover { border-color: var(--teal); background: #eefaf8; }
+.f-caret { font-size: 10px; color: var(--muted); margin-left: 2px; }
+.ky-pop { position: absolute; z-index: 60; width: 340px; max-width: calc(100vw - 16px); padding: 14px; border-radius: 14px; background: #fff; border: 1px solid var(--border); box-shadow: 0 12px 32px rgba(15,23,42,.18); display: grid; gap: 10px; }
+.ky-pop-h { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); }
+.ky-quick { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.ky-quick button { padding: 7px 6px; font-size: 12px; }
+.ky-quick button.on { background: var(--navy); color: #fff; border-color: var(--navy); }
+.ky-range { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ky-range input { width: 100%; }
+.ky-pop-a { display: flex; justify-content: flex-end; gap: 8px; }
+@media print { .ky-pop, .f-caret { display: none !important; } .f-range-btn { border: 0; } }
+
 /* ---------- Khối Phân tích chi tiết (ẩn / hiện) ---------- */
 .b-detail-bar { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; padding: 14px 20px; }
 .b-detail-bar b { color: var(--navy); }

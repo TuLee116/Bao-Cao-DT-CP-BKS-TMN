@@ -14,6 +14,7 @@ const { LOAI_DOANH_THU, calcLine, summarize, sortRevenue, tienVeLabel, sortTienV
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const APP_ENV = (process.env.APP_ENV || 'production').trim().toLowerCase();
 const SETUP_TOKEN = (process.env.SETUP_TOKEN || '').trim();
 
 app.set('trust proxy', 1); // Railway đứng sau proxy HTTPS
@@ -106,6 +107,7 @@ api.get('/meta', wrap(async (_req, res) => {
     needs_setup: (await store.countUsers()) === 0,
     setup_token_required: Boolean(SETUP_TOKEN),
     phien_ban: PHIEN_BAN,
+    moi_truong: APP_ENV, // 'staging' = hệ thống thử nghiệm (đặt biến APP_ENV trên Railway)
   });
 }));
 

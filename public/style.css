@@ -635,3 +635,7 @@ dialog.pass-dlg.f-dlg h3 { color: var(--navy); }
 .fz-range input { padding: 5px 8px; font-size: 12px; width: auto; }
 .fz-hint { margin: 4px 0 0; }
 @media print { .fz-bar .fz-ctl, .fz-back, .fz-hint { display: none !important; } }
+/* Dải báo hệ thống thử nghiệm (APP_ENV=staging) */
+.env-bar { position: sticky; top: 0; z-index: 60; padding: 6px 12px; text-align: center; font-size: 12.5px; font-weight: 700; letter-spacing: .3px; color: #fff;
+  background: repeating-linear-gradient(-45deg, #c2410c 0 14px, #b93a08 14px 28px); }
+@media print { .env-bar { display: none; } }

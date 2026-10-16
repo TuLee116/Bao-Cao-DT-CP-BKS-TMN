@@ -28,6 +28,13 @@ function showMsg(el, text, type = 'ok') {
 const formData = (form) => Object.fromEntries(new FormData(form));
 
 function dbWarning(meta) {
+  if (meta.moi_truong === 'staging') {
+    const st = document.createElement('div');
+    st.className = 'env-bar';
+    st.textContent = 'HỆ THỐNG THỬ NGHIỆM (STAGING) – dữ liệu tại đây chỉ dùng để kiểm tra, không phải số liệu chính thức';
+    document.body.prepend(st);
+    document.title = '[TEST] ' + document.title;
+  }
   if (meta.db !== 'memory') return;
   const div = document.createElement('div');
   div.className = 'warn-bar';

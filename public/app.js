@@ -41,7 +41,7 @@ let users = [];
 function applyBranding(s) {
   $('#sys-name').textContent = s.ten_he_thong;
   $('#company').textContent = s.ten_cong_ty;
-  document.title = s.ten_he_thong;
+  document.title = (META && META.moi_truong === 'staging' ? '[TEST] ' : '') + s.ten_he_thong;
 }
 
 // =====================================================================

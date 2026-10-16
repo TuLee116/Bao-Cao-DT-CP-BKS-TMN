@@ -311,7 +311,9 @@ async function checkHdRef(data, duAnId, selfId = 0) {
     return dup ? `"${data.so_hieu}" đã có trong công trình này` : null;
   }
   const hd = await store.getRevenue(data.hd_id);
-  return hd && hd.loai === 'hd' && hd.du_an_id === duAnId ? null : 'Số HĐ/PL không thuộc công trình này, hãy chọn lại từ danh sách gợi ý';
+  if (!hd || hd.loai !== 'hd' || hd.du_an_id !== duAnId) return 'Số HĐ không thuộc công trình này, hãy chọn lại từ danh sách gợi ý';
+  // Chỉ gắn với hợp đồng gốc (HĐ), không gắn vào phụ lục để tránh nhiễu số liệu
+  return hd.ma_loai === 'HĐ' ? null : 'Chỉ chọn hợp đồng gốc (HĐ), không chọn phụ lục';
 }
 
 api.put('/doanh-thu/:id', canEdit, wrap(async (req, res) => {
@@ -398,6 +400,8 @@ app.listen(PORT, '0.0.0.0', () => console.log(`Server chạy tại cổng ${PORT
       await store.init();
       const n = await store.migrateHdCodes();
       if (n) console.log(`Đã tách Loại/Số mã cho ${n} dòng HĐ/PL cũ`);
+      const m = await store.migrateQtToHead();
+      if (m) console.log(`Đã chuyển ${m} dòng HT/QT từ phụ lục sang HĐ gốc`);
       dbState.ready = true;
       dbState.error = null;
       console.log(`Đã kết nối CSDL (${store.kind}) sau ${dbState.attempts} lần thử`);

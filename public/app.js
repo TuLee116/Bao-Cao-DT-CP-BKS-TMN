@@ -201,7 +201,7 @@ function buildRevenueSections() {
         <label>Loại *<select name="ma_loai"></select></label>
         <label>Số mã HĐ *<input name="so_ma" maxlength="120" placeholder="VD: ABC-123, 01/2026/HĐXD-TMN"><span class="calc-note so-preview"></span></label>` : `
         <label>${L.so}<input name="so_hieu" required maxlength="150" placeholder="${L.soPh}"></label>`}
-        ${loai === 'qt' ? `<label>Số HĐ/PL *<input name="hd_ref" placeholder="Gõ để tìm Số HĐ/PL ở mục 1"><input type="hidden" name="hd_id"></label>` : ''}
+        ${loai === 'qt' ? `<label>Số HĐ *<input name="hd_ref" placeholder="Gõ để tìm Số HĐ ở mục 1"><input type="hidden" name="hd_id"></label>` : ''}
         <label>Ngày<input name="ngay" class="date-dmy"></label>
         <label>Giá trị ${L.short} (trước VAT) *<input name="gia_tri" class="money" required placeholder="0"></label>
         <label>VAT (%)<input name="vat" type="number" min="0" max="100" step="1" placeholder="0 = chưa có VAT"></label>
@@ -216,7 +216,7 @@ function buildRevenueSections() {
       <div class="table-wrap">
         <table class="rev-table">
           <thead><tr>
-            <th class="num">#</th><th>${loai === 'hd' ? 'Số HĐ / Phụ lục' : 'Đợt / Hồ sơ'}</th>${loai === 'qt' ? '<th>Số HĐ/PL</th>' : ''}<th>Ngày</th>
+            <th class="num">#</th><th>${loai === 'hd' ? 'Số HĐ / Phụ lục' : 'Đợt / Hồ sơ'}</th>${loai === 'qt' ? '<th>Số HĐ</th>' : ''}<th>Ngày</th>
             <th class="num">Trước VAT</th><th class="num">VAT</th><th class="num">Tiền VAT</th>
             <th class="num">Sau VAT</th><th>Ghi chú</th><th>Người cập nhật</th>${canEdit() ? '<th></th>' : ''}
           </tr></thead>
@@ -266,13 +266,17 @@ function updateRevPreview(f) {
 }
 
 // Danh sách gợi ý Số HĐ/PL = các dòng ở mục 1 của công trình đang chọn
+// Chỉ gợi ý hợp đồng gốc (HĐ); giá trị hiển thị = HĐ tổng (HĐ + các PL cùng Số mã)
 function hdOptions() {
   const rows = (revData?.items || []).filter((r) => r.loai === 'hd');
-  return hdGroups(rows).flatMap((g) => [g.head, ...g.pls].filter(Boolean)).map((r) => ({
-    id: r.id,
-    label: r.so_hieu,
-    sub: `${r.ma_loai && r.ma_loai !== 'HĐ' ? 'Phụ lục của HĐ ' + (r.so_ma || '') + ' · ' : ''}${money(r.sau_vat)} đ sau VAT${r.ngay ? ' · ' + dmy(r.ngay) : ''}`,
-  }));
+  return hdGroups(rows).filter((g) => g.head).map((g) => {
+    const tong = [g.head, ...g.pls].reduce((s, r) => s + r.sau_vat, 0);
+    return {
+      id: g.head.id,
+      label: g.head.so_hieu,
+      sub: `HĐ tổng ${money(tong)} đ sau VAT${g.pls.length ? ` (gồm ${g.pls.length} PL)` : ''}${g.head.ngay ? ' · ' + dmy(g.head.ngay) : ''}`,
+    };
+  });
 }
 
 // Ô chọn Loại: HĐ, PL01, PL02... (luôn dư vài PL so với số đang có)
@@ -488,7 +492,7 @@ async function saveRevenue(f) {
     ghi_chu: f.elements.ghi_chu.value,
   };
   if (f.elements.hd_id) {
-    if (!f.elements.hd_id.value) return showMsg(msgEl, 'Chọn Số HĐ/PL từ danh sách gợi ý (nhập ở mục 1 trước nếu chưa có)', 'err');
+    if (!f.elements.hd_id.value) return showMsg(msgEl, 'Chọn Số HĐ từ danh sách gợi ý (nhập HĐ ở mục 1 trước nếu chưa có)', 'err');
     body.hd_id = f.elements.hd_id.value;
   }
   try {

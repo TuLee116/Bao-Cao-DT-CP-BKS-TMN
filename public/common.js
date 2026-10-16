@@ -153,7 +153,7 @@ function attachAutocomplete(input, hiddenInput, getOptions) {
     active = items.length ? 0 : -1;
     list.innerHTML = items.length
       ? items.map((o, i) => `<li data-i="${i}" class="${i === active ? 'active' : ''}"><b>${esc(o.label)}</b>${o.sub ? `<span>${esc(o.sub)}</span>` : ''}</li>`).join('')
-      : `<li class="ac-empty">${all.length ? 'Không tìm thấy' : 'Chưa có Số HĐ/PL nào ở mục 1'}</li>`;
+      : `<li class="ac-empty">${all.length ? 'Không tìm thấy' : 'Chưa có HĐ nào ở mục 1'}</li>`;
     list.hidden = false;
   };
   const highlight = () => $$('li[data-i]', list).forEach((li) => li.classList.toggle('active', Number(li.dataset.i) === active));

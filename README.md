@@ -23,7 +23,7 @@ Web quản lý dự án xây dựng có đăng nhập, phân quyền, khởi t�
 
 ### Liên kết HĐ/PL
 - Mục 1: chọn **Loại** (HĐ, PL01, PL02...) + nhập **Số mã HĐ** → hiển thị "HĐ ABC-123", "PL01 ABC-123". Không trùng trong cùng công trình. Chọn PL khi chưa nhập Số mã sẽ tự lấy Số mã của HĐ.
-- Mục 2: mỗi dòng HT/QT bắt buộc chọn **Số HĐ/PL** từ ô tìm kiếm có gợi ý (lấy từ mục 1 của cùng công trình).
+- Mục 2: mỗi dòng HT/QT bắt buộc chọn **Số HĐ** (chỉ hợp đồng gốc, không chọn PL) từ ô tìm kiếm có gợi ý; gợi ý kèm giá trị HĐ tổng = HĐ + các PL cùng Số mã.
 - Không xóa được HĐ/PL đang được dòng HT/QT tham chiếu.
 - Dữ liệu cũ dạng "HĐ ABC-123" tự tách thành Loại + Số mã khi máy chủ khởi động.
 

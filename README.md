@@ -58,6 +58,11 @@ Số liệu lấy tự động từ tab Doanh thu và Chi phí (API `GET /api/da
 - Biểu đồ đường: Doanh thu – Chi phí lũy kế theo tháng (theo ngày chứng từ; dòng thiếu ngày vẫn tính trong số tổng).
 - Biểu đồ quạt: tỷ trọng doanh thu / chi phí của các dự án (7 dự án lớn nhất + "Khác").
 
+### Dữ liệu mẫu & Tester
+- **Cài đặt → Dữ liệu mẫu** (Quản trị): tạo 5 dự án `DEMO-01…05` – mỗi dự án 5–10 HĐ chủ đầu tư (mới ký / đang thi công / đã quyết toán), mỗi HĐ 5–10 HĐ thầu phụ (tạm ứng / thanh toán đợt / quyết toán khóa sổ) và chi phí trực tiếp, gián tiếp, tài chính. Xóa toàn bộ bằng Passcode; dữ liệu thật không bị ảnh hưởng.
+- **Tester** đối chiếu độc lập toàn bộ số liệu (Doanh thu, Thầu phụ, Chi phí, Dashboard, biểu đồ):
+  `node scripts/tester.js <URL> <tên đăng nhập> <mật khẩu> [--demo]`
+
 ### Phân quyền
 | Quyền | Xem dự án | Thêm/sửa/xóa dự án | Quản lý tài khoản & cài đặt |
 |---|:-:|:-:|:-:|

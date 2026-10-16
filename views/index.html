@@ -102,9 +102,9 @@
           <table>
             <thead>
               <tr>
-                <th>Mã</th><th>Tên dự án</th><th>Chủ đầu tư</th>
+                <th>Mã / Tên dự án</th><th>Chủ đầu tư</th>
                 <th class="num">Doanh thu</th><th class="num">Chi phí</th><th class="num">Lợi nhuận</th>
-                <th>Tiến độ</th><th>Trạng thái</th><th>Thời gian</th><th>Cập nhật bởi</th><th></th>
+                <th>Tiến độ</th><th>Trạng thái</th><th>Thời gian</th><th>Cập nhật</th><th></th>
               </tr>
             </thead>
             <tbody id="p-tbody"></tbody>
@@ -258,6 +258,15 @@
           <div class="actions"><button type="submit" class="primary" id="pc-submit">Đặt passcode</button></div>
           <div id="pc-msg" class="msg" role="alert"></div>
         </form>
+        <hr>
+        <h2>Dữ liệu mẫu (chạy thử hệ thống)</h2>
+        <p class="small">Tạo 5 dự án mẫu mã <b>DEMO-01…05</b>: mỗi dự án 5–10 HĐ chủ đầu tư ở các giai đoạn (mới ký / đang thi công / đã quyết toán), mỗi HĐ 5–10 HĐ thầu phụ và các khoản chi phí khác. Không ảnh hưởng dữ liệu thật; xóa được toàn bộ bằng Passcode.</p>
+        <p id="demo-status" class="small muted"></p>
+        <div class="actions">
+          <button type="button" class="primary" id="demo-seed">Tạo dữ liệu mẫu</button>
+          <button type="button" class="danger" id="demo-del">Xóa dữ liệu mẫu</button>
+        </div>
+        <div id="demo-msg" class="msg" role="alert"></div>
         <hr>
         <h2>Thông tin hệ thống</h2>
         <div id="sys-info" class="muted"></div>

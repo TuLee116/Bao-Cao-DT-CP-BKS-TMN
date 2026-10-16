@@ -87,7 +87,7 @@ function renderProjects() {
   const v = DSTATE.vat;
   const money = (n) => `<span class="${n < 0 ? 'neg' : ''}">${fmt.format(n)}</span>`;
 
-  const cols = 11;
+  const cols = 10;
   $('#p-tbody').innerHTML = rows.length
     ? rows.map((r) => {
       const d = by.get(r.id);
@@ -95,15 +95,14 @@ function renderProjects() {
       const cp = d ? d.chi_phi[v] : 0;
       return `
       <tr>
-        <td>${esc(r.ma_du_an)}</td>
-        <td>${esc(r.ten_du_an)}</td>
+        <td><b class="p-ma">${esc(r.ma_du_an)}</b><div>${esc(r.ten_du_an)}</div></td>
         <td>${esc(r.chu_dau_tu)}</td>
         <td class="num">${fmt.format(dt)}</td>
         <td class="num">${fmt.format(cp)}</td>
         <td class="num">${money(dt - cp)}</td>
         <td><span class="bar"><i style="width:${Math.min(100, Number(r.tien_do) || 0)}%"></i></span>${r.tien_do}%</td>
         <td><span class="st st-${slug(r.trang_thai)}">${esc(r.trang_thai)}</span></td>
-        <td>${dmy(r.ngay_bat_dau)}${r.ngay_ket_thuc ? ' → ' + dmy(r.ngay_ket_thuc) : ''}</td>
+        <td class="small">${dmy(r.ngay_bat_dau)}${r.ngay_ket_thuc ? '<br>→ ' + dmy(r.ngay_ket_thuc) : ''}</td>
         <td class="muted">${esc(r.nguoi_cap_nhat || '')}</td>
         <td class="row-actions">
           <button data-rev="${r.id}" title="Xem / nhập doanh thu">Doanh thu</button>
@@ -1910,7 +1909,39 @@ $('#u-tbody')?.addEventListener('click', async (e) => {
 // =====================================================================
 const sForm = $('#s-form');
 
+async function loadDemoStatus() {
+  const { count } = await api('/api/demo');
+  $('#demo-status').textContent = count ? `Đang có ${count} dự án mẫu (DEMO-...).` : 'Chưa có dữ liệu mẫu.';
+  $('#demo-seed').disabled = count > 0;
+  $('#demo-del').disabled = count === 0;
+}
+$('#demo-seed')?.addEventListener('click', async (e) => {
+  if (!confirm('Tạo 5 dự án mẫu DEMO-01…05 để chạy thử?')) return;
+  e.target.disabled = true;
+  showMsg($('#demo-msg'), 'Đang tạo dữ liệu mẫu, vui lòng chờ...');
+  try {
+    const r = await api('/api/demo', { method: 'POST', body: '{}' });
+    const c = r.count;
+    showMsg($('#demo-msg'), `Đã tạo ${c.du_an} dự án · ${c.hd} HĐ CĐT · ${c.pl} PL · ${c.ht_qt} dòng HT/QT · ${c.tien_ve} dòng tiền về · ${c.thau_phu} HĐ thầu phụ · ${c.tp_thanh_toan} lần thanh toán TP · ${c.chi_phi} dòng chi phí (${(r.ms / 1000).toFixed(1)} giây). Xem ở tab Dự án.`);
+  } catch (err) {
+    showMsg($('#demo-msg'), err.message, 'err');
+  }
+  loadDemoStatus().catch(() => {});
+});
+$('#demo-del')?.addEventListener('click', async () => {
+  const passcode = await askPasscode('Xóa toàn bộ dữ liệu mẫu', 'Xóa các dự án DEMO-... cùng toàn bộ doanh thu, chi phí, thầu phụ của chúng. Dữ liệu thật không bị ảnh hưởng.');
+  if (!passcode) return;
+  try {
+    const r = await api('/api/demo', { method: 'DELETE', body: JSON.stringify({ passcode }) });
+    showMsg($('#demo-msg'), `Đã xóa ${r.deleted} dự án mẫu.`);
+  } catch (err) {
+    showMsg($('#demo-msg'), err.message, 'err');
+  }
+  loadDemoStatus().catch(() => {});
+});
+
 async function loadSettings() {
+  loadDemoStatus().catch(() => {});
   const s = await api('/api/settings');
   sForm.elements.ten_cong_ty.value = s.ten_cong_ty || '';
   sForm.elements.ten_he_thong.value = s.ten_he_thong || '';

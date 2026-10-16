@@ -306,8 +306,13 @@ tr.ngoai-cp td { color: var(--muted); font-style: italic; }
 .chart-tip tr:first-child td { color: #64748b; font-size: 11px; }
 .chart-tip tr.sum td { border-top: 1px solid var(--border); font-weight: 700; }
 .chart-tip i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+#p-tbody td:nth-child(1), #p-tbody td:nth-child(2) { white-space: normal; min-width: 100px; max-width: 200px; }
+#p-tbody td:nth-child(9) { white-space: normal; max-width: 90px; font-size: 12px; }
+#p-tbody .p-ma { font-size: 12px; color: var(--navy); }
+#p-tbody td, #tab-projects thead th { padding-left: 7px; padding-right: 7px; }
+#p-tbody .bar { width: 44px; }
 #p-tbody .row-actions { display: grid; grid-template-columns: auto auto; gap: 4px; justify-content: end; }
-#p-tbody .row-actions button { padding: 5px 9px; font-size: 12px; margin: 0; }
+#p-tbody .row-actions button { padding: 5px 7px; font-size: 12px; margin: 0; }
 @media (max-width: 960px) { .dash-charts { grid-template-columns: minmax(0, 1fr); } }
 
 @media (max-width: 760px) {

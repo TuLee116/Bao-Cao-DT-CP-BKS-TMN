@@ -7,6 +7,7 @@ const { TRANG_THAI, ROLES, validateProject, validateUser, validateSettings, vali
 const { buildContracts, summarizeContracts } = require('./lib/subcontract');
 const { KHOI_CHI_PHI, NHOM_CHI_PHI, summarizeCost, sortCost, costLine } = require('./lib/cost');
 const { summarizeProject } = require('./lib/dashboard');
+const { DEMO_PREFIX, seedDemo } = require('./lib/demo');
 const { LOAI_DOANH_THU, calcLine, summarize, sortRevenue, tienVeLabel, sortTienVe, summarizeTienVe } = require('./lib/revenue');
 
 const app = express();
@@ -310,6 +311,30 @@ api.get('/dashboard', wrap(async (_req, res) => {
     };
   }));
   res.json({ du_an });
+}));
+
+// ---------- Dữ liệu mẫu (tester) – chỉ Quản trị ----------
+const demoProjects = async () => (await store.listProjects()).filter((p) => p.ma_du_an.startsWith(DEMO_PREFIX));
+api.get('/demo', auth.requireRole('admin'), wrap(async (_req, res) => res.json({ count: (await demoProjects()).length })));
+api.post('/demo', auth.requireRole('admin'), wrap(async (req, res) => {
+  if ((await demoProjects()).length) return bad(res, 'Đã có dữ liệu mẫu (DEMO-...). Hãy xóa dữ liệu mẫu trước khi tạo lại.', 409);
+  const seed = Number.isInteger(req.body?.seed) ? req.body.seed : 2026;
+  const t0 = Date.now();
+  try {
+    const count = await seedDemo(store, req.user.id, seed);
+    console.log(`[NHẬT KÝ] ${req.user.username} tạo dữ liệu mẫu (${Date.now() - t0} ms):`, JSON.stringify(count));
+    res.status(201).json({ count, ms: Date.now() - t0 });
+  } catch (e) {
+    for (const p of await demoProjects()) await store.deleteProject(p.id); // tạo lỗi giữa chừng -> dọn sạch
+    throw e;
+  }
+}));
+api.delete('/demo', auth.requireRole('admin'), wrap(async (req, res) => {
+  if (!(await requirePasscode(req, res))) return;
+  const list = await demoProjects();
+  for (const p of list) await store.deleteProject(p.id);
+  console.log(`[NHẬT KÝ] ${req.user.username} xóa ${list.length} dự án dữ liệu mẫu`);
+  res.json({ deleted: list.length });
 }));
 
 // ---------- Doanh thu theo công trình ----------

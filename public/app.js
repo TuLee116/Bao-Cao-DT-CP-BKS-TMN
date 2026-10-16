@@ -1007,6 +1007,7 @@ async function onRevTableClick(e) {
         if (im.qt.n) lines.push(`${im.qt.n} dòng Hoàn thành/Quyết toán: ${money(im.qt.sau_vat)} đ`);
         if (im.tv.n) lines.push(`${im.tv.n} dòng Tiền về: ${money(im.tv.so_tien)} đ`);
       }
+      if (im.tp) lines.push(`${im.tp} HĐ thầu phụ đang gắn HĐ này sẽ KHÔNG bị xóa, chỉ chuyển về nhóm "Chưa gắn HĐ CĐT"`);
       const pc = await askPasscode(
         cascade ? `Xóa toàn bộ hợp đồng "${r.so_hieu}"?` : `Xóa "${r.so_hieu}"?`,
         (cascade ? 'Sẽ xóa tất cả dữ liệu sau:\n• ' : '') + lines.join('\n• ') + '\nThao tác này không hoàn tác được.');
@@ -1478,10 +1479,11 @@ async function saveCost() {
     try {
       const so = e.so_tp.value.trim();
       await api(`/api/du-an/${revProjectId}/thau-phu`, { method: 'POST', body: JSON.stringify({
-        so_ma: so, doi_tac: e.doi_tac.value, ghi_chu: e.ghi_chu.value,
+        so_ma: so, doi_tac: e.doi_tac.value, ghi_chu: e.ghi_chu.value, hd_cdt_id: e.hd_cdt.value,
         hd: { ngay, gia_tri: parseMoney(e.gia_tri.value), vat: e.vat.value },
       }) });
       costOpen.add('thau_phu');
+      tpOpen.add(Number(e.hd_cdt.value) || 0); // mở nhóm HĐ CĐT vừa thêm
       resetCostForm('thau_phu');
       showMsg(msg, `Đã tạo HĐ thầu phụ ${so}. Nhấp đúp vào số HĐ ở bảng "1. Thầu phụ" để nhập PL, HT/QT, thanh toán.`);
       await loadCost();
@@ -1678,6 +1680,23 @@ $('#tab-cost').addEventListener('click', async (e) => {
 // Bộ lọc bảng thầu phụ: từ khóa + trạng thái quyết toán
 const tpFilter = { q: '', loc: '' };
 const tpDaQt = (c) => c.khoa || c.da_qt;
+// Nhóm theo HĐ chủ đầu tư (0 = chưa gắn); mặc định thu gọn, đang lọc/tìm thì tự mở
+const tpOpen = new Set();
+const hdCdtName = (id) => costData?.hd_cdt?.find((h) => h.id === id)?.so_hieu || '';
+function hdCdtOptions(sel) {
+  return `<option value="">— Chưa gắn HĐ CĐT —</option>` +
+    (costData?.hd_cdt || []).map((h) => `<option value="${h.id}" ${h.id === sel ? 'selected' : ''}>${esc(h.so_hieu)}</option>`).join('');
+}
+function tpGroups(list) {
+  const order = new Map((costData.hd_cdt || []).map((h, i) => [h.id, i]));
+  const map = new Map();
+  for (const c of list) {
+    const k = c.hd_cdt_id && order.has(c.hd_cdt_id) ? c.hd_cdt_id : 0;
+    if (!map.has(k)) map.set(k, { k, rows: [] });
+    map.get(k).rows.push(c);
+  }
+  return [...map.values()].sort((a, b) => (a.k ? order.get(a.k) : 1e6) - (b.k ? order.get(b.k) : 1e6));
+}
 function renderTpCard() {
   const all = costData.thau_phu;
   const edit = canEdit();
@@ -1687,17 +1706,20 @@ function renderTpCard() {
     b.textContent = { '': `Tất cả (${all.length})`, chua: `Chưa QT (${all.length - nDa})`, da: `Đã QT (${nDa})` }[b.dataset.v];
   });
   const q = normVn(tpFilter.q);
-  const list = all.map((c, i) => ({ ...c, stt: i + 1 })).filter((c) =>
+  const list = all.filter((c) =>
     (!tpFilter.loc || (tpFilter.loc === 'da') === tpDaQt(c)) &&
-    (!q || normVn(`${c.so_ma} ${c.doi_tac} ${c.ghi_chu}`).includes(q)));
+    (!q || normVn(`${c.so_ma} ${c.doi_tac} ${c.ghi_chu} ${hdCdtName(c.hd_cdt_id)}`).includes(q)));
   const filtered = list.length !== all.length;
-  const sumF = (f) => list.reduce((s, c) => s + c[f], 0);
-  const T = filtered ? { so_hd: list.length, hd_sau_vat: sumF('hd_sau_vat'), qt_sau_vat: sumF('qt_sau_vat'), da_tt: sumF('da_tt'), con_lai: sumF('con_lai') } : costData.tong_tp;
+  const sumOf = (rows, f) => rows.reduce((s, c) => s + c[f], 0);
+  const T = filtered ? { so_hd: list.length, hd_sau_vat: sumOf(list, 'hd_sau_vat'), qt_sau_vat: sumOf(list, 'qt_sau_vat'), da_tt: sumOf(list, 'da_tt'), con_lai: sumOf(list, 'con_lai') } : costData.tong_tp;
   $('#tp-total').textContent = money(costData.tong_tp.con_lai);
-  $('#tp-tbody').innerHTML = list.length ? list.map((c) => `
-    <tr>
-      <td class="num muted">${c.stt}</td>
-      <td><b class="tp-open so-ma-pick" data-tp="${c.id}" title="Nhấp đúp để mở bảng nhập chi tiết">${esc(c.so_ma)}</b>
+
+  const groups = tpGroups(list);
+  const autoOpen = Boolean(q) || Boolean(tpFilter.loc) || groups.length === 1;
+  const childRow = (c, stt) => `
+    <tr class="tv-child">
+      <td class="num muted">${stt}</td>
+      <td class="indent"><span class="tree">└</span><b class="tp-open so-ma-pick" data-tp="${c.id}" title="Nhấp đúp để mở bảng nhập chi tiết">${esc(c.so_ma)}</b>
         ${c.so_pl ? `<span class="muted small">(+${c.so_pl} PL)</span>` : ''}
         ${c.khoa ? '<span class="st st-lock" title="Đã quyết toán – khóa số">🔒 Đã QT</span>' : c.da_qt ? '<span class="st st-hoan-thanh">Đã QT</span>' : '<span class="st">Chưa QT</span>'}</td>
       <td class="c-dt">${esc(c.doi_tac)}</td>
@@ -1707,12 +1729,48 @@ function renderTpCard() {
       <td class="num strong ${c.con_lai < 0 ? 'neg' : ''}">${money(c.con_lai)}</td>
       <td class="c-note">${esc(c.ghi_chu)}</td>
       <td class="row-actions"><button class="sm" data-tpopen="${c.id}">Chi tiết</button>${edit ? `<button class="danger sm" data-tpdel="${c.id}">Xóa</button>` : ''}</td>
-    </tr>`).join('') : `<tr><td colspan="9" class="empty">${all.length ? 'Không có HĐ thầu phụ phù hợp bộ lọc' : `Chưa có hợp đồng thầu phụ. ${edit ? 'Chọn nhóm "1. Thầu phụ" ở form trên để tạo.' : ''}`}</td></tr>`;
+    </tr>`;
+  $('#tp-tbody').innerHTML = list.length ? groups.map((g, gi) => {
+    const n = gi + 1;
+    const open = autoOpen || tpOpen.has(g.k);
+    const nQt = g.rows.filter(tpDaQt).length;
+    const cl = sumOf(g.rows, 'con_lai');
+    return `<tr class="tv-head-row ${g.k ? '' : 'tv-sub-warn'}">
+      <td class="num">${n}</td>
+      <td colspan="2"><button class="grp-toggle" data-tpgrp="${g.k}" title="${open ? 'Thu gọn' : 'Mở chi tiết'}">${open ? '▾' : '▸'}</button>
+        ${g.k ? `<span class="kind-tag kind-hd">HĐ CĐT</span> <b>${esc(hdCdtName(g.k).replace(/^HĐ\s+/, ''))}</b>` : '<span class="st st-tam-tinh">Chưa gắn HĐ CĐT</span>'}
+        <span class="muted small">(${g.rows.length} HĐTP · ${nQt} đã QT)</span></td>
+      <td class="num strong">${money(sumOf(g.rows, 'hd_sau_vat'))}</td>
+      <td class="num strong">${money(sumOf(g.rows, 'qt_sau_vat'))}</td>
+      <td class="num strong">${money(sumOf(g.rows, 'da_tt'))}</td>
+      <td class="num tv-head-sum ${cl < 0 ? 'neg' : ''}">${money(cl)}</td>
+      <td colspan="2" class="muted small">${g.k ? '' : 'Mở chi tiết HĐTP để gắn'}</td>
+    </tr>` + (open ? g.rows.map((c, i) => childRow(c, `${n}.${i + 1}`)).join('') : '');
+  }).join('') : `<tr><td colspan="9" class="empty">${all.length ? 'Không có HĐ thầu phụ phù hợp bộ lọc' : `Chưa có hợp đồng thầu phụ. ${edit ? 'Chọn nhóm "1. Thầu phụ" ở form trên để tạo.' : ''}`}</td></tr>`;
   $('#tp-tfoot').innerHTML = `<tr><td></td><td colspan="2">${filtered ? `TỔNG ĐANG LỌC (${T.so_hd}/${all.length} HĐ)` : `TỔNG THẦU PHỤ (${T.so_hd} HĐ)`}</td>
     <td class="num">${money(T.hd_sau_vat)}</td><td class="num">${money(T.qt_sau_vat)}</td><td class="num">${money(T.da_tt)}</td>
     <td class="num ${T.con_lai < 0 ? 'neg' : ''}">${money(T.con_lai)}</td><td colspan="2"></td></tr>`;
+  const btn = $('#tp-toggle-all');
+  btn.hidden = autoOpen || !list.length;
+  btn.textContent = groups.some((g) => !tpOpen.has(g.k)) ? 'Mở tất cả' : 'Thu gọn tất cả';
+  // Ô chọn HĐ CĐT ở form tạo HĐTP
+  const sel = cForm?.elements.hd_cdt;
+  if (sel) { const keep = Number(sel.value) || null; sel.innerHTML = hdCdtOptions(keep); }
 }
 
+$('#tp-toggle-all').addEventListener('click', () => {
+  const ks = tpGroups(costData.thau_phu).map((g) => g.k);
+  const close = ks.every((k) => tpOpen.has(k));
+  ks.forEach((k) => (close ? tpOpen.delete(k) : tpOpen.add(k)));
+  renderTpCard();
+});
+$('#tp-tbody').addEventListener('click', (e) => {
+  const k = e.target.dataset.tpgrp;
+  if (k === undefined) return;
+  const n = Number(k);
+  tpOpen.has(n) ? tpOpen.delete(n) : tpOpen.add(n);
+  renderTpCard();
+});
 $('#tp-q').addEventListener('input', (e) => { tpFilter.q = e.target.value; if (costData) renderTpCard(); });
 $('#tp-loc').addEventListener('click', (e) => {
   const b = e.target.closest('button');
@@ -1823,9 +1881,10 @@ function renderTpDlg() {
     ${canInfo ? `<div class="grid-form tp-info" data-k="info">
       <label>Số HĐ thầu phụ *<input data-f="so_ma" value="${esc(c.so_ma)}" maxlength="120"></label>
       <label>Nhà thầu phụ<input data-f="doi_tac" value="${esc(c.doi_tac)}" maxlength="200"></label>
+      <label>Thuộc HĐ chủ đầu tư<select data-f="hd_cdt_id">${hdCdtOptions(c.hd_cdt_id)}</select></label>
       <label class="span-2">Ghi chú<input data-f="ghi_chu" value="${esc(c.ghi_chu)}" maxlength="500"></label>
       <div class="actions"><button class="primary sm" data-save hidden>Lưu thông tin</button></div>
-    </div>` : `<p class="muted">Nhà thầu phụ: <b>${esc(c.doi_tac || '—')}</b>${c.ghi_chu ? ' · ' + esc(c.ghi_chu) : ''}</p>`}
+    </div>` : `<p class="muted">Nhà thầu phụ: <b>${esc(c.doi_tac || '—')}</b> · Thuộc HĐ CĐT: <b>${esc(hdCdtName(c.hd_cdt_id) || 'chưa gắn')}</b>${c.ghi_chu ? ' · ' + esc(c.ghi_chu) : ''}</p>`}
     <div class="kpis tp-kpis">
       <div class="kpi"><div class="label">Tổng giá trị HĐ</div><div class="value">${money(c.hd_sau_vat)}</div><div class="sub">HĐ + ${c.so_pl} PL, sau VAT</div></div>
       <div class="kpi"><div class="label">Tổng giá trị HT/QT</div><div class="value">${money(c.qt_sau_vat)}</div><div class="sub">${locked ? '= Tổng thanh toán (đã quyết toán)' : c.da_qt ? 'Đã quyết toán theo HĐ/PL' : 'Chưa QT = theo giá trị HĐ/PL'}</div></div>
@@ -1906,7 +1965,10 @@ async function onTpDlgClick(e) {
 
   if (t.dataset.save !== undefined) {
     if (k === 'info') {
-      if (await call(`/api/thau-phu/${c.id}`, 'PUT', { so_ma: v('so_ma'), doi_tac: v('doi_tac'), ghi_chu: v('ghi_chu') })) await after('Đã lưu thông tin hợp đồng');
+      if (await call(`/api/thau-phu/${c.id}`, 'PUT', { so_ma: v('so_ma'), doi_tac: v('doi_tac'), ghi_chu: v('ghi_chu'), hd_cdt_id: v('hd_cdt_id') })) {
+        tpOpen.add(Number(v('hd_cdt_id')) || 0);
+        await after('Đã lưu thông tin hợp đồng');
+      }
       return;
     }
     const ngay = dmyToIso(v('ngay'));

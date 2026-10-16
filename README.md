@@ -60,7 +60,7 @@ Số liệu lấy tự động từ tab Doanh thu và Chi phí (API `GET /api/da
 - HĐ CĐT "đã quyết toán": có tiền về loại Quyết toán hoặc dòng HT/QT ghi "Quyết toán".
 - Trả nợ gốc vay không tính vào chi phí; Trả lãi vay có tính. Chọn Trước / Sau VAT; lọc theo dự án.
 - Biểu đồ đường lũy kế theo tháng; biểu đồ quạt tỷ trọng dự án (7 lớn nhất + "Khác").
-- Tab Chi phí: bảng Thầu phụ có ô tìm (số HĐ, nhà thầu, ghi chú/HĐ CĐT) và lọc Chưa QT / Đã QT.
+- Tab Chi phí: bảng Thầu phụ **gộp theo HĐ chủ đầu tư** (dòng tổng HĐ CĐT, các HĐTP là tập con thu gọn được), có ô tìm và lọc Chưa QT / Đã QT. Mỗi HĐTP chọn "Thuộc HĐ chủ đầu tư" khi tạo hoặc trong bảng chi tiết; xóa HĐ CĐT thì HĐTP chuyển về nhóm "Chưa gắn HĐ CĐT".
 
 ### Dữ liệu mẫu & Tester
 - **Cài đặt → Dữ liệu mẫu** (Quản trị): tạo 5 dự án `DEMO-01…05` – mỗi dự án 5–10 HĐ chủ đầu tư (mới ký / đang thi công / đã quyết toán), mỗi HĐ 5–10 HĐ thầu phụ (tạm ứng / thanh toán đợt / quyết toán khóa sổ) và chi phí trực tiếp, gián tiếp, tài chính. Xóa toàn bộ bằng Passcode; dữ liệu thật không bị ảnh hưởng.

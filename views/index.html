@@ -164,6 +164,7 @@
             <input type="hidden" name="id">
             <label>Nhóm chi phí *<select name="nhom"></select></label>
             <label id="c-sub-wrap">Hạng mục *<select name="nhom_con"></select></label>
+            <label class="c-tp">Thuộc HĐ chủ đầu tư<select name="hd_cdt"></select></label>
             <label class="c-tp">Số HĐ thầu phụ *<input name="so_tp" maxlength="120" placeholder="Số mới: gõ · Số đã có: nhấp đúp" title="Số HĐ mới: gõ trực tiếp. Số đã có: nhấp đúp để mở bảng chi tiết"></label>
             <label class="span-2 c-gen">Nội dung *<input name="noi_dung" maxlength="300"></label>
             <label><span id="c-dt-label">Đối tác / Nhà cung cấp</span><input name="doi_tac" maxlength="200"></label>
@@ -189,6 +190,7 @@
             <div class="tv-total">Còn lại: <b id="tp-total">0</b></div>
           </div>
           <div class="toolbar tp-filter">
+            <button type="button" class="sm" id="tp-toggle-all">Mở tất cả</button>
             <input id="tp-q" type="search" placeholder="Tìm số HĐ, nhà thầu, ghi chú (HĐ CĐT)..." aria-label="Tìm hợp đồng thầu phụ">
             <div class="seg" id="tp-loc" role="group" aria-label="Lọc theo quyết toán">
               <button type="button" data-v="" class="on">Tất cả</button><button type="button" data-v="chua">Chưa QT</button><button type="button" data-v="da">Đã QT</button>

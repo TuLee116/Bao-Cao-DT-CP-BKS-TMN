@@ -902,6 +902,10 @@ let costData = null;
 const costOpen = new Set();          // nhóm / hạng mục đang mở: 'thau_phu', 'vat_tu', 'vat_tu:chinh'...
 const cForm = $('#c-form');
 const NHOM = () => META.nhom_chi_phi || [];
+const KHOI = () => META.khoi_chi_phi || [];
+const nhomOf = (khoi) => NHOM().filter((n) => n.khoi === khoi);
+const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
+const stt = (k, i) => (k.danh_so === 'la_ma' ? ROMAN[i] || String(i + 1) : String(i + 1));
 
 async function loadCostTab() {
   projects = await api('/api/du-an');
@@ -975,7 +979,8 @@ function updateCostPreview() {
 
 function initCostForm() {
   cForm.dataset.ready = '1';
-  cForm.elements.nhom.innerHTML = NHOM().map((n, i) => `<option value="${n.code}">${i + 1}. ${esc(n.ten)}</option>`).join('');
+  cForm.elements.nhom.innerHTML = KHOI().map((k) => `<optgroup label="${k.code}. ${esc(k.ten)}">${
+    nhomOf(k.code).map((n, i) => `<option value="${n.code}">${stt(k, i)}. ${esc(n.ten)}</option>`).join('')}</optgroup>`).join('');
   fillSubOptions(cForm.elements.nhom.value);
   cForm.elements.nhom.addEventListener('change', () => fillSubOptions(cForm.elements.nhom.value));
   attachMoneyInput(cForm.elements.gia_tri);
@@ -1047,10 +1052,12 @@ function renderCost() {
   const edit = canEdit();
   const pct = (v) => (tong.sau_vat ? ((v / tong.sau_vat) * 100).toFixed(1) + '%' : '—');
   $('#c-k-sau').textContent = money(tong.sau_vat);
-  $('#c-k-truoc').textContent = money(tong.gia_tri);
-  $('#c-k-vat').textContent = money(tong.tien_vat);
-  $('#c-k-sub').innerHTML = `${tong.so_dong} dòng${tong.tam_tinh ? ' · <span class="warn-text">có dòng tạm tính</span>' : ''}`;
-  $('#c-total').textContent = money(tong.sau_vat);
+  $('#c-k-sub').innerHTML = `Trước VAT ${money(tong.gia_tri)} · VAT ${money(tong.tien_vat)}${tong.tam_tinh ? ' · <span class="warn-text">có tạm tính</span>' : ''}`;
+  for (const k of KHOI()) {
+    const t = tong.theo_khoi[k.code];
+    $(`#c-k-${k.code}`).textContent = money(t.sau_vat);
+    $(`#c-k-${k.code}-sub`).textContent = `${pct(t.sau_vat)} tổng chi phí · ${t.so_dong} dòng`;
+  }
 
   const sumCells = (t, cls = '') => `
       <td class="num ${cls}">${money(t.gia_tri)}</td><td></td>
@@ -1059,9 +1066,9 @@ function renderCost() {
       <td class="num">${pct(t.sau_vat)}</td>`;
   const toggle = (key, n) => (n ? `<button class="grp-toggle" data-cgrp="${key}">${costOpen.has(key) ? '▾' : '▸'}</button>` : '<span class="grp-toggle-sp"></span>');
   const addBtn = (nhom, sub) => (edit ? `<button class="sm" data-cadd="${nhom}" data-csub="${sub || ''}" title="Thêm chi phí vào mục này">+</button>` : '');
-  const detail = (r, stt, indent) => `
+  const detail = (r, no, indent) => `
     <tr class="c-row" title="${esc(r.nguoi_cap_nhat ? 'Cập nhật bởi ' + r.nguoi_cap_nhat : '')}">
-      <td class="num muted">${stt}</td>
+      <td class="num muted">${no}</td>
       <td class="indent-${indent}"><span class="tree">└</span>${esc(r.noi_dung)}</td>
       <td class="c-dt">${esc(r.doi_tac)}${r.so_ct ? `<div class="muted small">${esc(r.so_ct)}</div>` : ''}</td><td>${dmy(r.ngay)}</td>
       <td class="num">${money(r.gia_tri)}</td><td class="num">${vatBadge(r.vat)}</td>
@@ -1071,48 +1078,80 @@ function renderCost() {
       <td class="row-actions">${edit ? `<button class="sm" data-cedit="${r.id}">Sửa</button><button class="danger sm" data-cdel="${r.id}">Xóa</button>` : ''}</td>
     </tr>`;
 
-  let html = '';
-  NHOM().forEach((n, i) => {
-    const g = tong.theo_nhom[n.code];
-    const rows = items.filter((r) => r.nhom === n.code);
-    const tps = n.code === 'thau_phu' ? costData.thau_phu : [];
-    const open = costOpen.has(n.code);
-    html += `<tr class="c-g1"><td class="num">${i + 1}</td>
-      <td colspan="3">${toggle(n.code, rows.length || n.sub.length || tps.length)}<b>${esc(n.ten)}</b> <span class="muted small">(${tps.length ? tps.length + ' HĐ' + (rows.length ? ' + ' + rows.length + ' dòng' : '') : g.so_dong + ' dòng'})</span>${g.tam_tinh ? ' <span class="st st-tam-tinh">Có tạm tính</span>' : ''}</td>
-      ${sumCells(g, 'strong')}<td></td><td class="row-actions">${addBtn(n.code, n.sub[0]?.code)}</td></tr>`;
-    if (!open) return;
-    tps.forEach((c, k) => {
-      html += `<tr class="c-row">
-        <td class="num muted">${i + 1}.${k + 1}</td>
-        <td class="indent-1"><span class="tree">└</span><b class="tp-open" data-tp="${c.id}" title="Nhấp đúp để mở chi tiết">${esc(c.so_ma)}</b>${c.so_pl ? ` <span class="muted small">(+${c.so_pl} PL)</span>` : ''}</td>
-        <td class="c-dt">${esc(c.doi_tac)}</td><td></td>
-        <td class="num">${money(c.qt_gia_tri)}</td><td class="num muted small">HT/QT</td>
-        <td class="num">${money(c.qt_tien_vat)}</td><td class="num strong">${money(c.qt_sau_vat)}</td>
-        <td class="num muted">${pct(c.qt_sau_vat)}</td><td class="c-note">${esc(c.ghi_chu)}</td>
-        <td class="row-actions"><button class="sm" data-tpopen="${c.id}">Chi tiết</button></td>
-      </tr>`;
+  // Bảng cây cho 1 khối: Nhóm -> Hạng mục -> Chi tiết
+  const blockRows = (k) => {
+    let html = '';
+    nhomOf(k.code).forEach((n, i) => {
+      const no = stt(k, i);
+      const g = tong.theo_nhom[n.code];
+      const rows = items.filter((r) => r.nhom === n.code);
+      const tps = n.code === 'thau_phu' ? costData.thau_phu : [];
+      const open = costOpen.has(n.code);
+      html += `<tr class="c-g1"><td class="num">${no}</td>
+        <td colspan="3">${toggle(n.code, rows.length || n.sub.length || tps.length)}<b>${esc(n.ten)}</b> <span class="muted small">(${tps.length ? tps.length + ' HĐ' + (rows.length ? ' + ' + rows.length + ' dòng' : '') : g.so_dong + ' dòng'})</span>${g.tam_tinh ? ' <span class="st st-tam-tinh">Có tạm tính</span>' : ''}</td>
+        ${sumCells(g, 'strong')}<td></td><td class="row-actions">${addBtn(n.code, n.sub[0]?.code)}</td></tr>`;
+      if (!open) return;
+      tps.forEach((c, x) => {
+        html += `<tr class="c-row">
+          <td class="num muted">${no}.${x + 1}</td>
+          <td class="indent-1"><span class="tree">└</span><b class="tp-open" data-tp="${c.id}" title="Nhấp đúp để mở chi tiết">${esc(c.so_ma)}</b>${c.so_pl ? ` <span class="muted small">(+${c.so_pl} PL)</span>` : ''}</td>
+          <td class="c-dt">${esc(c.doi_tac)}</td><td></td>
+          <td class="num">${money(c.qt_gia_tri)}</td><td class="num muted small">HT/QT</td>
+          <td class="num">${money(c.qt_tien_vat)}</td><td class="num strong">${money(c.qt_sau_vat)}</td>
+          <td class="num muted">${pct(c.qt_sau_vat)}</td><td class="c-note">${esc(c.ghi_chu)}</td>
+          <td class="row-actions"><button class="sm" data-tpopen="${c.id}">Chi tiết</button></td>
+        </tr>`;
+      });
+      if (!n.sub.length) {
+        rows.forEach((r, x) => { html += detail(r, `${no}.${tps.length + x + 1}`, 1); });
+        return;
+      }
+      n.sub.forEach((sc, j) => {
+        const key = `${n.code}:${sc.code}`;
+        const sr = rows.filter((r) => r.nhom_con === sc.code);
+        const st = g.sub[sc.code];
+        html += `<tr class="c-g2"><td class="num muted">${no}.${j + 1}</td>
+          <td colspan="3" class="indent-1">${toggle(key, sr.length)}${esc(sc.ten)} <span class="muted small">(${st.so_dong} dòng)</span></td>
+          ${sumCells(st)}<td></td><td class="row-actions">${addBtn(n.code, sc.code)}</td></tr>`;
+        if (costOpen.has(key)) sr.forEach((r, x) => { html += detail(r, `${no}.${j + 1}.${x + 1}`, 2); });
+      });
     });
-    if (!n.sub.length) {
-      rows.forEach((r, k) => { html += detail(r, `${i + 1}.${tps.length + k + 1}`, 1); });
-      return;
-    }
-    n.sub.forEach((s, j) => {
-      const key = `${n.code}:${s.code}`;
-      const sr = rows.filter((r) => r.nhom_con === s.code);
-      const st = g.sub[s.code];
-      html += `<tr class="c-g2"><td class="num muted">${i + 1}.${j + 1}</td>
-        <td colspan="3" class="indent-1">${toggle(key, sr.length)}${esc(s.ten)} <span class="muted small">(${st.so_dong} dòng)</span></td>
-        ${sumCells(st)}<td></td><td class="row-actions">${addBtn(n.code, s.code)}</td></tr>`;
-      if (costOpen.has(key)) sr.forEach((r, k) => { html += detail(r, `${i + 1}.${j + 1}.${k + 1}`, 2); });
-    });
-  });
-  $('#c-tbody').innerHTML = html;
+    return html;
+  };
+
+  const wrap = $('#c-blocks');
+  if (!wrap.dataset.built) {
+    wrap.dataset.built = '1';
+    wrap.innerHTML = KHOI().map((k) => `
+      <div class="card c-block" data-khoi="${k.code}">
+        <div class="toolbar tv-head">
+          <h2>${k.code}. ${esc(k.ten)}</h2>
+          <button type="button" class="sm" data-ctoggle="${k.code}">Mở tất cả</button>
+          <div class="tv-total">Tổng: <b data-ktotal>0</b></div>
+        </div>
+        <div class="table-wrap">
+          <table class="cost-table">
+            <thead><tr>
+              <th class="num">#</th><th>Nội dung</th><th>Đối tác / Số HĐ-CT</th><th>Ngày</th>
+              <th class="num">Trước VAT</th><th class="num">VAT</th><th class="num">Tiền VAT</th><th class="num">Sau VAT</th><th class="num">Tỷ trọng</th><th>Ghi chú</th><th></th>
+            </tr></thead>
+            <tbody></tbody><tfoot></tfoot>
+          </table>
+        </div>
+      </div>`).join('');
+  }
+  for (const k of KHOI()) {
+    const card = $(`.c-block[data-khoi="${k.code}"]`);
+    const t = tong.theo_khoi[k.code];
+    $('[data-ktotal]', card).textContent = money(t.sau_vat);
+    $('tbody', card).innerHTML = blockRows(k);
+    $('tfoot', card).innerHTML = `<tr><td></td><td colspan="3">TỔNG ${k.code}. ${esc(k.ten)}${t.tam_tinh ? ' <span class="st st-tam-tinh">Có tạm tính</span>' : ''}</td>${sumCells(t)}<td colspan="2"></td></tr>`;
+    $('[data-ctoggle]', card).textContent = blockKeys(k.code).every((x) => costOpen.has(x)) ? 'Thu gọn tất cả' : 'Mở tất cả';
+  }
   renderTpCard();
   if (tpDlgId) renderTpDlg();
-  $('#c-tfoot').innerHTML = `<tr><td></td><td colspan="3">TỔNG CHI PHÍ TRỰC TIẾP${tong.tam_tinh ? ' <span class="st st-tam-tinh">Có tạm tính</span>' : ''}</td>${sumCells(tong)}<td colspan="2"></td></tr>`;
-  const keys = NHOM().flatMap((n) => [n.code, ...n.sub.map((s) => `${n.code}:${s.code}`)]);
-  $('#c-toggle-all').textContent = keys.every((k) => costOpen.has(k)) ? 'Thu gọn tất cả' : 'Mở tất cả';
 }
+const blockKeys = (khoi) => nhomOf(khoi).flatMap((n) => [n.code, ...n.sub.map((sc) => `${n.code}:${sc.code}`)]);
 
 $('#tab-cost').addEventListener('dblclick', (e) => {
   const el = e.target.closest('.tp-open');
@@ -1124,8 +1163,8 @@ $('#tab-cost').addEventListener('click', async (e) => {
   if (tpopen) return openTp(Number(tpopen));
   if (tpdel) return deleteTp(Number(tpdel));
   if (cgrp) { costOpen.has(cgrp) ? costOpen.delete(cgrp) : costOpen.add(cgrp); return renderCost(); }
-  if (e.target.id === 'c-toggle-all') {
-    const keys = NHOM().flatMap((n) => [n.code, ...n.sub.map((s) => `${n.code}:${s.code}`)]);
+  if (e.target.dataset.ctoggle) {
+    const keys = blockKeys(e.target.dataset.ctoggle);
     const close = keys.every((k) => costOpen.has(k));
     keys.forEach((k) => (close ? costOpen.delete(k) : costOpen.add(k)));
     return renderCost();

@@ -119,9 +119,10 @@
 
       <div id="c-body" class="section-stack" hidden>
         <div class="kpis">
+          <div class="kpi"><div class="label">B1. Chi phí trực tiếp</div><div class="value" id="c-k-B1">0</div><div class="sub" id="c-k-B1-sub"></div></div>
+          <div class="kpi"><div class="label">B2. Chi phí gián tiếp</div><div class="value" id="c-k-B2">0</div><div class="sub" id="c-k-B2-sub"></div></div>
+          <div class="kpi"><div class="label">B3. Chi phí tài chính</div><div class="value" id="c-k-B3">0</div><div class="sub" id="c-k-B3-sub"></div></div>
           <div class="kpi"><div class="label">Tổng chi phí sau VAT</div><div class="value" id="c-k-sau">0</div><div class="sub" id="c-k-sub"></div></div>
-          <div class="kpi"><div class="label">Tổng trước VAT</div><div class="value" id="c-k-truoc">0</div></div>
-          <div class="kpi"><div class="label">Tiền VAT</div><div class="value" id="c-k-vat">0</div></div>
         </div>
 
         <div class="card" data-role="admin editor">
@@ -166,23 +167,8 @@
           <p class="muted small">Nhấp đúp vào <b>Số HĐ thầu phụ</b> (hoặc bấm Chi tiết) để nhập HĐ/PL, giá trị HT/QT và thanh toán. Các giá trị hiển thị sau VAT; HT/QT chưa nhập = bằng giá trị HĐ/PL (chưa quyết toán).</p>
         </div>
 
-        <div class="card">
-          <div class="toolbar tv-head">
-            <h2>CHI PHÍ TRỰC TIẾP</h2>
-            <button type="button" class="sm" id="c-toggle-all">Mở tất cả</button>
-            <div class="tv-total">Tổng: <b id="c-total">0</b></div>
-          </div>
-          <div class="table-wrap">
-            <table class="cost-table">
-              <thead><tr>
-                <th class="num">#</th><th>Nội dung</th><th>Đối tác / Số HĐ-CT</th><th>Ngày</th>
-                <th class="num">Trước VAT</th><th class="num">VAT</th><th class="num">Tiền VAT</th><th class="num">Sau VAT</th><th class="num">Tỷ trọng</th><th>Ghi chú</th><th></th>
-              </tr></thead>
-              <tbody id="c-tbody"></tbody>
-              <tfoot id="c-tfoot"></tfoot>
-            </table>
-          </div>
-        </div>
+        <!-- B1 / B2 / B3: dựng từ danh mục khối chi phí -->
+        <div id="c-blocks" class="section-stack"></div>
       </div>
       <div id="c-empty" class="card empty" hidden>Chưa có công trình nào. Hãy thêm công trình ở tab <b>Dự án</b> trước.</div>
     </section>

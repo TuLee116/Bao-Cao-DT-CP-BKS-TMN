@@ -5,7 +5,7 @@ const store = require('./lib/db');
 const auth = require('./lib/auth');
 const { TRANG_THAI, ROLES, validateProject, validateUser, validateSettings, validateRevenue, validateTienVe, validateCost, validateTp, validateTpLine, validateTpPay, passwordErrors, passcodeErrors } = require('./lib/validate');
 const { buildContracts, summarizeContracts } = require('./lib/subcontract');
-const { NHOM_CHI_PHI, summarizeCost, sortCost } = require('./lib/cost');
+const { KHOI_CHI_PHI, NHOM_CHI_PHI, summarizeCost, sortCost } = require('./lib/cost');
 const { LOAI_DOANH_THU, calcLine, summarize, sortRevenue, tienVeLabel, sortTienVe, summarizeTienVe } = require('./lib/revenue');
 
 const app = express();
@@ -94,6 +94,7 @@ api.get('/meta', wrap(async (_req, res) => {
     trang_thai: TRANG_THAI,
     loai_doanh_thu: LOAI_DOANH_THU,
     nhom_chi_phi: NHOM_CHI_PHI,
+    khoi_chi_phi: KHOI_CHI_PHI,
     roles: ROLES,
     db: store.kind,
     ten_cong_ty: s.ten_cong_ty,

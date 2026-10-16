@@ -628,9 +628,9 @@ function bDrawCharts(list, v, one) {
 
 
 // =====================================================================
-// THẺ BÁO CÁO TỪNG CÔNG TRÌNH (ảnh, 7 tab: Tổng quan · Doanh thu · Chi phí · Lợi nhuận · Dòng tiền · Công nợ · Hạng mục)
+// THẺ BÁO CÁO TỪNG CÔNG TRÌNH (ảnh, 6 tab: Tổng quan · Doanh thu · Chi phí · Lợi nhuận · Dòng tiền · Công nợ)
 // =====================================================================
-const PC_TABS = [['tong', 'Tổng quan'], ['dt', 'Doanh thu'], ['cp', 'Chi phí'], ['ln', 'Lợi nhuận'], ['dong', 'Dòng tiền'], ['cn', 'Công nợ'], ['hm', 'Hạng mục']];
+const PC_TABS = [['tong', 'Tổng quan'], ['dt', 'Doanh thu'], ['cp', 'Chi phí'], ['ln', 'Lợi nhuận'], ['dong', 'Dòng tiền'], ['cn', 'Công nợ']];
 const pcTab = {};            // id dự án -> tab đang mở
 const NHOM_NGAN = { thau_phu: 'Thầu phụ', vat_tu: 'Vật tư', nhan_cong: 'Nhân công', may_moc: 'Máy móc', to_chuc: 'Tổ chức TC', khac: 'Khác',
   gt_tien_ich: 'Tiện ích/phục vụ', gt_luong: 'Lương, thưởng', gt_ngoai_giao: 'Ngoại giao', tc_chi_phi: 'CP tài chính', tc_tra_no: 'Lãi vay', tc_phat: 'Phạt CĐT' };
@@ -671,7 +671,7 @@ function bPcSection(list, v) {
 
 function bPcCard(d, idx) {
   const color = PROJ_COLORS[idx % PROJ_COLORS.length];
-  const tab = pcTab[d.id] || 'tong';
+  const tab = PC_TABS.some(([k]) => k === pcTab[d.id]) ? pcTab[d.id] : 'tong';
   const sub = [d.loai_cong_trinh, d.dia_diem].filter(Boolean).join(' – ') || d.chu_dau_tu || '';
   const img = d.co_anh
     ? `<img src="/api/du-an/${d.id}/anh?v=${d.anh_v}" alt="Ảnh ${esc(d.ten_du_an)}" loading="lazy">`
@@ -711,9 +711,16 @@ function bPcBody(d, tab) {
       <div class="pc-note">Đơn vị tỷ đồng</div>`;
     case 'cp': {
       const tong = K.chi_phi[v];
-      return `<div class="pc-kpis">${mini('CP dự kiến', tong)}${mini('CP thực hiện', H.chi_phi[v], '<small>lũy kế</small>')}${mini('CP trong kỳ', cur.cp, bDeltaS(cur.cp, prv?.cp, false))}${mini('% doanh thu DK', bpct(tong, K.doanh_thu[v]))}</div>
-        <ul class="pc-list">${d.khoi.map((k) => `<li><span>${esc(k.ten)}</span><span class="pc-bar wide"><i style="width:${tong ? Math.max(0, (k[v] / tong) * 100) : 0}%"></i></span><b>${bTy(k[v])} · ${bpct(k[v], tong)}</b></li>`).join('')}</ul>
-        <div class="pc-note">Chi phí dự kiến theo khối · trả nợ gốc vay ${bTy(d.tra_goc.sv)} tỷ không tính</div>`;
+      const pct = (x) => (tong ? Math.max(0, (x / tong) * 100) : 0);
+      const blocks = d.khoi.map((k) => {
+        const ns = d.nhom.filter((n) => n.khoi === k.code && n[v]).sort((a, b) => b[v] - a[v]);
+        return `<li class="pc-khoi"><span>${esc(k.ten)}</span><span class="pc-bar wide"><i style="width:${pct(k[v])}%"></i></span><b>${bTy(k[v])} · ${bpct(k[v], tong)}</b></li>` +
+          ns.map((n) => `<li class="pc-nhom"><span>${esc(n.code === 'tc_tra_no' ? 'Lãi vay ngân hàng' : n.ten)}${n.code === 'thau_phu' ? ` <small class="muted">(${d.so_tp} HĐTP · ${d.so_tp_qt} QT)</small>` : ''}</span><span class="pc-bar wide"><i style="width:${pct(n[v])}%"></i></span><b>${bTy(n[v])} · ${bpct(n[v], tong)}</b></li>`).join('');
+      }).join('');
+      return `<div class="pc-kpis">${mini('CP dự kiến', tong)}${mini('CP thực hiện', H.chi_phi[v], '<small>lũy kế</small>')}${mini('CP trong kỳ', cur.cp, bDeltaS(cur.cp, prv?.cp, false))}${mini('% DT dự kiến', bpct(tong, K.doanh_thu[v]))}</div>
+        <div class="pc-sub-h">Cơ cấu chi phí dự kiến: khối → nhóm chi phí</div>
+        <ul class="pc-list pc-cp">${blocks}</ul>
+        <div class="pc-note">Tỷ đồng · tỷ trọng trên tổng chi phí dự kiến · trả nợ gốc vay ${bTy(d.tra_goc.sv)} tỷ không tính vào chi phí</div>`;
     }
     case 'ln': {
       const a = K.doanh_thu[v] - K.chi_phi[v], b = H.doanh_thu[v] - H.chi_phi[v];
@@ -732,13 +739,6 @@ function bPcBody(d, tab) {
         <div class="pc-2col"><div><div class="pc-sub-h">Phải thu theo HĐ</div><ul class="pc-list compact">${thu.map((x) => row(x.so_ma, x.phai_thu)).join('') || '<li class="muted">Không có</li>'}</ul></div>
         <div><div class="pc-sub-h">Phải trả thầu phụ theo HĐ CĐT</div><ul class="pc-list compact">${tra.map((x) => row(x.l, x.val)).join('') || '<li class="muted">Không có</li>'}</ul></div></div>
         <div class="pc-note">Sau VAT · phải thu = nghiệm thu − tiền về (âm: CĐT ứng trước)</div>`;
-    }
-    case 'hm': {
-      const tong = K.chi_phi[v];
-      const ns = d.nhom.filter((n) => n[v]).sort((a, b) => b[v] - a[v]);
-      return `<table class="pc-tbl"><thead><tr><th>Hạng mục chi phí</th><th class="num">Giá trị</th><th class="num">Tỷ trọng</th></tr></thead>
-        <tbody>${ns.map((n) => `<tr><td>${esc(n.ten)}${n.code === 'thau_phu' ? ` <span class="muted small">(${d.so_tp} HĐTP · ${d.so_tp_qt} QT)</span>` : ''}</td><td class="num">${bTy(n[v])}</td><td class="num">${bpct(n[v], tong)}</td></tr>`).join('') || '<tr><td colspan="3" class="empty">Chưa có chi phí</td></tr>'}</tbody>
-        <tfoot><tr><td>Tổng chi phí</td><td class="num">${bTy(tong)}</td><td class="num">100%</td></tr></tfoot></table><div class="pc-note">Chi phí dự kiến · tỷ đồng</div>`;
     }
     default: { // tổng quan
       const groups = d.nhom.filter((n) => n[v] > 0).sort((a, b) => b[v] - a[v]);

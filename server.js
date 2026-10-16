@@ -299,7 +299,14 @@ api.post('/du-an/:id/doanh-thu', canEdit, wrap(async (req, res) => {
 // Mục 2: dòng HT/QT phải tham chiếu 1 dòng HĐ/PL của cùng công trình
 async function checkHdRef(data, duAnId, selfId = 0) {
   if (data.loai === 'hd') {
-    const dup = (await store.listRevenue(duAnId)).some((r) =>
+    const list = await store.listRevenue(duAnId);
+    // PL cùng Số mã với một HĐ đã có -> dùng đúng cách viết của HĐ đó (gộp nhóm chính xác)
+    if (data.ma_loai !== 'HĐ') {
+      const head = list.find((r) => r.loai === 'hd' && r.ma_loai === 'HĐ' && r.id !== selfId &&
+        String(r.so_ma).toLowerCase() === data.so_ma.toLowerCase());
+      if (head) { data.so_ma = head.so_ma; data.so_hieu = `${data.ma_loai} ${data.so_ma}`; }
+    }
+    const dup = list.some((r) =>
       r.loai === 'hd' && r.id !== selfId && String(r.so_hieu).toLowerCase() === data.so_hieu.toLowerCase());
     return dup ? `"${data.so_hieu}" đã có trong công trình này` : null;
   }

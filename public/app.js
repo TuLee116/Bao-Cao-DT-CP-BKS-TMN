@@ -267,10 +267,11 @@ function updateRevPreview(f) {
 
 // Danh sách gợi ý Số HĐ/PL = các dòng ở mục 1 của công trình đang chọn
 function hdOptions() {
-  return (revData?.items || []).filter((r) => r.loai === 'hd').map((r) => ({
+  const rows = (revData?.items || []).filter((r) => r.loai === 'hd');
+  return hdGroups(rows).flatMap((g) => [g.head, ...g.pls].filter(Boolean)).map((r) => ({
     id: r.id,
     label: r.so_hieu,
-    sub: `${money(r.sau_vat)} đ sau VAT${r.ngay ? ' · ' + dmy(r.ngay) : ''}`,
+    sub: `${r.ma_loai && r.ma_loai !== 'HĐ' ? 'Phụ lục của HĐ ' + (r.so_ma || '') + ' · ' : ''}${money(r.sau_vat)} đ sau VAT${r.ngay ? ' · ' + dmy(r.ngay) : ''}`,
   }));
 }
 
@@ -378,10 +379,12 @@ function renderRevenue() {
     const cols = (canEdit() ? 10 : 9) + (loai === 'qt' ? 1 : 0);
     const card = $(`.rev-card[data-loai="${loai}"]`);
     const rows = items.filter((r) => r.loai === loai);
-    $('tbody', card).innerHTML = rows.length ? rows.map((r, i) => `
+    if (loai === 'hd') {
+      $('tbody', card).innerHTML = rows.length ? hdGroupsHtml(rows) : `<tr><td colspan="${cols}" class="empty">Chưa có dữ liệu</td></tr>`;
+    } else $('tbody', card).innerHTML = rows.length ? rows.map((r, i) => `
       <tr>
         <td class="num muted">${i + 1}</td>
-        <td>${r.loai === 'hd' && r.ma_loai ? `<span class="kind-tag ${r.ma_loai === 'HĐ' ? 'kind-hd' : ''}">${esc(r.ma_loai)}</span> <b>${esc(r.so_ma)}</b>` : `<b>${esc(r.so_hieu)}</b>`}</td>
+        <td><b>${esc(r.so_hieu)}</b></td>
         ${loai === 'qt' ? `<td>${r.hd_so_hieu ? `<span class="st hd-tag">${esc(r.hd_so_hieu)}</span>` : '<span class="muted">—</span>'}</td>` : ''}
         <td>${dmy(r.ngay)}</td>
         <td class="num">${money(r.gia_tri)}</td>
@@ -403,6 +406,70 @@ function renderRevenue() {
       </tr>`;
   }
   renderTienVe();
+}
+
+// ---------- Mục 1: nhóm PL theo Số mã HĐ (HĐ là dòng cha, PL là tập con) ----------
+const hdCollapsed = new Set();
+const hdKey = (r) => normVn(r.so_ma || r.so_hieu);
+
+function hdGroups(rows) {
+  const map = new Map();
+  for (const r of rows) {           // rows đã sắp: HĐ trước, PL01, PL02...
+    const k = hdKey(r);
+    if (!map.has(k)) map.set(k, { key: k, so_ma: r.so_ma || r.so_hieu, head: null, pls: [] });
+    const g = map.get(k);
+    if (r.ma_loai === 'HĐ' && !g.head) g.head = r; else g.pls.push(r);
+  }
+  // Nhóm có HĐ đứng trước (theo ngày HĐ), nhóm chỉ có PL (chưa có HĐ) xếp sau
+  return [...map.values()].sort((a, b) =>
+    (a.head ? 0 : 1) - (b.head ? 0 : 1) ||
+    String(a.head?.ngay || '9999').localeCompare(String(b.head?.ngay || '9999')) ||
+    (a.head?.id || a.pls[0].id) - (b.head?.id || b.pls[0].id));
+}
+
+function hdRowHtml(r, stt, { child = false, head = false, toggle = '' } = {}) {
+  return `
+    <tr class="${child ? 'hd-child' : 'hd-head'}" ${child ? `data-grp-child="${esc(hdKey(r))}"` : ''}>
+      <td class="num muted">${stt}</td>
+      <td class="${child ? 'indent' : ''}">${toggle}${child ? '<span class="tree">└</span>' : ''}<span class="kind-tag ${r.ma_loai === 'HĐ' ? 'kind-hd' : ''}">${esc(r.ma_loai || '')}</span> <b>${esc(r.so_ma || r.so_hieu)}</b></td>
+      <td>${dmy(r.ngay)}</td>
+      <td class="num">${money(r.gia_tri)}</td>
+      <td class="num">${vatBadge(r.vat)}</td>
+      <td class="num">${money(r.tien_vat)}</td>
+      <td class="num strong">${money(r.sau_vat)}</td>
+      <td class="wrap">${esc(r.ghi_chu)}</td>
+      <td class="muted">${esc(r.nguoi_cap_nhat || '')}</td>
+      ${canEdit() ? `<td class="row-actions"><button data-redit="${r.id}">Sửa</button><button class="danger" data-rdel="${r.id}">Xóa</button></td>` : ''}
+    </tr>`;
+}
+
+function hdGroupsHtml(rows) {
+  return hdGroups(rows).map((g, gi) => {
+    const n = gi + 1;
+    const members = [g.head, ...g.pls].filter(Boolean);
+    const closed = hdCollapsed.has(g.key);
+    const toggle = g.pls.length
+      ? `<button class="grp-toggle" data-grp="${esc(g.key)}" title="${closed ? 'Mở' : 'Thu gọn'} phụ lục">${closed ? '▸' : '▾'}</button>`
+      : '<span class="grp-toggle-sp"></span>';
+    let html = '';
+    if (g.head) html += hdRowHtml(g.head, n, { toggle });
+    else html += `<tr class="hd-head hd-orphan"><td class="num muted">${n}</td><td colspan="${canEdit() ? 9 : 8}">${toggle}<b>${esc(g.so_ma)}</b> <span class="st st-tam-tinh">Chưa có HĐ gốc</span></td></tr>`;
+    if (!closed) g.pls.forEach((r, i) => { html += hdRowHtml(r, `${n}.${i + 1}`, { child: true }); });
+    if (g.pls.length) {
+      const sum = (f) => members.reduce((s, r) => s + r[f], 0);
+      const tt = members.some((r) => r.tam_tinh);
+      html += `
+        <tr class="hd-sub">
+          <td></td>
+          <td colspan="2">Cộng ${esc(g.so_ma)} <span class="muted small">(${g.head ? 'HĐ + ' : ''}${g.pls.length} PL)</span>${tt ? ' <span class="st st-tam-tinh">Có tạm tính</span>' : ''}</td>
+          <td class="num">${money(sum('gia_tri'))}</td><td></td>
+          <td class="num">${money(sum('tien_vat'))}</td>
+          <td class="num">${money(sum('sau_vat'))}</td>
+          <td colspan="${canEdit() ? 3 : 2}"></td>
+        </tr>`;
+    }
+    return html;
+  }).join('');
 }
 
 async function saveRevenue(f) {
@@ -436,7 +503,11 @@ async function saveRevenue(f) {
 }
 
 async function onRevTableClick(e) {
-  const { redit, rdel } = e.target.dataset;
+  const { redit, rdel, grp } = e.target.dataset;
+  if (grp !== undefined) {
+    hdCollapsed.has(grp) ? hdCollapsed.delete(grp) : hdCollapsed.add(grp);
+    return renderRevenue();
+  }
   if (redit) {
     const r = revData.items.find((x) => x.id === Number(redit));
     const f = $(`.rev-form[data-loai="${r.loai}"]`);

@@ -189,6 +189,15 @@ button.sm { padding: 5px 10px; font-size: 12px; }
 .ac-list li.active, .ac-list li:hover { background: #e9f7f5; }
 .ac-list li.ac-empty { cursor: default; color: var(--muted); font-style: italic; }
 input.ac-ok { border-color: var(--teal); background: #f0fdfa; }
+/* Nhóm HĐ → PL */
+tr.hd-head td { background: #fff; }
+tr.hd-child td { background: #f7fbfd; font-size: 13px; }
+tr.hd-child td.indent { padding-left: 34px; }
+.tree { color: #9fb3cc; margin-right: 6px; font-weight: 700; }
+tr.hd-sub td { background: #eef7f6; color: var(--teal); font-weight: 700; font-size: 13px; border-bottom: 2px solid #cfe7e4; }
+tr.hd-orphan td { background: #fffbeb; }
+.grp-toggle { width: 22px; height: 22px; padding: 0; margin-right: 6px; border-radius: 6px; font-size: 12px; line-height: 1; color: var(--navy); vertical-align: middle; }
+.grp-toggle-sp { display: inline-block; width: 28px; }
 .kind-tag { display: inline-block; min-width: 42px; text-align: center; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; color: #0b7a7a; background: #d6f4f1; }
 .kind-tag.kind-hd { color: #fff; background: var(--grad-btn); }
 .so-preview { color: var(--teal); font-weight: 600; }

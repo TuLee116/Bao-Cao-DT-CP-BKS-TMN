@@ -189,6 +189,29 @@ tr.tv-child td { background: #fff; }
 tr.tv-child td.indent { padding-left: 34px; }
 tr.tv-child select.tv-hd { margin-right: 8px; }
 #tv-toggle-all { margin-left: auto; margin-right: 12px; }
+/* Thầu phụ */
+.neg { color: var(--danger) !important; }
+.tp-table td.c-dt { white-space: normal; }
+dialog.tp-dlg { border: 0; border-radius: 18px; padding: 22px 24px; width: min(1180px, calc(100vw - 24px)); max-height: calc(100vh - 24px);
+  overflow: auto; box-shadow: var(--shadow-lg); font-family: inherit; background: #f6f9fd; }
+dialog.tp-dlg::backdrop { background: rgba(19, 38, 74, .55); }
+.tp-dlg-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+.tp-dlg-head h3 { margin: 2px 0 0; font-size: 20px; color: var(--navy); }
+button.ghost-dark { border: 0; background: #e6edf7; color: var(--navy); font-size: 16px; width: 36px; height: 36px; padding: 0; border-radius: 10px; }
+.tp-dlg h4 { margin: 18px 0 8px; color: var(--navy); font-size: 14px; }
+.tp-info { background: #fff; padding: 12px; border-radius: 12px; margin-bottom: 12px; }
+.tp-kpis .kpi .value { font-size: 19px; }
+.tp-dtl { background: #fff; }
+.tp-dtl input { padding: 6px 8px; font-size: 13px; background: #fff; }
+.tp-dtl input.num { text-align: right; min-width: 118px; }
+.tp-dtl input.tv-dot { width: 60px; display: inline-block; margin-left: 4px; }
+.tp-dtl input[data-f=ghi_chu] { min-width: 130px; }
+.tp-dtl th, .tp-dtl td { padding: 8px 6px; }
+.tp-dtl input.date-dmy { width: 104px; }
+.tp-dtl input.vat-in { width: 62px; }
+.tp-dtl td { vertical-align: middle; }
+tr.tp-hd-row td { background: #f3f7fd; }
+.tp-dtl tfoot td { font-weight: 700; }
 /* Chi phí: bảng cây */
 tr.c-g1 td { background: #f3f7fd; border-top: 2px solid #dbe6f5; font-size: 13.5px; color: var(--navy); }
 tr.c-g2 td { background: #fafcff; font-size: 13px; font-weight: 600; }

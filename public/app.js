@@ -933,12 +933,26 @@ async function loadCost() {
 }
 
 // ---------- Form nhập ----------
+// Nhóm Thầu phụ (thêm mới) -> form tạo hợp đồng thầu phụ; các nhóm khác -> dòng chi phí
+const costTpMode = () => cForm.elements.nhom.value === 'thau_phu' && !cForm.elements.id.value;
+function setCostMode() {
+  const tp = costTpMode();
+  $$('.c-tp', cForm).forEach((el) => (el.hidden = !tp));
+  $$('.c-gen', cForm).forEach((el) => (el.hidden = tp));
+  if (tp) $('#c-sub-wrap').hidden = true;
+  $('#c-dt-label').textContent = tp ? 'Nhà thầu phụ' : 'Đối tác / Nhà cung cấp';
+  $('#c-ngay-label').textContent = tp ? 'Ngày ký HĐ' : 'Ngày';
+  $('#c-gt-label').textContent = tp ? 'Giá trị HĐ (trước VAT) *' : 'Giá trị (trước VAT) *';
+  $('button[type=submit]', cForm).textContent = cForm.elements.id.value ? 'Lưu thay đổi' : tp ? 'Tạo HĐ thầu phụ' : 'Thêm dòng';
+}
+
 function fillSubOptions(nhomCode, keep) {
   const n = NHOM().find((x) => x.code === nhomCode);
   const has = Boolean(n?.sub.length);
   $('#c-sub-wrap').hidden = !has;
   cForm.elements.nhom_con.innerHTML = has ? n.sub.map((s) => `<option value="${s.code}">${esc(s.ten)}</option>`).join('') : '';
   if (has && keep && n.sub.some((s) => s.code === keep)) cForm.elements.nhom_con.value = keep;
+  setCostMode();
 }
 
 function updateCostPreview() {
@@ -969,6 +983,9 @@ function initCostForm() {
   cForm.elements.gia_tri.addEventListener('input', updateCostPreview);
   cForm.elements.vat.addEventListener('input', updateCostPreview);
   cForm.addEventListener('submit', (e) => { e.preventDefault(); saveCost(); });
+  attachQuickPicker(cForm.elements.so_tp,
+    () => (costData?.thau_phu || []).map((c) => ({ value: c.id, label: c.so_ma, sub: `${c.doi_tac || '—'} · HĐ ${money(c.hd_sau_vat)} đ · Còn lại ${money(c.con_lai)} đ` })),
+    (o) => openTp(o.value), 'Chưa có HĐ thầu phụ nào – hãy gõ số mới');
   $('#c-cancel').addEventListener('click', () => { resetCostForm(); showMsg($('#c-msg'), ''); });
   updateCostPreview();
 }
@@ -981,7 +998,7 @@ function resetCostForm(nhom, sub) {
   cForm.elements.nhom.value = keepNhom;
   fillSubOptions(keepNhom, keepSub);
   $('#c-form-title').textContent = 'Thêm chi phí';
-  $('button[type=submit]', cForm).textContent = 'Thêm dòng';
+  setCostMode();
   updateCostPreview();
 }
 
@@ -991,6 +1008,23 @@ async function saveCost() {
   const ngay = dmyToIso(cForm.elements.ngay.value);
   if (ngay === null) return showMsg(msg, 'Ngày không hợp lệ, nhập theo dạng dd/mm/yyyy', 'err');
   const e = cForm.elements;
+  if (costTpMode()) {
+    // Tạo hợp đồng thầu phụ kèm dòng HĐ gốc
+    try {
+      const so = e.so_tp.value.trim();
+      await api(`/api/du-an/${revProjectId}/thau-phu`, { method: 'POST', body: JSON.stringify({
+        so_ma: so, doi_tac: e.doi_tac.value, ghi_chu: e.ghi_chu.value,
+        hd: { ngay, gia_tri: parseMoney(e.gia_tri.value), vat: e.vat.value },
+      }) });
+      costOpen.add('thau_phu');
+      resetCostForm('thau_phu');
+      showMsg(msg, `Đã tạo HĐ thầu phụ ${so}. Nhấp đúp vào số HĐ ở bảng "1. Thầu phụ" để nhập PL, HT/QT, thanh toán.`);
+      await loadCost();
+    } catch (err) {
+      showMsg(msg, err.message, 'err');
+    }
+    return;
+  }
   const body = {
     nhom: e.nhom.value, nhom_con: e.nhom_con.value, noi_dung: e.noi_dung.value, doi_tac: e.doi_tac.value,
     so_ct: e.so_ct.value, ngay, gia_tri: parseMoney(e.gia_tri.value), vat: e.vat.value, ghi_chu: e.ghi_chu.value,
@@ -1041,13 +1075,25 @@ function renderCost() {
   NHOM().forEach((n, i) => {
     const g = tong.theo_nhom[n.code];
     const rows = items.filter((r) => r.nhom === n.code);
+    const tps = n.code === 'thau_phu' ? costData.thau_phu : [];
     const open = costOpen.has(n.code);
     html += `<tr class="c-g1"><td class="num">${i + 1}</td>
-      <td colspan="3">${toggle(n.code, rows.length || n.sub.length)}<b>${esc(n.ten)}</b> <span class="muted small">(${g.so_dong} dòng)</span>${g.tam_tinh ? ' <span class="st st-tam-tinh">Có tạm tính</span>' : ''}</td>
+      <td colspan="3">${toggle(n.code, rows.length || n.sub.length || tps.length)}<b>${esc(n.ten)}</b> <span class="muted small">(${tps.length ? tps.length + ' HĐ' + (rows.length ? ' + ' + rows.length + ' dòng' : '') : g.so_dong + ' dòng'})</span>${g.tam_tinh ? ' <span class="st st-tam-tinh">Có tạm tính</span>' : ''}</td>
       ${sumCells(g, 'strong')}<td></td><td class="row-actions">${addBtn(n.code, n.sub[0]?.code)}</td></tr>`;
     if (!open) return;
+    tps.forEach((c, k) => {
+      html += `<tr class="c-row">
+        <td class="num muted">${i + 1}.${k + 1}</td>
+        <td class="indent-1"><span class="tree">└</span><b class="tp-open" data-tp="${c.id}" title="Nhấp đúp để mở chi tiết">${esc(c.so_ma)}</b>${c.so_pl ? ` <span class="muted small">(+${c.so_pl} PL)</span>` : ''}</td>
+        <td class="c-dt">${esc(c.doi_tac)}</td><td></td>
+        <td class="num">${money(c.qt_gia_tri)}</td><td class="num muted small">HT/QT</td>
+        <td class="num">${money(c.qt_tien_vat)}</td><td class="num strong">${money(c.qt_sau_vat)}</td>
+        <td class="num muted">${pct(c.qt_sau_vat)}</td><td class="c-note">${esc(c.ghi_chu)}</td>
+        <td class="row-actions"><button class="sm" data-tpopen="${c.id}">Chi tiết</button></td>
+      </tr>`;
+    });
     if (!n.sub.length) {
-      rows.forEach((r, k) => { html += detail(r, `${i + 1}.${k + 1}`, 1); });
+      rows.forEach((r, k) => { html += detail(r, `${i + 1}.${tps.length + k + 1}`, 1); });
       return;
     }
     n.sub.forEach((s, j) => {
@@ -1061,13 +1107,22 @@ function renderCost() {
     });
   });
   $('#c-tbody').innerHTML = html;
+  renderTpCard();
+  if (tpDlgId) renderTpDlg();
   $('#c-tfoot').innerHTML = `<tr><td></td><td colspan="3">TỔNG CHI PHÍ${tong.tam_tinh ? ' <span class="st st-tam-tinh">Có tạm tính</span>' : ''}</td>${sumCells(tong)}<td colspan="2"></td></tr>`;
   const keys = NHOM().flatMap((n) => [n.code, ...n.sub.map((s) => `${n.code}:${s.code}`)]);
   $('#c-toggle-all').textContent = keys.every((k) => costOpen.has(k)) ? 'Thu gọn tất cả' : 'Mở tất cả';
 }
 
+$('#tab-cost').addEventListener('dblclick', (e) => {
+  const el = e.target.closest('.tp-open');
+  if (el) { window.getSelection?.().removeAllRanges(); openTp(Number(el.dataset.tp)); }
+});
+
 $('#tab-cost').addEventListener('click', async (e) => {
-  const { cgrp, cadd, csub, cedit, cdel } = e.target.dataset;
+  const { cgrp, cadd, csub, cedit, cdel, tpopen, tpdel } = e.target.dataset;
+  if (tpopen) return openTp(Number(tpopen));
+  if (tpdel) return deleteTp(Number(tpdel));
   if (cgrp) { costOpen.has(cgrp) ? costOpen.delete(cgrp) : costOpen.add(cgrp); return renderCost(); }
   if (e.target.id === 'c-toggle-all') {
     const keys = NHOM().flatMap((n) => [n.code, ...n.sub.map((s) => `${n.code}:${s.code}`)]);
@@ -1092,7 +1147,7 @@ $('#tab-cost').addEventListener('click', async (e) => {
     el.noi_dung.value = r.noi_dung; el.doi_tac.value = r.doi_tac || ''; el.so_ct.value = r.so_ct || '';
     el.ngay.value = isoToDmy(r.ngay); el.gia_tri.value = money(r.gia_tri); el.vat.value = r.vat; el.ghi_chu.value = r.ghi_chu || '';
     $('#c-form-title').textContent = 'Sửa chi phí';
-    $('button[type=submit]', cForm).textContent = 'Lưu thay đổi';
+    setCostMode();
     showMsg($('#c-msg'), 'Đang sửa: ' + r.noi_dung);
     updateCostPreview();
     cForm.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1106,6 +1161,254 @@ $('#tab-cost').addEventListener('click', async (e) => {
     } catch (err) { alert(err.message); }
   }
 });
+
+// ---------------------------------------------------------------------
+// 1. THẦU PHỤ theo hợp đồng
+// ---------------------------------------------------------------------
+function renderTpCard() {
+  const list = costData.thau_phu;
+  const T = costData.tong_tp;
+  const edit = canEdit();
+  $('#tp-total').textContent = money(T.con_lai);
+  $('#tp-tbody').innerHTML = list.length ? list.map((c, i) => `
+    <tr>
+      <td class="num muted">${i + 1}</td>
+      <td><b class="tp-open so-ma-pick" data-tp="${c.id}" title="Nhấp đúp để mở bảng nhập chi tiết">${esc(c.so_ma)}</b>
+        ${c.so_pl ? `<span class="muted small">(+${c.so_pl} PL)</span>` : ''}
+        ${c.da_qt ? '<span class="st st-hoan-thanh">Đã QT</span>' : '<span class="st">Chưa QT</span>'}</td>
+      <td class="c-dt">${esc(c.doi_tac)}</td>
+      <td class="num">${money(c.hd_sau_vat)}</td>
+      <td class="num">${money(c.qt_sau_vat)}</td>
+      <td class="num">${money(c.da_tt)}</td>
+      <td class="num strong ${c.con_lai < 0 ? 'neg' : ''}">${money(c.con_lai)}</td>
+      <td class="c-note">${esc(c.ghi_chu)}</td>
+      <td class="row-actions"><button class="sm" data-tpopen="${c.id}">Chi tiết</button>${edit ? `<button class="danger sm" data-tpdel="${c.id}">Xóa</button>` : ''}</td>
+    </tr>`).join('') : `<tr><td colspan="9" class="empty">Chưa có hợp đồng thầu phụ. ${edit ? 'Chọn nhóm "1. Thầu phụ" ở form trên để tạo.' : ''}</td></tr>`;
+  $('#tp-tfoot').innerHTML = `<tr><td></td><td colspan="2">TỔNG THẦU PHỤ (${T.so_hd} HĐ)</td>
+    <td class="num">${money(T.hd_sau_vat)}</td><td class="num">${money(T.qt_sau_vat)}</td><td class="num">${money(T.da_tt)}</td>
+    <td class="num ${T.con_lai < 0 ? 'neg' : ''}">${money(T.con_lai)}</td><td colspan="2"></td></tr>`;
+}
+
+async function deleteTp(id) {
+  const c = costData.thau_phu.find((x) => x.id === id);
+  if (!c) return;
+  const pc = await askPasscode(`Xóa hợp đồng thầu phụ "${c.so_ma}"?`,
+    `Sẽ xóa tất cả dữ liệu sau:\n• ${c.lines.length} dòng HĐ/PL – giá trị HĐ ${money(c.hd_sau_vat)} đ, HT/QT ${money(c.qt_sau_vat)} đ\n• ${c.pays.length} dòng thanh toán – ${money(c.da_tt)} đ\nThao tác này không hoàn tác được.`);
+  if (pc === null) return;
+  try {
+    await api(`/api/thau-phu/${id}`, { method: 'DELETE', body: JSON.stringify({ passcode: pc }) });
+    if (tpDlgId === id) closeTp();
+    await loadCost();
+  } catch (err) { alert(err.message); }
+}
+
+// ---------- Bảng nhập chi tiết 1 HĐ thầu phụ (hộp thoại) ----------
+let tpDlgId = null;
+let tpDrafts = { lines: [], pays: [] };
+let tpSeq = 0;
+const TT_LABEL = { tam_ung: 'Tạm ứng', dot: 'TT Đợt', quyet_toan: 'Quyết toán' };
+
+function openTp(id) {
+  if (!costData.thau_phu.some((c) => c.id === id)) return;
+  tpDlgId = id;
+  tpDrafts = { lines: [], pays: [] };
+  let dlg = $('#tp-dlg');
+  if (!dlg) {
+    dlg = document.createElement('dialog');
+    dlg.id = 'tp-dlg';
+    dlg.className = 'tp-dlg';
+    document.body.appendChild(dlg);
+    dlg.addEventListener('click', onTpDlgClick);
+    dlg.addEventListener('input', onTpDlgInput);
+    dlg.addEventListener('keydown', (e) => {
+      const tr = e.target.closest('tr[data-k]');
+      if (e.key === 'Enter' && tr) { e.preventDefault(); $('[data-save]', tr)?.click(); }
+    });
+    dlg.addEventListener('cancel', (e) => { e.preventDefault(); closeTp(); });
+  }
+  renderTpDlg();
+  if (!dlg.open) dlg.showModal();
+}
+function closeTp() {
+  tpDlgId = null;
+  const dlg = $('#tp-dlg');
+  if (dlg?.open) dlg.close();
+}
+
+// Tính sau VAT ngay trên trình duyệt (cùng công thức máy chủ)
+const tpCalc = (gt, vat) => { const g = Number(parseMoney(gt)) || 0; const v = Number(vat) || 0; return g + calcVat(g, v); };
+
+function renderTpDlg() {
+  const c = costData.thau_phu.find((x) => x.id === tpDlgId);
+  const dlg = $('#tp-dlg');
+  if (!c) return closeTp();
+  const edit = canEdit();
+  const inp = (name, val, attrs = '') => `<input data-f="${name}" value="${esc(val ?? '')}" ${attrs} ${edit ? '' : 'disabled'}>`;
+  const nextPl = 'PL' + String(Math.max(0, ...c.lines.map((l) => (l.ma_loai === 'HĐ' ? 0 : Number(l.ma_loai.slice(2)))), ...tpDrafts.lines.map((d) => Number(d.ma_loai.slice(2)))) + 1).padStart(2, '0');
+
+  const lineRow = (l, draft) => {
+    const qtStr = l.gia_tri_qt === null || l.gia_tri_qt === undefined ? '' : money(l.gia_tri_qt);
+    const gtStr = draft ? '' : money(l.gia_tri);
+    const hdSau = draft ? 0 : l.sau_vat;
+    const qtSau = draft ? 0 : l.qt_sau_vat;
+    return `<tr data-k="${draft ? 'dl' + l.key : 'l' + l.id}" class="${draft ? 'tv-draft' : l.ma_loai === 'HĐ' ? 'tp-hd-row' : 'tp-pl-row'}">
+      <td>${l.ma_loai === 'HĐ' ? '' : '<span class="tree">└</span>'}<span class="kind-tag ${l.ma_loai === 'HĐ' ? 'kind-hd' : ''}">${l.ma_loai}</span> <b>${esc(c.so_ma)}</b>${draft ? ' <span class="st st-tam-tinh">Chưa lưu</span>' : ''}</td>
+      <td>${inp('ngay', draft ? '' : isoToDmy(l.ngay), 'class="date-dmy"')}</td>
+      <td>${inp('gia_tri', gtStr, 'class="money num" placeholder="0"')}</td>
+      <td>${inp('vat', draft ? '' : l.vat || '', 'type="number" min="0" max="100" step="1" class="vat-in" placeholder="0"')}</td>
+      <td class="num strong" data-calc="hd">${money(hdSau)}</td>
+      <td>${inp('gia_tri_qt', qtStr, 'class="money num" placeholder="= giá trị HĐ/PL"')}</td>
+      <td class="num strong" data-calc="qt">${money(qtSau)}${!draft && !l.da_qt ? '<div class="muted small">chưa QT</div>' : ''}</td>
+      <td>${inp('ghi_chu', draft ? '' : l.ghi_chu, 'maxlength="500"')}</td>
+      <td class="row-actions">${edit ? `<button class="primary sm" data-save ${draft ? '' : 'hidden'}>Lưu</button>${
+        l.ma_loai === 'HĐ' ? '' : `<button class="danger sm" data-del>${draft ? 'Bỏ' : 'Xóa'}</button>`}` : ''}</td>
+    </tr>`;
+  };
+  const payLabel = (p, draft) => (p.loai === 'dot'
+    ? `TT Đợt ${edit ? `<input data-f="dot" type="number" min="1" max="999" class="tv-dot" value="${esc(p.dot ?? '')}">` : esc(p.dot)}`
+    : TT_LABEL[p.loai]) + (draft ? ' <span class="st st-tam-tinh">Chưa lưu</span>' : '');
+  const payRow = (p, draft) => `<tr data-k="${draft ? 'dp' + p.key : 'p' + p.id}" class="${draft ? 'tv-draft' : ''}">
+      <td><b>${payLabel(p, draft)}</b></td>
+      <td>${inp('ngay', draft ? '' : isoToDmy(p.ngay), 'class="date-dmy"')}</td>
+      <td>${inp('so_tien', draft ? '' : money(p.so_tien), 'class="money num" placeholder="Nhập giá trị"')}</td>
+      <td>${inp('ghi_chu', draft ? '' : p.ghi_chu, 'maxlength="500"')}</td>
+      <td class="row-actions">${edit ? `<button class="primary sm" data-save ${draft ? '' : 'hidden'}>Lưu</button><button class="danger sm" data-del>${draft ? 'Bỏ' : 'Xóa'}</button>` : ''}</td>
+    </tr>`;
+  const hasQt = c.pays.some((p) => p.loai === 'quyet_toan') || tpDrafts.pays.some((p) => p.loai === 'quyet_toan');
+
+  dlg.innerHTML = `
+    <div class="tp-dlg-head">
+      <div>
+        <div class="muted small">Hợp đồng thầu phụ · ${esc(costData.du_an.ma_du_an)}</div>
+        <h3>${esc(c.so_ma)} ${c.da_qt ? '<span class="st st-hoan-thanh">Đã QT</span>' : '<span class="st">Chưa QT</span>'}</h3>
+      </div>
+      <button class="ghost-dark" data-close title="Đóng (Esc)">✕</button>
+    </div>
+    ${edit ? `<div class="grid-form tp-info" data-k="info">
+      <label>Số HĐ thầu phụ *<input data-f="so_ma" value="${esc(c.so_ma)}" maxlength="120"></label>
+      <label>Nhà thầu phụ<input data-f="doi_tac" value="${esc(c.doi_tac)}" maxlength="200"></label>
+      <label class="span-2">Ghi chú<input data-f="ghi_chu" value="${esc(c.ghi_chu)}" maxlength="500"></label>
+      <div class="actions"><button class="primary sm" data-save hidden>Lưu thông tin</button></div>
+    </div>` : `<p class="muted">Nhà thầu phụ: <b>${esc(c.doi_tac || '—')}</b>${c.ghi_chu ? ' · ' + esc(c.ghi_chu) : ''}</p>`}
+    <div class="kpis tp-kpis">
+      <div class="kpi"><div class="label">Tổng giá trị HĐ</div><div class="value">${money(c.hd_sau_vat)}</div><div class="sub">HĐ + ${c.so_pl} PL, sau VAT</div></div>
+      <div class="kpi"><div class="label">Tổng giá trị HT/QT</div><div class="value">${money(c.qt_sau_vat)}</div><div class="sub">${c.da_qt ? 'Đã quyết toán' : 'Chưa QT = theo giá trị HĐ/PL'}</div></div>
+      <div class="kpi"><div class="label">Giá trị thanh toán</div><div class="value">${money(c.da_tt)}</div><div class="sub">${c.pays.length} lần</div></div>
+      <div class="kpi"><div class="label">Giá trị còn lại</div><div class="value ${c.con_lai < 0 ? 'neg' : ''}">${money(c.con_lai)}</div><div class="sub">= HT/QT − Thanh toán</div></div>
+    </div>
+
+    <h4>Giá trị HĐ / PL</h4>
+    <div class="table-wrap"><table class="tp-dtl">
+      <thead><tr><th>Số HĐ/PL</th><th>Ngày</th><th class="num">Giá trị HĐ/PL<br><span class="muted small">trước VAT</span></th><th>VAT %</th><th class="num">HĐ/PL<br><span class="muted small">sau VAT</span></th>
+        <th class="num">Giá trị HT/QT<br><span class="muted small">trước VAT</span></th><th class="num">HT/QT<br><span class="muted small">sau VAT</span></th><th>Ghi chú</th><th></th></tr></thead>
+      <tbody>${c.lines.map((l) => lineRow(l, false)).join('')}${tpDrafts.lines.map((d) => lineRow(d, true)).join('')}</tbody>
+      <tfoot><tr><td colspan="4">TỔNG</td><td class="num">${money(c.hd_sau_vat)}</td><td></td><td class="num">${money(c.qt_sau_vat)}</td><td colspan="2"></td></tr></tfoot>
+    </table></div>
+    ${edit ? `<div class="tv-tools"><button class="sm" data-addpl="${nextPl}">+ Thêm ${nextPl}</button>
+      <span class="muted small">Ô HT/QT để trống = chưa quyết toán (lấy bằng giá trị HĐ/PL)</span></div>` : ''}
+
+    <h4>Giá trị thanh toán</h4>
+    <div class="table-wrap"><table class="tp-dtl">
+      <thead><tr><th>Nội dung</th><th>Ngày</th><th class="num">Số tiền</th><th>Ghi chú</th><th></th></tr></thead>
+      <tbody>${c.pays.map((p) => payRow(p, false)).join('')}${tpDrafts.pays.map((p) => payRow(p, true)).join('')}
+        ${!c.pays.length && !tpDrafts.pays.length ? '<tr><td colspan="5" class="empty">Chưa có thanh toán</td></tr>' : ''}</tbody>
+      <tfoot><tr><td colspan="2">TỔNG THANH TOÁN</td><td class="num">${money(c.da_tt)}</td><td colspan="2"></td></tr></tfoot>
+    </table></div>
+    ${edit ? `<div class="tv-tools">
+      <button class="sm" data-addpay="tam_ung">+ Tạm ứng</button>
+      <button class="sm" data-addpay="dot">+ Đợt thanh toán</button>
+      <button class="sm" data-addpay="quyet_toan" ${hasQt ? 'disabled title="Đã có Quyết toán"' : ''}>+ Quyết toán</button>
+      <span class="spacer"></span>
+      <button class="danger sm" data-deltp>Xóa hợp đồng thầu phụ</button>
+    </div>` : ''}
+    <div class="msg" id="tp-msg" role="alert"></div>`;
+  if (edit) {
+    $$('input.money', dlg).forEach(attachMoneyInput);
+    $$('input.date-dmy', dlg).forEach(attachDateInput);
+  }
+}
+
+function onTpDlgInput(e) {
+  const tr = e.target.closest('[data-k]');
+  if (!tr) return;
+  const btn = $('[data-save]', tr);
+  if (btn) btn.hidden = false;
+  if (tr.dataset.k.startsWith('l') || tr.dataset.k.startsWith('dl')) {
+    // cập nhật sau VAT ngay khi gõ
+    const v = (f) => $(`[data-f="${f}"]`, tr)?.value ?? '';
+    $('[data-calc="hd"]', tr).textContent = money(tpCalc(v('gia_tri'), v('vat')));
+    $('[data-calc="qt"]', tr).textContent = money(tpCalc(v('gia_tri_qt') || v('gia_tri'), v('vat')));
+  }
+}
+
+async function onTpDlgClick(e) {
+  const t = e.target;
+  const c = costData.thau_phu.find((x) => x.id === tpDlgId);
+  if (!c) return;
+  const msg = () => $('#tp-msg');
+  if (t.dataset.close !== undefined) return closeTp();
+  if (t.dataset.deltp !== undefined) return deleteTp(c.id);
+  if (t.dataset.addpl) { tpDrafts.lines.push({ key: ++tpSeq, ma_loai: t.dataset.addpl }); return renderTpDlg(); }
+  if (t.dataset.addpay) {
+    const loai = t.dataset.addpay;
+    const d = { key: ++tpSeq, loai };
+    if (loai === 'dot') d.dot = Math.max(0, ...c.pays.filter((p) => p.loai === 'dot').map((p) => p.dot), ...tpDrafts.pays.filter((p) => p.loai === 'dot').map((p) => p.dot)) + 1;
+    tpDrafts.pays.push(d);
+    return renderTpDlg();
+  }
+  const tr = t.closest('[data-k]');
+  if (!tr) return;
+  const k = tr.dataset.k;
+  const v = (f) => $(`[data-f="${f}"]`, tr)?.value ?? '';
+  const call = async (url, method, body) => {
+    try {
+      await api(url, { method, body: body ? JSON.stringify(body) : undefined });
+      return true;
+    } catch (err) { showMsg(msg(), err.message, 'err'); return false; }
+  };
+  const after = async (text) => { await loadCost(); showMsg(msg(), text); };
+
+  if (t.dataset.save !== undefined) {
+    if (k === 'info') {
+      if (await call(`/api/thau-phu/${c.id}`, 'PUT', { so_ma: v('so_ma'), doi_tac: v('doi_tac'), ghi_chu: v('ghi_chu') })) await after('Đã lưu thông tin hợp đồng');
+      return;
+    }
+    const ngay = dmyToIso(v('ngay'));
+    if (ngay === null) return showMsg(msg(), 'Ngày không hợp lệ, nhập dd/mm/yyyy', 'err');
+    if (k.startsWith('l') || k.startsWith('dl')) {
+      const draft = k.startsWith('dl');
+      const cur = draft ? tpDrafts.lines.find((d) => 'dl' + d.key === k) : c.lines.find((l) => 'l' + l.id === k);
+      const body = { ma_loai: cur.ma_loai, ngay, gia_tri: parseMoney(v('gia_tri')), vat: v('vat'), gia_tri_qt: parseMoney(v('gia_tri_qt')), ghi_chu: v('ghi_chu') };
+      if (await call(draft ? `/api/thau-phu/${c.id}/hd-pl` : `/api/tp-hd-pl/${cur.id}`, draft ? 'POST' : 'PUT', body)) {
+        if (draft) tpDrafts.lines = tpDrafts.lines.filter((d) => d !== cur);
+        await after(`Đã lưu ${cur.ma_loai}`);
+      }
+    } else {
+      const draft = k.startsWith('dp');
+      const cur = draft ? tpDrafts.pays.find((d) => 'dp' + d.key === k) : c.pays.find((p) => 'p' + p.id === k);
+      const body = { loai: cur.loai, dot: cur.loai === 'dot' ? v('dot') : null, ngay, so_tien: parseMoney(v('so_tien')), ghi_chu: v('ghi_chu') };
+      if (await call(draft ? `/api/thau-phu/${c.id}/thanh-toan` : `/api/tp-thanh-toan/${cur.id}`, draft ? 'POST' : 'PUT', body)) {
+        if (draft) tpDrafts.pays = tpDrafts.pays.filter((d) => d !== cur);
+        await after(`Đã lưu ${TT_LABEL[cur.loai]}${cur.loai === 'dot' ? ' ' + body.dot : ''}`);
+      }
+    }
+    return;
+  }
+  if (t.dataset.del !== undefined) {
+    if (k.startsWith('dl')) { tpDrafts.lines = tpDrafts.lines.filter((d) => 'dl' + d.key !== k); return renderTpDlg(); }
+    if (k.startsWith('dp')) { tpDrafts.pays = tpDrafts.pays.filter((d) => 'dp' + d.key !== k); return renderTpDlg(); }
+    if (k.startsWith('l')) {
+      const l = c.lines.find((x) => 'l' + x.id === k);
+      const pc = await askPasscode(`Xóa "${l.so_hieu}"?`, `Giá trị sau VAT: ${money(l.sau_vat)} đ. Thao tác này không hoàn tác được.`);
+      if (pc === null) return;
+      if (await call(`/api/tp-hd-pl/${l.id}`, 'DELETE', { passcode: pc })) await after(`Đã xóa ${l.ma_loai}`);
+    } else {
+      const p = c.pays.find((x) => 'p' + x.id === k);
+      if (!confirm(`Xóa dòng ${TT_LABEL[p.loai]}${p.dot ? ' ' + p.dot : ''} (${money(p.so_tien)} đ)?`)) return;
+      if (await call(`/api/tp-thanh-toan/${p.id}`, 'DELETE')) await after('Đã xóa dòng thanh toán');
+    }
+  }
+}
 
 // =====================================================================
 // TÀI KHOẢN (Quản trị)

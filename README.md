@@ -36,6 +36,16 @@ Web quản lý dự án xây dựng có đăng nhập, phân quyền, khởi t�
 - Sai 5 lần / 15 phút → khóa chức năng xóa của tài khoản đó 15 phút.
 - Mọi lần đặt passcode và xóa HĐ/PL đều ghi nhật ký `[NHẬT KÝ]` trong log máy chủ (Railway → Deploy Logs).
 
+### Thầu phụ (nhóm 1 Chi phí) – theo hợp đồng
+- Form Thêm chi phí, chọn nhóm **1. Thầu phụ** → tạo HĐ thầu phụ: Số HĐ, Nhà thầu phụ, Ngày ký, Giá trị HĐ, VAT, Ghi chú.
+- Bảng **1. Thầu phụ – theo hợp đồng**: Số HĐ | Nhà thầu phụ | Tổng giá trị HĐ (gồm PL) | Tổng giá trị HT/QT | Giá trị thanh toán | Giá trị còn lại | Ghi chú.
+- **Nhấp đúp vào Số HĐ thầu phụ** (hoặc nút Chi tiết, hoặc nhấp đúp ô Số HĐ thầu phụ trên form) → bảng nhập chi tiết:
+  - HĐ/PL (tập con HĐ → PL01, PL02...): Ngày, Giá trị trước VAT, VAT, Giá trị HT/QT (trống = chưa quyết toán → bằng giá trị HĐ/PL).
+  - Thanh toán: Tạm ứng / TT Đợt n / Quyết toán.
+  - **Còn lại = HT/QT sau VAT − Thanh toán.**
+- Nhóm 1 trong tổng chi phí = tổng giá trị HT/QT của các HĐ thầu phụ.
+- Xóa HĐ thầu phụ hoặc PL cần Passcode; dòng HĐ gốc chỉ xóa cùng cả hợp đồng.
+
 ### Phân quyền
 | Quyền | Xem dự án | Thêm/sửa/xóa dự án | Quản lý tài khoản & cài đặt |
 |---|:-:|:-:|:-:|

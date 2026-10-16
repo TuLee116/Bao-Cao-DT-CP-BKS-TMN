@@ -130,11 +130,12 @@
             <input type="hidden" name="id">
             <label>Nhóm chi phí *<select name="nhom"></select></label>
             <label id="c-sub-wrap">Hạng mục *<select name="nhom_con"></select></label>
-            <label class="span-2">Nội dung *<input name="noi_dung" maxlength="300" placeholder="VD: Thép D16 đợt 1, Thi công cọc khoan nhồi..."></label>
-            <label>Đối tác / Nhà cung cấp<input name="doi_tac" maxlength="200"></label>
-            <label>Số HĐ / Chứng từ<input name="so_ct" maxlength="100"></label>
-            <label>Ngày<input name="ngay" class="date-dmy"></label>
-            <label>Giá trị (trước VAT) *<input name="gia_tri" placeholder="0"></label>
+            <label class="c-tp">Số HĐ thầu phụ *<input name="so_tp" maxlength="120" placeholder="Số mới: gõ · Số đã có: nhấp đúp" title="Số HĐ mới: gõ trực tiếp. Số đã có: nhấp đúp để mở bảng chi tiết"></label>
+            <label class="span-2 c-gen">Nội dung *<input name="noi_dung" maxlength="300" placeholder="VD: Thép D16 đợt 1, Thi công cọc khoan nhồi..."></label>
+            <label><span id="c-dt-label">Đối tác / Nhà cung cấp</span><input name="doi_tac" maxlength="200"></label>
+            <label class="c-gen">Số HĐ / Chứng từ<input name="so_ct" maxlength="100"></label>
+            <label><span id="c-ngay-label">Ngày</span><input name="ngay" class="date-dmy"></label>
+            <label><span id="c-gt-label">Giá trị (trước VAT) *</span><input name="gia_tri" placeholder="0"></label>
             <label>VAT (%)<input name="vat" type="number" min="0" max="100" step="1" placeholder="0 = chưa có VAT"></label>
             <label>Giá trị (sau VAT)<output class="calc" name="sau_vat">0</output><span class="calc-note vat-note"></span></label>
             <label class="span-2">Ghi chú<input name="ghi_chu" maxlength="500"></label>
@@ -142,8 +143,27 @@
               <button type="submit" class="primary">Thêm dòng</button>
               <button type="button" id="c-cancel">Hủy</button>
             </div>
+            <div class="c-tp tp-hint span-2 muted small">Sau khi tạo: <b>HT/QT</b> = giá trị HĐ (chưa quyết toán) · <b>Đã thanh toán</b> = 0 · <b>Còn lại</b> = HT/QT. Nhấp đúp vào Số HĐ thầu phụ ở bảng bên dưới để nhập PL, HT/QT và thanh toán.</div>
             <div class="msg" id="c-msg" role="alert"></div>
           </form>
+        </div>
+
+        <div class="card" id="tp-card">
+          <div class="toolbar tv-head">
+            <h2>1. Thầu phụ – theo hợp đồng</h2>
+            <div class="tv-total">Còn lại: <b id="tp-total">0</b></div>
+          </div>
+          <div class="table-wrap">
+            <table class="tp-table">
+              <thead><tr>
+                <th class="num">#</th><th>Số HĐ thầu phụ</th><th>Nhà thầu phụ</th>
+                <th class="num">Tổng giá trị HĐ</th><th class="num">Tổng giá trị HT/QT</th><th class="num">Giá trị thanh toán</th><th class="num">Giá trị còn lại</th><th>Ghi chú</th><th></th>
+              </tr></thead>
+              <tbody id="tp-tbody"></tbody>
+              <tfoot id="tp-tfoot"></tfoot>
+            </table>
+          </div>
+          <p class="muted small">Nhấp đúp vào <b>Số HĐ thầu phụ</b> (hoặc bấm Chi tiết) để nhập HĐ/PL, giá trị HT/QT và thanh toán. Các giá trị hiển thị sau VAT; HT/QT chưa nhập = bằng giá trị HĐ/PL (chưa quyết toán).</p>
         </div>
 
         <div class="card">

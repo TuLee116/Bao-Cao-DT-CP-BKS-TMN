@@ -3,7 +3,8 @@ const path = require('path');
 const crypto = require('crypto');
 const store = require('./lib/db');
 const auth = require('./lib/auth');
-const { TRANG_THAI, ROLES, validateProject, validateUser, validateSettings, validateRevenue, validateTienVe, validateCost, passwordErrors, passcodeErrors } = require('./lib/validate');
+const { TRANG_THAI, ROLES, validateProject, validateUser, validateSettings, validateRevenue, validateTienVe, validateCost, validateTp, validateTpLine, validateTpPay, passwordErrors, passcodeErrors } = require('./lib/validate');
+const { buildContracts, summarizeContracts } = require('./lib/subcontract');
 const { NHOM_CHI_PHI, summarizeCost, sortCost } = require('./lib/cost');
 const { LOAI_DOANH_THU, calcLine, summarize, sortRevenue, tienVeLabel, sortTienVe, summarizeTienVe } = require('./lib/revenue');
 
@@ -190,6 +191,20 @@ function passcodeLocked(uid) {
   const a = passFails.get(uid);
   if (!a || Date.now() - a.first > PASS_WINDOW) return 0;
   return a.count >= 5 ? Math.ceil((a.first + PASS_WINDOW - Date.now()) / 60e3) : 0;
+}
+// Kiểm tra Passcode xóa (gửi lỗi và trả false nếu không hợp lệ)
+async function requirePasscode(req, res) {
+  const stored = (await store.getSettings())[PASSCODE_KEY];
+  if (!stored) { bad(res, 'Quản trị chưa đặt Passcode xóa HĐ/PL (tab Cài đặt). Chưa thể xóa.', 403); return false; }
+  const wait = passcodeLocked(req.user.id);
+  if (wait) { bad(res, `Nhập sai Passcode quá nhiều lần. Thử lại sau ${wait} phút`, 429); return false; }
+  if (!(await auth.verifyPassword(String(req.body?.passcode ?? ''), stored))) {
+    const left = passcodeFailed(req.user.id);
+    bad(res, left > 0 ? `Passcode không đúng (còn ${left} lần thử)` : 'Passcode không đúng. Đã khóa chức năng xóa 15 phút', 403);
+    return false;
+  }
+  passFails.delete(req.user.id);
+  return true;
 }
 function passcodeFailed(uid) {
   const a = passFails.get(uid);
@@ -415,15 +430,7 @@ api.delete('/doanh-thu/:id', canEdit, wrap(async (req, res) => {
       return bad(res, `Không xóa được "${cur.so_hieu}": đang được ${parts} tham chiếu. Chọn "Xóa toàn bộ hợp đồng" để xóa kèm.`, 409);
     }
     // Xóa Số HĐ/PL phải nhập Passcode do Quản trị đặt
-    const stored = (await store.getSettings())[PASSCODE_KEY];
-    if (!stored) return bad(res, 'Quản trị chưa đặt Passcode xóa HĐ/PL (tab Cài đặt). Chưa thể xóa.', 403);
-    const wait = passcodeLocked(req.user.id);
-    if (wait) return bad(res, `Nhập sai Passcode quá nhiều lần. Thử lại sau ${wait} phút`, 429);
-    if (!(await auth.verifyPassword(String(req.body?.passcode ?? ''), stored))) {
-      const left = passcodeFailed(req.user.id);
-      return bad(res, left > 0 ? `Passcode không đúng (còn ${left} lần thử)` : 'Passcode không đúng. Đã khóa chức năng xóa 15 phút', 403);
-    }
-    passFails.delete(req.user.id);
+    if (!(await requirePasscode(req, res))) return;
     // Xóa toàn bộ hợp đồng: HĐ + PL cùng Số mã + HT/QT + Tiền về
     if (cascade && cur.ma_loai === 'HĐ') {
       const im = await contractImpact(cur);
@@ -446,14 +453,17 @@ api.get('/du-an/:id/chi-phi', wrap(async (req, res) => {
   const du_an = await store.getProject(id);
   if (!du_an) return bad(res, 'Không tìm thấy công trình', 404);
   const items = sortCost(await store.listCost(id)).map(calcLine);
-  res.json({ du_an, items, tong: summarizeCost(items) });
+  const thau_phu = buildContracts(await store.listTp(id));
+  // Nhóm 1 Thầu phụ = giá trị HT/QT của các HĐTP (+ dòng thầu phụ nhập kiểu cũ nếu có)
+  const tpAsCost = thau_phu.map((c) => ({ nhom: 'thau_phu', gia_tri: c.qt_gia_tri, tien_vat: c.qt_tien_vat, sau_vat: c.qt_sau_vat, tam_tinh: c.tam_tinh }));
+  res.json({ du_an, items, thau_phu, tong_tp: summarizeContracts(thau_phu), tong: summarizeCost([...items, ...tpAsCost]) });
 }));
 
 api.post('/du-an/:id/chi-phi', canEdit, wrap(async (req, res) => {
   const id = parseId(req.params.id);
   if (!id) return bad(res, 'ID không hợp lệ');
   if (!(await store.getProject(id))) return bad(res, 'Không tìm thấy công trình', 404);
-  const { data, errors } = validateCost(req.body || {});
+  const { data, errors } = validateCost({ ...(req.body || {}), _new: true });
   if (errors.length) return bad(res, errors);
   res.status(201).json(await store.createCost(id, data, req.user.id));
 }));
@@ -474,13 +484,104 @@ api.delete('/chi-phi/:id', canEdit, wrap(async (req, res) => {
   ok ? res.status(204).end() : bad(res, 'Không tìm thấy dòng chi phí', 404);
 }));
 
+// ---------- Thầu phụ theo hợp đồng ----------
+async function tpOf(req, res) {
+  const id = parseId(req.params.id);
+  const tp = id && (await store.getTp(id));
+  if (!tp) { bad(res, 'Không tìm thấy hợp đồng thầu phụ', 404); return null; }
+  return tp;
+}
+
+api.post('/du-an/:id/thau-phu', canEdit, wrap(async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id || !(await store.getProject(id))) return bad(res, 'Không tìm thấy công trình', 404);
+  const t = validateTp(req.body || {});
+  const l = validateTpLine({ ...(req.body?.hd || {}), ma_loai: 'HĐ' });
+  const errors = [...t.errors, ...l.errors];
+  if (errors.length) return bad(res, errors);
+  res.status(201).json(await store.createTp(id, t.data, l.data, req.user.id));
+}));
+
+api.put('/thau-phu/:id', canEdit, wrap(async (req, res) => {
+  const tp = await tpOf(req, res); if (!tp) return;
+  const { data, errors } = validateTp(req.body || {});
+  if (errors.length) return bad(res, errors);
+  await store.updateTp(tp.id, data, req.user.id);
+  res.json({ id: tp.id });
+}));
+
+api.delete('/thau-phu/:id', canEdit, wrap(async (req, res) => {
+  const tp = await tpOf(req, res); if (!tp) return;
+  if (!(await requirePasscode(req, res))) return;
+  const c = buildContracts(await store.listTp(tp.du_an_id)).find((x) => x.id === tp.id);
+  await store.deleteTp(tp.id);
+  console.log(`[NHẬT KÝ] ${new Date().toISOString()} ${req.user.username} đã XÓA HĐ THẦU PHỤ "${tp.so_ma}" (công trình #${tp.du_an_id}): ` +
+    `${c.lines.length} dòng HĐ/PL, HĐ ${c.hd_sau_vat}đ, HT/QT ${c.qt_sau_vat}đ, ${c.pays.length} dòng thanh toán ${c.da_tt}đ`);
+  res.status(204).end();
+}));
+
+api.post('/thau-phu/:id/hd-pl', canEdit, wrap(async (req, res) => {
+  const tp = await tpOf(req, res); if (!tp) return;
+  const { data, errors } = validateTpLine(req.body || {});
+  if (errors.length) return bad(res, errors);
+  res.status(201).json(await store.createTpLine(tp.id, data, req.user.id));
+}));
+
+api.put('/tp-hd-pl/:id', canEdit, wrap(async (req, res) => {
+  const id = parseId(req.params.id);
+  const cur = id && (await store.getTpLine(id));
+  if (!cur) return bad(res, 'Không tìm thấy dòng HĐ/PL', 404);
+  const { data, errors } = validateTpLine(req.body || {});
+  if (errors.length) return bad(res, errors);
+  if ((cur.ma_loai === 'HĐ') !== (data.ma_loai === 'HĐ')) return bad(res, 'Không đổi được dòng HĐ gốc thành PL (và ngược lại)');
+  await store.updateTpLine(id, data, req.user.id);
+  res.json({ id });
+}));
+
+api.delete('/tp-hd-pl/:id', canEdit, wrap(async (req, res) => {
+  const id = parseId(req.params.id);
+  const cur = id && (await store.getTpLine(id));
+  if (!cur) return bad(res, 'Không tìm thấy dòng HĐ/PL', 404);
+  if (cur.ma_loai === 'HĐ') return bad(res, 'Dòng HĐ gốc không xóa riêng được. Hãy xóa cả hợp đồng thầu phụ.');
+  if (!(await requirePasscode(req, res))) return;
+  await store.deleteTpLine(id);
+  const tp = await store.getTp(cur.tp_id);
+  console.log(`[NHẬT KÝ] ${new Date().toISOString()} ${req.user.username} đã xóa "${cur.ma_loai} ${tp?.so_ma}" (HĐ thầu phụ #${cur.tp_id})`);
+  res.status(204).end();
+}));
+
+api.post('/thau-phu/:id/thanh-toan', canEdit, wrap(async (req, res) => {
+  const tp = await tpOf(req, res); if (!tp) return;
+  const { data, errors } = validateTpPay(req.body || {});
+  if (errors.length) return bad(res, errors);
+  res.status(201).json(await store.createTpPay(tp.id, data, req.user.id));
+}));
+
+api.put('/tp-thanh-toan/:id', canEdit, wrap(async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id || !(await store.getTpPay(id))) return bad(res, 'Không tìm thấy dòng thanh toán', 404);
+  const { data, errors } = validateTpPay(req.body || {});
+  if (errors.length) return bad(res, errors);
+  await store.updateTpPay(id, data, req.user.id);
+  res.json({ id });
+}));
+
+api.delete('/tp-thanh-toan/:id', canEdit, wrap(async (req, res) => {
+  const id = parseId(req.params.id);
+  const ok = id && (await store.deleteTpPay(id));
+  ok ? res.status(204).end() : bad(res, 'Không tìm thấy dòng thanh toán', 404);
+}));
+
 app.use('/api', api);
 app.use('/api', (_req, res) => bad(res, 'Không tìm thấy API', 404));
 
 // Xử lý lỗi chung
 app.use((err, req, res, _next) => {
   if (err.code === '23505') {
-    const msg = req.path.includes('tien-ve')
+    const msg = /thau-phu$|thau-phu\/\d+$/.test(req.path) ? 'Số HĐ thầu phụ này đã có trong công trình'
+      : req.path.includes('hd-pl') ? 'Loại HĐ/PL này đã có trong hợp đồng thầu phụ'
+      : req.path.includes('thanh-toan') ? 'Trùng dữ liệu: số đợt thanh toán đã có, hoặc đã có dòng Quyết toán'
+      : req.path.includes('tien-ve')
       ? 'Trùng dữ liệu: số đợt thanh toán này đã có trong HĐ, hoặc HĐ đã có dòng Quyết toán'
       : /users/.test(err.table || err.detail || '') || req.path.includes('/users') || req.path.includes('/setup')
         ? 'Tên đăng nhập đã tồn tại' : 'Mã dự án đã tồn tại';

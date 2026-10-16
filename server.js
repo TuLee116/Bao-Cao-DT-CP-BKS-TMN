@@ -485,6 +485,11 @@ api.delete('/chi-phi/:id', canEdit, wrap(async (req, res) => {
 }));
 
 // ---------- Thầu phụ theo hợp đồng ----------
+const LOCK_MSG = 'Hợp đồng thầu phụ đã quyết toán – đã khóa số. Muốn điều chỉnh, xóa dòng Quyết toán (cần Passcode) để mở khóa.';
+async function lockedErr(res, tpId) {
+  if (await store.tpLocked(tpId)) { bad(res, LOCK_MSG, 423); return true; }
+  return false;
+}
 async function tpOf(req, res) {
   const id = parseId(req.params.id);
   const tp = id && (await store.getTp(id));
@@ -522,6 +527,7 @@ api.delete('/thau-phu/:id', canEdit, wrap(async (req, res) => {
 
 api.post('/thau-phu/:id/hd-pl', canEdit, wrap(async (req, res) => {
   const tp = await tpOf(req, res); if (!tp) return;
+  if (await lockedErr(res, tp.id)) return;
   const { data, errors } = validateTpLine(req.body || {});
   if (errors.length) return bad(res, errors);
   res.status(201).json(await store.createTpLine(tp.id, data, req.user.id));
@@ -531,6 +537,7 @@ api.put('/tp-hd-pl/:id', canEdit, wrap(async (req, res) => {
   const id = parseId(req.params.id);
   const cur = id && (await store.getTpLine(id));
   if (!cur) return bad(res, 'Không tìm thấy dòng HĐ/PL', 404);
+  if (await lockedErr(res, cur.tp_id)) return;
   const { data, errors } = validateTpLine(req.body || {});
   if (errors.length) return bad(res, errors);
   if ((cur.ma_loai === 'HĐ') !== (data.ma_loai === 'HĐ')) return bad(res, 'Không đổi được dòng HĐ gốc thành PL (và ngược lại)');
@@ -543,6 +550,7 @@ api.delete('/tp-hd-pl/:id', canEdit, wrap(async (req, res) => {
   const cur = id && (await store.getTpLine(id));
   if (!cur) return bad(res, 'Không tìm thấy dòng HĐ/PL', 404);
   if (cur.ma_loai === 'HĐ') return bad(res, 'Dòng HĐ gốc không xóa riêng được. Hãy xóa cả hợp đồng thầu phụ.');
+  if (await lockedErr(res, cur.tp_id)) return;
   if (!(await requirePasscode(req, res))) return;
   await store.deleteTpLine(id);
   const tp = await store.getTp(cur.tp_id);
@@ -552,14 +560,19 @@ api.delete('/tp-hd-pl/:id', canEdit, wrap(async (req, res) => {
 
 api.post('/thau-phu/:id/thanh-toan', canEdit, wrap(async (req, res) => {
   const tp = await tpOf(req, res); if (!tp) return;
+  if (await lockedErr(res, tp.id)) return;
   const { data, errors } = validateTpPay(req.body || {});
   if (errors.length) return bad(res, errors);
-  res.status(201).json(await store.createTpPay(tp.id, data, req.user.id));
+  const r = await store.createTpPay(tp.id, data, req.user.id);
+  if (data.loai === 'quyet_toan') console.log(`[NHẬT KÝ] ${new Date().toISOString()} ${req.user.username} đã QUYẾT TOÁN & KHÓA SỐ HĐ thầu phụ "${tp.so_ma}" (quyết toán ${data.so_tien}đ)`);
+  res.status(201).json(r);
 }));
 
 api.put('/tp-thanh-toan/:id', canEdit, wrap(async (req, res) => {
   const id = parseId(req.params.id);
-  if (!id || !(await store.getTpPay(id))) return bad(res, 'Không tìm thấy dòng thanh toán', 404);
+  const cur = id && (await store.getTpPay(id));
+  if (!cur) return bad(res, 'Không tìm thấy dòng thanh toán', 404);
+  if (await lockedErr(res, cur.tp_id)) return;
   const { data, errors } = validateTpPay(req.body || {});
   if (errors.length) return bad(res, errors);
   await store.updateTpPay(id, data, req.user.id);
@@ -568,8 +581,16 @@ api.put('/tp-thanh-toan/:id', canEdit, wrap(async (req, res) => {
 
 api.delete('/tp-thanh-toan/:id', canEdit, wrap(async (req, res) => {
   const id = parseId(req.params.id);
-  const ok = id && (await store.deleteTpPay(id));
-  ok ? res.status(204).end() : bad(res, 'Không tìm thấy dòng thanh toán', 404);
+  const cur = id && (await store.getTpPay(id));
+  if (!cur) return bad(res, 'Không tìm thấy dòng thanh toán', 404);
+  if (cur.loai === 'quyet_toan') {
+    // Xóa dòng Quyết toán = mở khóa số -> bắt buộc Passcode
+    if (!(await requirePasscode(req, res))) return;
+    const tp = await store.getTp(cur.tp_id);
+    console.log(`[NHẬT KÝ] ${new Date().toISOString()} ${req.user.username} đã MỞ KHÓA HĐ thầu phụ "${tp?.so_ma}" (xóa quyết toán ${cur.so_tien}đ)`);
+  } else if (await lockedErr(res, cur.tp_id)) return;
+  await store.deleteTpPay(id);
+  res.status(204).end();
 }));
 
 app.use('/api', api);

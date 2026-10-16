@@ -1175,7 +1175,7 @@ function renderTpCard() {
       <td class="num muted">${i + 1}</td>
       <td><b class="tp-open so-ma-pick" data-tp="${c.id}" title="Nhấp đúp để mở bảng nhập chi tiết">${esc(c.so_ma)}</b>
         ${c.so_pl ? `<span class="muted small">(+${c.so_pl} PL)</span>` : ''}
-        ${c.da_qt ? '<span class="st st-hoan-thanh">Đã QT</span>' : '<span class="st">Chưa QT</span>'}</td>
+        ${c.khoa ? '<span class="st st-lock" title="Đã quyết toán – khóa số">🔒 Đã QT</span>' : c.da_qt ? '<span class="st st-hoan-thanh">Đã QT</span>' : '<span class="st">Chưa QT</span>'}</td>
       <td class="c-dt">${esc(c.doi_tac)}</td>
       <td class="num">${money(c.hd_sau_vat)}</td>
       <td class="num">${money(c.qt_sau_vat)}</td>
@@ -1242,7 +1242,9 @@ function renderTpDlg() {
   const c = costData.thau_phu.find((x) => x.id === tpDlgId);
   const dlg = $('#tp-dlg');
   if (!c) return closeTp();
-  const edit = canEdit();
+  const canInfo = canEdit();
+  const locked = c.khoa;
+  const edit = canInfo && !locked;   // đã quyết toán -> khóa số: không sửa HĐ/PL, thanh toán
   const inp = (name, val, attrs = '') => `<input data-f="${name}" value="${esc(val ?? '')}" ${attrs} ${edit ? '' : 'disabled'}>`;
   const nextPl = 'PL' + String(Math.max(0, ...c.lines.map((l) => (l.ma_loai === 'HĐ' ? 0 : Number(l.ma_loai.slice(2)))), ...tpDrafts.lines.map((d) => Number(d.ma_loai.slice(2)))) + 1).padStart(2, '0');
 
@@ -1258,7 +1260,7 @@ function renderTpDlg() {
       <td>${inp('vat', draft ? '' : l.vat || '', 'type="number" min="0" max="100" step="1" class="vat-in" placeholder="0"')}</td>
       <td class="num strong" data-calc="hd">${money(hdSau)}</td>
       <td>${inp('gia_tri_qt', qtStr, 'class="money num" placeholder="= giá trị HĐ/PL"')}</td>
-      <td class="num strong" data-calc="qt">${money(qtSau)}${!draft && !l.da_qt ? '<div class="muted small">chưa QT</div>' : ''}</td>
+      <td class="num strong" data-calc="qt">${locked ? '<span class="muted small">chốt theo<br>thanh toán</span>' : money(qtSau) + (!draft && !l.da_qt ? '<div class="muted small">chưa QT</div>' : '')}</td>
       <td>${inp('ghi_chu', draft ? '' : l.ghi_chu, 'maxlength="500"')}</td>
       <td class="row-actions">${edit ? `<button class="primary sm" data-save ${draft ? '' : 'hidden'}>Lưu</button>${
         l.ma_loai === 'HĐ' ? '' : `<button class="danger sm" data-del>${draft ? 'Bỏ' : 'Xóa'}</button>`}` : ''}</td>
@@ -1272,7 +1274,8 @@ function renderTpDlg() {
       <td>${inp('ngay', draft ? '' : isoToDmy(p.ngay), 'class="date-dmy"')}</td>
       <td>${inp('so_tien', draft ? '' : money(p.so_tien), 'class="money num" placeholder="Nhập giá trị"')}</td>
       <td>${inp('ghi_chu', draft ? '' : p.ghi_chu, 'maxlength="500"')}</td>
-      <td class="row-actions">${edit ? `<button class="primary sm" data-save ${draft ? '' : 'hidden'}>Lưu</button><button class="danger sm" data-del>${draft ? 'Bỏ' : 'Xóa'}</button>` : ''}</td>
+      <td class="row-actions">${edit ? `<button class="primary sm" data-save ${draft ? '' : 'hidden'}>Lưu</button><button class="danger sm" data-del>${draft ? 'Bỏ' : 'Xóa'}</button>`
+        : locked && canInfo && p.loai === 'quyet_toan' ? '<button class="danger sm" data-del title="Xóa dòng Quyết toán để mở khóa (cần Passcode)">🔓 Mở khóa</button>' : ''}</td>
     </tr>`;
   const hasQt = c.pays.some((p) => p.loai === 'quyet_toan') || tpDrafts.pays.some((p) => p.loai === 'quyet_toan');
 
@@ -1280,11 +1283,12 @@ function renderTpDlg() {
     <div class="tp-dlg-head">
       <div>
         <div class="muted small">Hợp đồng thầu phụ · ${esc(costData.du_an.ma_du_an)}</div>
-        <h3>${esc(c.so_ma)} ${c.da_qt ? '<span class="st st-hoan-thanh">Đã QT</span>' : '<span class="st">Chưa QT</span>'}</h3>
+        <h3>${esc(c.so_ma)} ${locked ? '<span class="st st-lock">🔒 Đã quyết toán · Khóa số</span>' : c.da_qt ? '<span class="st st-hoan-thanh">Đã QT</span>' : '<span class="st">Chưa QT</span>'}</h3>
       </div>
       <button class="ghost-dark" data-close title="Đóng (Esc)">✕</button>
     </div>
-    ${edit ? `<div class="grid-form tp-info" data-k="info">
+    ${locked ? `<div class="lock-bar">🔒 Hợp đồng đã có dòng <b>Quyết toán</b>: Tổng giá trị HT/QT được chốt bằng Tổng thanh toán (${money(c.da_tt)} đ), còn lại = 0 và đã <b>khóa số</b>. Muốn điều chỉnh, bấm <b>Mở khóa</b> ở dòng Quyết toán (cần Passcode).</div>` : ''}
+    ${canInfo ? `<div class="grid-form tp-info" data-k="info">
       <label>Số HĐ thầu phụ *<input data-f="so_ma" value="${esc(c.so_ma)}" maxlength="120"></label>
       <label>Nhà thầu phụ<input data-f="doi_tac" value="${esc(c.doi_tac)}" maxlength="200"></label>
       <label class="span-2">Ghi chú<input data-f="ghi_chu" value="${esc(c.ghi_chu)}" maxlength="500"></label>
@@ -1292,7 +1296,7 @@ function renderTpDlg() {
     </div>` : `<p class="muted">Nhà thầu phụ: <b>${esc(c.doi_tac || '—')}</b>${c.ghi_chu ? ' · ' + esc(c.ghi_chu) : ''}</p>`}
     <div class="kpis tp-kpis">
       <div class="kpi"><div class="label">Tổng giá trị HĐ</div><div class="value">${money(c.hd_sau_vat)}</div><div class="sub">HĐ + ${c.so_pl} PL, sau VAT</div></div>
-      <div class="kpi"><div class="label">Tổng giá trị HT/QT</div><div class="value">${money(c.qt_sau_vat)}</div><div class="sub">${c.da_qt ? 'Đã quyết toán' : 'Chưa QT = theo giá trị HĐ/PL'}</div></div>
+      <div class="kpi"><div class="label">Tổng giá trị HT/QT</div><div class="value">${money(c.qt_sau_vat)}</div><div class="sub">${locked ? '= Tổng thanh toán (đã quyết toán)' : c.da_qt ? 'Đã quyết toán theo HĐ/PL' : 'Chưa QT = theo giá trị HĐ/PL'}</div></div>
       <div class="kpi"><div class="label">Giá trị thanh toán</div><div class="value">${money(c.da_tt)}</div><div class="sub">${c.pays.length} lần</div></div>
       <div class="kpi"><div class="label">Giá trị còn lại</div><div class="value ${c.con_lai < 0 ? 'neg' : ''}">${money(c.con_lai)}</div><div class="sub">= HT/QT − Thanh toán</div></div>
     </div>
@@ -1302,7 +1306,7 @@ function renderTpDlg() {
       <thead><tr><th>Số HĐ/PL</th><th>Ngày</th><th class="num">Giá trị HĐ/PL<br><span class="muted small">trước VAT</span></th><th>VAT %</th><th class="num">HĐ/PL<br><span class="muted small">sau VAT</span></th>
         <th class="num">Giá trị HT/QT<br><span class="muted small">trước VAT</span></th><th class="num">HT/QT<br><span class="muted small">sau VAT</span></th><th>Ghi chú</th><th></th></tr></thead>
       <tbody>${c.lines.map((l) => lineRow(l, false)).join('')}${tpDrafts.lines.map((d) => lineRow(d, true)).join('')}</tbody>
-      <tfoot><tr><td colspan="4">TỔNG</td><td class="num">${money(c.hd_sau_vat)}</td><td></td><td class="num">${money(c.qt_sau_vat)}</td><td colspan="2"></td></tr></tfoot>
+      <tfoot><tr><td colspan="4">TỔNG</td><td class="num">${money(c.hd_sau_vat)}</td><td></td><td class="num">${money(c.qt_sau_vat)}${locked ? '<div class="muted small">= tổng thanh toán</div>' : ''}</td><td colspan="2"></td></tr></tfoot>
     </table></div>
     ${edit ? `<div class="tv-tools"><button class="sm" data-addpl="${nextPl}">+ Thêm ${nextPl}</button>
       <span class="muted small">Ô HT/QT để trống = chưa quyết toán (lấy bằng giá trị HĐ/PL)</span></div>` : ''}
@@ -1320,7 +1324,7 @@ function renderTpDlg() {
       <button class="sm" data-addpay="quyet_toan" ${hasQt ? 'disabled title="Đã có Quyết toán"' : ''}>+ Quyết toán</button>
       <span class="spacer"></span>
       <button class="danger sm" data-deltp>Xóa hợp đồng thầu phụ</button>
-    </div>` : ''}
+    </div>` : locked && canInfo ? '<div class="tv-tools"><span class="spacer"></span><button class="danger sm" data-deltp>Xóa hợp đồng thầu phụ</button></div>' : ''}
     <div class="msg" id="tp-msg" role="alert"></div>`;
   if (edit) {
     $$('input.money', dlg).forEach(attachMoneyInput);
@@ -1387,6 +1391,10 @@ async function onTpDlgClick(e) {
       const draft = k.startsWith('dp');
       const cur = draft ? tpDrafts.pays.find((d) => 'dp' + d.key === k) : c.pays.find((p) => 'p' + p.id === k);
       const body = { loai: cur.loai, dot: cur.loai === 'dot' ? v('dot') : null, ngay, so_tien: parseMoney(v('so_tien')), ghi_chu: v('ghi_chu') };
+      if (cur.loai === 'quyet_toan' && draft) {
+        const tong = c.da_tt + (Number(body.so_tien) || 0);
+        if (!confirm(`Lưu Quyết toán sẽ CHỐT SỐ hợp đồng ${c.so_ma}:\n• Tổng giá trị HT/QT = Tổng thanh toán = ${money(tong)} đ\n• Còn lại = 0\n• Khóa sửa HĐ/PL và thanh toán (mở khóa cần Passcode).\n\nTiếp tục?`)) return;
+      }
       if (await call(draft ? `/api/thau-phu/${c.id}/thanh-toan` : `/api/tp-thanh-toan/${cur.id}`, draft ? 'POST' : 'PUT', body)) {
         if (draft) tpDrafts.pays = tpDrafts.pays.filter((d) => d !== cur);
         await after(`Đã lưu ${TT_LABEL[cur.loai]}${cur.loai === 'dot' ? ' ' + body.dot : ''}`);
@@ -1404,6 +1412,12 @@ async function onTpDlgClick(e) {
       if (await call(`/api/tp-hd-pl/${l.id}`, 'DELETE', { passcode: pc })) await after(`Đã xóa ${l.ma_loai}`);
     } else {
       const p = c.pays.find((x) => 'p' + x.id === k);
+      if (p.loai === 'quyet_toan') {
+        const pc = await askPasscode(`Mở khóa hợp đồng ${c.so_ma}?`, `Sẽ xóa dòng Quyết toán (${money(p.so_tien)} đ) và mở khóa số để điều chỉnh. Tổng HT/QT sẽ tính lại theo giá trị HĐ/PL.`);
+        if (pc === null) return;
+        if (await call(`/api/tp-thanh-toan/${p.id}`, 'DELETE', { passcode: pc })) await after('Đã mở khóa – xóa dòng Quyết toán');
+        return;
+      }
       if (!confirm(`Xóa dòng ${TT_LABEL[p.loai]}${p.dot ? ' ' + p.dot : ''} (${money(p.so_tien)} đ)?`)) return;
       if (await call(`/api/tp-thanh-toan/${p.id}`, 'DELETE')) await after('Đã xóa dòng thanh toán');
     }

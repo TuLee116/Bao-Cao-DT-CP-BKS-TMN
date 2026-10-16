@@ -191,6 +191,8 @@ tr.tv-child select.tv-hd { margin-right: 8px; }
 #tv-toggle-all { margin-left: auto; margin-right: 12px; }
 /* Thầu phụ */
 .neg { color: var(--danger) !important; }
+.st-lock { color: #fff; background: linear-gradient(120deg, var(--navy), #3b5b9a); }
+.lock-bar { margin: 0 0 12px; padding: 10px 14px; border-radius: 12px; background: #eef2ff; color: var(--navy); font-size: 13px; border: 1px solid #c7d2fe; }
 .tp-table td.c-dt { white-space: normal; }
 dialog.tp-dlg { border: 0; border-radius: 18px; padding: 22px 24px; width: min(1180px, calc(100vw - 24px)); max-height: calc(100vh - 24px);
   overflow: auto; box-shadow: var(--shadow-lg); font-family: inherit; background: #f6f9fd; }

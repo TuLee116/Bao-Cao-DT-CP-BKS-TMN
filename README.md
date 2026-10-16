@@ -43,6 +43,7 @@ Web quản lý dự án xây dựng có đăng nhập, phân quyền, khởi t�
   - HĐ/PL (tập con HĐ → PL01, PL02...): Ngày, Giá trị trước VAT, VAT, Giá trị HT/QT (trống = chưa quyết toán → bằng giá trị HĐ/PL).
   - Thanh toán: Tạm ứng / TT Đợt n / Quyết toán.
   - **Còn lại = HT/QT sau VAT − Thanh toán.**
+  - **Có dòng Quyết toán (thanh toán) → chốt & khóa số:** Tổng HT/QT = Tổng thanh toán, Còn lại = 0; khóa sửa/thêm/xóa HĐ/PL và thanh toán. Mở khóa = xóa dòng Quyết toán (cần Passcode).
 - Nhóm 1 trong tổng chi phí = tổng giá trị HT/QT của các HĐ thầu phụ.
 - Xóa HĐ thầu phụ hoặc PL cần Passcode; dòng HĐ gốc chỉ xóa cùng cả hợp đồng.
 

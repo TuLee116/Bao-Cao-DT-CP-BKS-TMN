@@ -178,6 +178,11 @@ td.wrap { white-space: normal; min-width: 120px; max-width: 260px; }
 .tv-table td { vertical-align: middle; }
 tr.tv-draft td { background: #fffbeb; }
 tr.tv-dirty td { background: #f0fdfa; }
+.tv-table select.tv-hd { padding: 6px 8px; font-size: 13px; min-width: 130px; background: #fff; }
+tr.tv-sub td { background: #eef7f6; color: var(--teal); font-weight: 700; font-size: 13px; border-bottom: 2px solid #cfe7e4; }
+tr.tv-sub-warn td { background: #fffbeb; color: var(--warn); }
+.tv-hd-pick { flex-direction: row; align-items: center; gap: 8px; font-size: 13px; color: var(--navy); }
+.tv-hd-pick select { width: auto; min-width: 150px; padding: 8px 10px; }
 .tv-tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
 .tv-tools .spacer { flex: 1; }
 button.sm { padding: 5px 10px; font-size: 12px; }

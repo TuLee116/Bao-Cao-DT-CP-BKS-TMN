@@ -265,14 +265,20 @@ api.post('/du-an/:id/tien-ve', canEdit, wrap(async (req, res) => {
   if (!(await store.getProject(id))) return bad(res, 'Không tìm thấy công trình', 404);
   const { data, errors } = validateTienVe(req.body || {});
   if (errors.length) return bad(res, errors);
+  const refErr = await checkHeadRef(data.hd_id, id);
+  if (refErr) return bad(res, refErr);
   res.status(201).json(await store.createTienVe(id, data, req.user.id));
 }));
 
 api.put('/tien-ve/:id', canEdit, wrap(async (req, res) => {
   const id = parseId(req.params.id);
   if (!id) return bad(res, 'ID không hợp lệ');
+  const cur = await store.getTienVe(id);
+  if (!cur) return bad(res, 'Không tìm thấy dòng tiền về', 404);
   const { data, errors } = validateTienVe(req.body || {});
   if (errors.length) return bad(res, errors);
+  const refErr = await checkHeadRef(data.hd_id, cur.du_an_id);
+  if (refErr) return bad(res, refErr);
   const ok = await store.updateTienVe(id, data, req.user.id);
   ok ? res.json({ id }) : bad(res, 'Không tìm thấy dòng tiền về', 404);
 }));
@@ -295,6 +301,13 @@ api.post('/du-an/:id/doanh-thu', canEdit, wrap(async (req, res) => {
   res.status(201).json(await store.createRevenue(id, data, req.user.id));
 }));
 
+// Phải là hợp đồng gốc (HĐ) của cùng công trình
+async function checkHeadRef(hdId, duAnId) {
+  const hd = await store.getRevenue(hdId);
+  if (!hd || hd.loai !== 'hd' || hd.du_an_id !== duAnId) return 'Số HĐ không thuộc công trình này, hãy chọn lại';
+  return hd.ma_loai === 'HĐ' ? null : 'Chỉ chọn hợp đồng gốc (HĐ), không chọn phụ lục';
+}
+
 // Mục 1: không trùng tên "HĐ/PL + Số mã" trong cùng công trình
 // Mục 2: dòng HT/QT phải tham chiếu 1 dòng HĐ/PL của cùng công trình
 async function checkHdRef(data, duAnId, selfId = 0) {
@@ -310,10 +323,8 @@ async function checkHdRef(data, duAnId, selfId = 0) {
       r.loai === 'hd' && r.id !== selfId && String(r.so_hieu).toLowerCase() === data.so_hieu.toLowerCase());
     return dup ? `"${data.so_hieu}" đã có trong công trình này` : null;
   }
-  const hd = await store.getRevenue(data.hd_id);
-  if (!hd || hd.loai !== 'hd' || hd.du_an_id !== duAnId) return 'Số HĐ không thuộc công trình này, hãy chọn lại từ danh sách gợi ý';
   // Chỉ gắn với hợp đồng gốc (HĐ), không gắn vào phụ lục để tránh nhiễu số liệu
-  return hd.ma_loai === 'HĐ' ? null : 'Chỉ chọn hợp đồng gốc (HĐ), không chọn phụ lục';
+  return checkHeadRef(data.hd_id, duAnId);
 }
 
 api.put('/doanh-thu/:id', canEdit, wrap(async (req, res) => {
@@ -326,6 +337,10 @@ api.put('/doanh-thu/:id', canEdit, wrap(async (req, res) => {
   if (errors.length) return bad(res, errors);
   const refErr = await checkHdRef(data, cur.du_an_id, id);
   if (refErr) return bad(res, refErr);
+  if (cur.loai === 'hd' && cur.ma_loai === 'HĐ' && data.ma_loai !== 'HĐ') {
+    const { qt, tv } = await store.countRevenueRefs(id);
+    if (qt || tv) return bad(res, `Không đổi được loại của "${cur.so_hieu}" vì đang có dòng HT/QT hoặc Tiền về gắn vào HĐ này`);
+  }
   const ok = await store.updateRevenue(id, data, req.user.id);
   ok ? res.json({ id }) : bad(res, 'Không tìm thấy dòng doanh thu', 404);
 }));
@@ -336,8 +351,11 @@ api.delete('/doanh-thu/:id', canEdit, wrap(async (req, res) => {
   const cur = await store.getRevenue(id);
   if (!cur) return bad(res, 'Không tìm thấy dòng doanh thu', 404);
   if (cur.loai === 'hd') {
-    const n = await store.countRevenueRefs(id);
-    if (n) return bad(res, `Không xóa được "${cur.so_hieu}": đang được ${n} dòng Hoàn thành/Quyết toán tham chiếu. Hãy đổi Số HĐ/PL của các dòng đó trước.`, 409);
+    const { qt, tv } = await store.countRevenueRefs(id);
+    if (qt || tv) {
+      const parts = [qt && `${qt} dòng Hoàn thành/Quyết toán`, tv && `${tv} dòng Tiền về`].filter(Boolean).join(' và ');
+      return bad(res, `Không xóa được "${cur.so_hieu}": đang được ${parts} tham chiếu. Hãy đổi Số HĐ của các dòng đó trước.`, 409);
+    }
   }
   const ok = await store.deleteRevenue(id);
   ok ? res.status(204).end() : bad(res, 'Không tìm thấy dòng doanh thu', 404);
@@ -350,7 +368,7 @@ app.use('/api', (_req, res) => bad(res, 'Không tìm thấy API', 404));
 app.use((err, req, res, _next) => {
   if (err.code === '23505') {
     const msg = req.path.includes('tien-ve')
-      ? 'Trùng dữ liệu: số đợt thanh toán này đã có, hoặc công trình đã có dòng Quyết toán'
+      ? 'Trùng dữ liệu: số đợt thanh toán này đã có trong HĐ, hoặc HĐ đã có dòng Quyết toán'
       : /users/.test(err.table || err.detail || '') || req.path.includes('/users') || req.path.includes('/setup')
         ? 'Tên đăng nhập đã tồn tại' : 'Mã dự án đã tồn tại';
     return bad(res, msg, 409);
@@ -402,6 +420,8 @@ app.listen(PORT, '0.0.0.0', () => console.log(`Server chạy tại cổng ${PORT
       if (n) console.log(`Đã tách Loại/Số mã cho ${n} dòng HĐ/PL cũ`);
       const m = await store.migrateQtToHead();
       if (m) console.log(`Đã chuyển ${m} dòng HT/QT từ phụ lục sang HĐ gốc`);
+      const t = await store.migrateTienVeHd();
+      if (t) console.log(`Đã gắn HĐ cho ${t} dòng tiền về cũ`);
       dbState.ready = true;
       dbState.error = null;
       console.log(`Đã kết nối CSDL (${store.kind}) sau ${dbState.attempts} lần thử`);

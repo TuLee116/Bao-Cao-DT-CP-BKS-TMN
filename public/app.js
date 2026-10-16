@@ -547,12 +547,12 @@ async function onRevTableClick(e) {
 }
 
 // ---------------------------------------------------------------------
-// 3. GIÁ TRỊ TIỀN VỀ – bảng sửa trực tiếp, chèn dòng
+// 3. GIÁ TRỊ TIỀN VỀ – theo từng HĐ, bảng sửa trực tiếp, chèn dòng
 // ---------------------------------------------------------------------
 const TV_ORDER = { tam_ung: 0, dot: 1, quyet_toan: 2 };
 const tvLabel = (r) => (r.loai === 'dot' ? 'TT Đợt' : r.loai === 'tam_ung' ? 'Tạm ứng' : 'Quyết toán');
-let tvDrafts = null;   // dòng chưa lưu: [{key, loai, dot}]
-let tvEdits = {};      // nội dung đang sửa chưa lưu: key -> {so_tien, ngay, ghi_chu, dot}
+let tvDrafts = null;   // dòng chưa lưu: [{key, loai, dot, hd_id}]
+let tvEdits = {};      // nội dung đang sửa chưa lưu: key -> {so_tien, ngay, ghi_chu, dot, hd_id}
 let tvSeq = 0;
 
 function tienVeCardHtml() {
@@ -565,7 +565,7 @@ function tienVeCardHtml() {
       <div class="table-wrap">
         <table class="tv-table">
           <thead><tr>
-            <th class="num">#</th><th>Nội dung</th><th class="num">Giá trị tiền về</th><th>Ngày (dd/mm/yyyy)</th>
+            <th class="num">#</th><th>Số HĐ</th><th>Nội dung</th><th class="num">Giá trị tiền về</th><th>Ngày (dd/mm/yyyy)</th>
             <th>Ghi chú</th><th>Người cập nhật</th>${canEdit() ? '<th></th>' : ''}
           </tr></thead>
           <tbody id="tv-body"></tbody>
@@ -574,6 +574,7 @@ function tienVeCardHtml() {
       </div>
       ${canEdit() ? `
       <div class="tv-tools">
+        <label class="tv-hd-pick">Chèn vào HĐ <select id="tv-hd-pick"></select></label>
         <button type="button" data-tvadd="tam_ung">+ Tạm ứng</button>
         <button type="button" data-tvadd="dot">+ Chèn đợt thanh toán</button>
         <button type="button" data-tvadd="quyet_toan" id="tv-add-qt">+ Quyết toán</button>
@@ -584,21 +585,11 @@ function tienVeCardHtml() {
     </div>`;
 }
 
-// Dòng hiển thị = dòng đã lưu + dòng nháp, sắp xếp Tạm ứng → Đợt → Quyết toán
-function tvRows() {
-  const saved = revData.tien_ve.map((r) => ({ ...r, key: 'id' + r.id }));
-  if (tvDrafts === null) {
-    // Công trình chưa có dữ liệu: gợi ý sẵn mẫu Tạm ứng / TT Đợt 1 / Quyết toán
-    tvDrafts = saved.length || !canEdit() ? [] : [
-      { key: 'd' + ++tvSeq, loai: 'tam_ung' },
-      { key: 'd' + ++tvSeq, loai: 'dot', dot: 1 },
-      { key: 'd' + ++tvSeq, loai: 'quyet_toan' },
-    ];
-  }
-  return [...saved, ...tvDrafts].sort((a, b) =>
-    TV_ORDER[a.loai] - TV_ORDER[b.loai] || (a.loai === 'dot' ? (a.dot || 0) - (b.dot || 0) : 0) ||
-    String(a.ngay || '9999').localeCompare(String(b.ngay || '9999')) || (a.id || 1e9) - (b.id || 1e9));
+// Danh sách hợp đồng gốc (HĐ) theo thứ tự ở mục 1
+function tvHeads() {
+  return hdGroups((revData?.items || []).filter((r) => r.loai === 'hd')).filter((g) => g.head).map((g) => g.head);
 }
+const tvPickHd = () => Number($('#tv-hd-pick')?.value) || tvHeads()[0]?.id || null;
 
 // Giá trị đang hiển thị của 1 dòng (ưu tiên nội dung đang sửa)
 function tvVal(r) {
@@ -608,26 +599,60 @@ function tvVal(r) {
     ngay: e.ngay ?? isoToDmy(r.ngay),
     ghi_chu: e.ghi_chu ?? (r.ghi_chu || ''),
     dot: e.dot ?? (r.dot ?? ''),
+    hd_id: e.hd_id ?? (r.hd_id ?? ''),
   };
 }
 const tvDirty = (r) => !r.id || Boolean(tvEdits[r.key]);
 
+// Dòng hiển thị = dòng đã lưu + dòng nháp; nhóm theo HĐ (thứ tự mục 1), trong nhóm: Tạm ứng → Đợt → Quyết toán
+function tvRows() {
+  const heads = tvHeads();
+  const saved = revData.tien_ve.map((r) => ({ ...r, key: 'id' + r.id }));
+  if (tvDrafts === null && (saved.length || !canEdit() || heads.length)) {
+    // Công trình chưa có dữ liệu: gợi ý sẵn mẫu Tạm ứng / TT Đợt 1 / Quyết toán cho HĐ đầu tiên
+    const hd_id = heads[0]?.id;
+    tvDrafts = saved.length || !canEdit() ? [] : [
+      { key: 'd' + ++tvSeq, loai: 'tam_ung', hd_id },
+      { key: 'd' + ++tvSeq, loai: 'dot', dot: 1, hd_id },
+      { key: 'd' + ++tvSeq, loai: 'quyet_toan', hd_id },
+    ];
+  }
+  const order = new Map(heads.map((h, i) => [h.id, i]));
+  const gOrd = (r) => (r.hd_id && order.has(r.hd_id) ? order.get(r.hd_id) : 1e6);
+  return [...saved, ...(tvDrafts || [])].sort((a, b) =>
+    gOrd(a) - gOrd(b) ||
+    TV_ORDER[a.loai] - TV_ORDER[b.loai] || (a.loai === 'dot' ? (a.dot || 0) - (b.dot || 0) : 0) ||
+    String(a.ngay || '9999').localeCompare(String(b.ngay || '9999')) || (a.id || 1e9) - (b.id || 1e9));
+}
+
 function renderTienVe() {
+  const heads = tvHeads();
   const rows = tvRows();
   const edit = canEdit();
+  const cols = edit ? 8 : 7;
+  const hdName = (id) => heads.find((h) => h.id === Number(id))?.so_hieu;
   $('#tv-total').textContent = money(revData.tong_tien_ve.tong);
-  $('#tv-body').innerHTML = rows.length ? rows.map((r, i) => {
+
+  const hdSelect = (cur) => `<select class="tv-in tv-hd" data-f="hd_id">
+      ${cur && hdName(cur) ? '' : '<option value="">— Chọn HĐ —</option>'}
+      ${heads.map((h) => `<option value="${h.id}" ${Number(cur) === h.id ? 'selected' : ''}>${esc(h.so_hieu)}</option>`).join('')}
+    </select>`;
+
+  const rowHtml = (r, i) => {
     const v = tvVal(r);
     const label = r.loai === 'dot'
       ? (edit ? `TT Đợt <input class="tv-dot" data-f="dot" type="number" min="1" max="999" step="1" value="${esc(v.dot)}">` : `TT Đợt ${esc(r.dot)}`)
       : tvLabel(r);
     if (!edit) {
-      return `<tr><td class="num muted">${i + 1}</td><td><b>${label}</b></td><td class="num strong">${money(r.so_tien)}</td>
+      return `<tr><td class="num muted">${i}</td>
+        <td>${r.hd_so_hieu ? `<span class="st hd-tag">${esc(r.hd_so_hieu)}</span>` : '<span class="st st-tam-tinh">Chưa chọn HĐ</span>'}</td>
+        <td><b>${label}</b></td><td class="num strong">${money(r.so_tien)}</td>
         <td>${isoToDmy(r.ngay)}</td><td class="wrap">${esc(r.ghi_chu)}</td><td class="muted">${esc(r.nguoi_cap_nhat || '')}</td></tr>`;
     }
     const cls = !r.id ? 'tv-draft' : tvEdits[r.key] ? 'tv-dirty' : '';
     return `<tr class="${cls}" data-key="${r.key}">
-      <td class="num muted">${i + 1}</td>
+      <td class="num muted">${i}</td>
+      <td>${hdSelect(v.hd_id)}</td>
       <td><b>${label}</b>${!r.id ? ' <span class="st st-tam-tinh">Chưa lưu</span>' : ''}</td>
       <td class="num"><input class="tv-in money num" data-f="so_tien" value="${esc(v.so_tien)}" placeholder="Nhập giá trị"></td>
       <td><input class="tv-in date-dmy" data-f="ngay" value="${esc(v.ngay)}"></td>
@@ -638,19 +663,52 @@ function renderTienVe() {
         <button class="danger sm" data-tvdel="${r.key}">${r.id ? 'Xóa' : 'Bỏ'}</button>
       </td>
     </tr>`;
-  }).join('') : `<tr><td colspan="${edit ? 7 : 6}" class="empty">Chưa có dữ liệu</td></tr>`;
+  };
+
+  // Nhóm theo HĐ (theo HĐ đã lưu của dòng) + dòng cộng tiền về từng HĐ
+  const groups = [];
+  for (const r of rows) {
+    const k = r.hd_id && hdName(r.hd_id) ? r.hd_id : 0;
+    let g = groups[groups.length - 1];
+    if (!g || g.k !== k) groups.push(g = { k, rows: [] });
+    g.rows.push(r);
+  }
+  let i = 0;
+  $('#tv-body').innerHTML = rows.length ? groups.map((g) => {
+    const sum = g.rows.filter((r) => r.id).reduce((s, r) => s + r.so_tien, 0);
+    const name = g.k ? hdName(g.k) : 'Chưa chọn HĐ';
+    return g.rows.map((r) => rowHtml(r, ++i)).join('') + `
+      <tr class="tv-sub ${g.k ? '' : 'tv-sub-warn'}"><td></td>
+        <td colspan="2">Cộng tiền về ${esc(name)}</td>
+        <td class="num">${money(sum)}</td><td colspan="${cols - 4}"></td></tr>`;
+  }).join('') : `<tr><td colspan="${cols}" class="empty">${heads.length ? 'Chưa có dữ liệu' : 'Chưa có HĐ ở mục 1 – hãy nhập HĐ trước'}</td></tr>`;
 
   const t = revData.tong_tien_ve;
-  $('#tv-foot').innerHTML = `<tr><td></td><td>TỔNG TIỀN VỀ</td><td class="num">${money(t.tong)}</td><td colspan="${edit ? 4 : 3}"></td></tr>`;
+  $('#tv-foot').innerHTML = `<tr><td></td><td colspan="2">TỔNG TIỀN VỀ</td><td class="num">${money(t.tong)}</td><td colspan="${cols - 4}"></td></tr>`;
 
   if (edit) {
     $$('#tv-body input.money').forEach(attachMoneyInput);
     $$('#tv-body input.date-dmy').forEach(attachDateInput);
-    const hasQt = rows.some((r) => r.loai === 'quyet_toan');
-    $('#tv-add-qt').disabled = hasQt;
-    $('#tv-add-qt').title = hasQt ? 'Mỗi công trình chỉ có 1 dòng Quyết toán' : '';
+    // Ô chọn HĐ cho các nút chèn dòng
+    const pick = $('#tv-hd-pick');
+    const keep = Number(pick.value);
+    pick.innerHTML = heads.map((h) => `<option value="${h.id}">${esc(h.so_hieu)}</option>`).join('');
+    if (heads.some((h) => h.id === keep)) pick.value = keep;
+    const none = !heads.length;
+    pick.disabled = none;
+    $$('#tv-card [data-tvadd]').forEach((b) => (b.disabled = none));
+    updateTvButtons();
     updateTvSaveAll();
   }
+}
+
+// Mỗi HĐ chỉ 1 dòng Quyết toán
+function updateTvButtons() {
+  const hd = tvPickHd();
+  const hasQt = tvRows().some((r) => r.loai === 'quyet_toan' && Number(tvVal(r).hd_id) === hd);
+  const btn = $('#tv-add-qt');
+  btn.disabled = !hd || hasQt;
+  btn.title = hasQt ? 'HĐ này đã có dòng Quyết toán' : '';
 }
 
 function updateTvSaveAll() {
@@ -670,9 +728,10 @@ async function tvSave(key, { silent = false } = {}) {
   const label = r.loai === 'dot' ? `TT Đợt ${v.dot}` : tvLabel(r);
   const ngay = dmyToIso(v.ngay);
   const so = parseMoney(v.so_tien);
+  if (!v.hd_id) { showMsg(msg, `${label}: chưa chọn Số HĐ`, 'err'); return false; }
   if (!so || so === '-') { showMsg(msg, `${label}: chưa nhập giá trị`, 'err'); return false; }
   if (ngay === null) { showMsg(msg, `${label}: ngày không hợp lệ, nhập dd/mm/yyyy`, 'err'); return false; }
-  const body = { loai: r.loai, dot: r.loai === 'dot' ? v.dot : null, so_tien: so, ngay, ghi_chu: v.ghi_chu };
+  const body = { loai: r.loai, dot: r.loai === 'dot' ? v.dot : null, so_tien: so, ngay, ghi_chu: v.ghi_chu, hd_id: v.hd_id };
   try {
     await api(r.id ? `/api/tien-ve/${r.id}` : `/api/du-an/${revProjectId}/tien-ve`,
       { method: r.id ? 'PUT' : 'POST', body: JSON.stringify(body) });
@@ -694,15 +753,17 @@ async function tvReload() {
 function bindTienVe() {
   const card = $('#tv-card');
   if (!canEdit()) return;
+  $('#tv-hd-pick').addEventListener('change', updateTvButtons);
   // Ghi nhận nội dung đang sửa
   card.addEventListener('input', (e) => {
     const tr = e.target.closest('tr[data-key]');
     if (!tr || !e.target.dataset.f) return;
     const key = tr.dataset.key;
     tvEdits[key] = { ...tvVal(tvFind(key)), ...(tvEdits[key] || {}), [e.target.dataset.f]: e.target.value };
-    tr.classList.add(tr.classList.contains('tv-draft') ? 'tv-draft' : 'tv-dirty');
+    if (!tr.classList.contains('tv-draft')) tr.classList.add('tv-dirty');
     $(`[data-tvsave="${key}"]`, tr).hidden = false;
     updateTvSaveAll();
+    if (e.target.dataset.f === 'hd_id') updateTvButtons();
   });
   // Enter = lưu dòng
   card.addEventListener('keydown', (e) => {
@@ -725,7 +786,7 @@ function bindTienVe() {
         return renderTienVe();
       }
       const label = r.loai === 'dot' ? `TT Đợt ${r.dot}` : tvLabel(r);
-      if (!confirm(`Xóa dòng "${label}" (${money(r.so_tien)})?`)) return;
+      if (!confirm(`Xóa dòng "${label}" của ${r.hd_so_hieu || 'chưa chọn HĐ'} (${money(r.so_tien)})?`)) return;
       try {
         await api(`/api/tien-ve/${r.id}`, { method: 'DELETE' });
         delete tvEdits[tvdel];
@@ -734,9 +795,12 @@ function bindTienVe() {
       } catch (err) { showMsg($('#tv-msg'), err.message, 'err'); }
     }
     if (tvadd) {
-      const rows = tvRows();
-      const d = { key: 'd' + ++tvSeq, loai: tvadd };
+      const hd_id = tvPickHd();
+      if (!hd_id) return;
+      const rows = tvRows().filter((r) => Number(tvVal(r).hd_id) === hd_id);
+      const d = { key: 'd' + ++tvSeq, loai: tvadd, hd_id };
       if (tvadd === 'dot') d.dot = Math.max(0, ...rows.filter((r) => r.loai === 'dot').map((r) => Number(tvVal(r).dot) || 0)) + 1;
+      tvDrafts = tvDrafts || [];
       tvDrafts.push(d);
       renderTienVe();
       $(`tr[data-key="${d.key}"] input[data-f="so_tien"]`)?.focus();

@@ -87,3 +87,36 @@ function attachMoneyInput(input) {
   input.setAttribute('autocomplete', 'off');
   input.addEventListener('input', () => formatMoneyInput(input));
 }
+
+// ---------- Ô ngày dd/mm/yyyy (không phụ thuộc ngôn ngữ trình duyệt) ----------
+// Trả về: '' nếu trống, 'YYYY-MM-DD' nếu hợp lệ, null nếu sai
+function dmyToIso(s) {
+  s = String(s ?? '').trim();
+  if (!s) return '';
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!m) return null;
+  const [d, mo, y] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  if (y < 1900 || y > 2200 || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) return null;
+  return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+const isoToDmy = (iso) => (iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '');
+
+function attachDateInput(input) {
+  input.setAttribute('placeholder', 'dd/mm/yyyy');
+  input.setAttribute('maxlength', '10');
+  input.setAttribute('inputmode', 'numeric');
+  input.setAttribute('autocomplete', 'off');
+  input.addEventListener('input', (e) => {
+    if (e.inputType && e.inputType.startsWith('delete')) return;
+    const digits = input.value.replace(/\D/g, '').slice(0, 8);
+    let v = digits.slice(0, 2);
+    if (digits.length > 2) v += '/' + digits.slice(2, 4);
+    if (digits.length > 4) v += '/' + digits.slice(4);
+    if (digits.length === 2 || digits.length === 4) v += '/';
+    input.value = v;
+  });
+  input.addEventListener('blur', () => {
+    input.classList.toggle('invalid', dmyToIso(input.value) === null);
+  });
+}

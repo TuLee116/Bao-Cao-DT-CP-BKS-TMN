@@ -168,6 +168,20 @@ output.calc { display: block; padding: 10px 12px; border-radius: 10px; font-weig
 .st-tam-tinh { color: var(--warn); background: #fef3c7; }
 td.strong { font-weight: 700; color: var(--navy); }
 td.wrap { white-space: normal; min-width: 120px; max-width: 260px; }
+.tv-head { margin-bottom: 12px; }
+.tv-total { font-size: 15px; color: var(--muted); font-weight: 600; }
+.tv-total b { font-size: 20px; color: var(--teal); margin-left: 6px; font-variant-numeric: tabular-nums; }
+.tv-table input { padding: 7px 9px; font-size: 13px; background: #fff; }
+.tv-table input.num { text-align: right; min-width: 150px; font-variant-numeric: tabular-nums; }
+.tv-table input.date-dmy { width: 120px; }
+.tv-table input.tv-dot { width: 64px; padding: 5px 6px; display: inline-block; margin-left: 4px; }
+.tv-table td { vertical-align: middle; }
+tr.tv-draft td { background: #fffbeb; }
+tr.tv-dirty td { background: #f0fdfa; }
+.tv-tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+.tv-tools .spacer { flex: 1; }
+button.sm { padding: 5px 10px; font-size: 12px; }
+input.invalid { border-color: var(--danger); background: #fff5f5; }
 tfoot td { font-weight: 700; color: var(--navy); background: #eef4fb; border-top: 2px solid #c9d8ee; border-bottom: 0; }
 
 @media (max-width: 760px) {

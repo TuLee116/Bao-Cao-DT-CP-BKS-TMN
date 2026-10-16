@@ -3,8 +3,8 @@ const path = require('path');
 const crypto = require('crypto');
 const store = require('./lib/db');
 const auth = require('./lib/auth');
-const { TRANG_THAI, ROLES, validateProject, validateUser, validateSettings, validateRevenue, passwordErrors } = require('./lib/validate');
-const { LOAI_DOANH_THU, calcLine, summarize } = require('./lib/revenue');
+const { TRANG_THAI, ROLES, validateProject, validateUser, validateSettings, validateRevenue, validateTienVe, passwordErrors } = require('./lib/validate');
+const { LOAI_DOANH_THU, calcLine, summarize, tienVeLabel, sortTienVe, summarizeTienVe } = require('./lib/revenue');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -254,7 +254,34 @@ api.get('/du-an/:id/doanh-thu', wrap(async (req, res) => {
   const du_an = await store.getProject(id);
   if (!du_an) return bad(res, 'Không tìm thấy công trình', 404);
   const items = (await store.listRevenue(id)).map(calcLine);
-  res.json({ du_an, items, tong: summarize(items) });
+  const tien_ve = sortTienVe(await store.listTienVe(id)).map((r) => ({ ...r, nhan: tienVeLabel(r) }));
+  res.json({ du_an, items, tong: summarize(items), tien_ve, tong_tien_ve: summarizeTienVe(tien_ve) });
+}));
+
+// ---------- Giá trị tiền về ----------
+api.post('/du-an/:id/tien-ve', canEdit, wrap(async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) return bad(res, 'ID không hợp lệ');
+  if (!(await store.getProject(id))) return bad(res, 'Không tìm thấy công trình', 404);
+  const { data, errors } = validateTienVe(req.body || {});
+  if (errors.length) return bad(res, errors);
+  res.status(201).json(await store.createTienVe(id, data, req.user.id));
+}));
+
+api.put('/tien-ve/:id', canEdit, wrap(async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) return bad(res, 'ID không hợp lệ');
+  const { data, errors } = validateTienVe(req.body || {});
+  if (errors.length) return bad(res, errors);
+  const ok = await store.updateTienVe(id, data, req.user.id);
+  ok ? res.json({ id }) : bad(res, 'Không tìm thấy dòng tiền về', 404);
+}));
+
+api.delete('/tien-ve/:id', canEdit, wrap(async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) return bad(res, 'ID không hợp lệ');
+  const ok = await store.deleteTienVe(id);
+  ok ? res.status(204).end() : bad(res, 'Không tìm thấy dòng tiền về', 404);
 }));
 
 api.post('/du-an/:id/doanh-thu', canEdit, wrap(async (req, res) => {
@@ -288,8 +315,10 @@ app.use('/api', (_req, res) => bad(res, 'Không tìm thấy API', 404));
 // Xử lý lỗi chung
 app.use((err, req, res, _next) => {
   if (err.code === '23505') {
-    const msg = /users/.test(err.table || err.detail || '') || req.path.includes('/users') || req.path.includes('/setup')
-      ? 'Tên đăng nhập đã tồn tại' : 'Mã dự án đã tồn tại';
+    const msg = req.path.includes('tien-ve')
+      ? 'Trùng dữ liệu: số đợt thanh toán này đã có, hoặc công trình đã có dòng Quyết toán'
+      : /users/.test(err.table || err.detail || '') || req.path.includes('/users') || req.path.includes('/setup')
+        ? 'Tên đăng nhập đã tồn tại' : 'Mã dự án đã tồn tại';
     return bad(res, msg, 409);
   }
   if (err.type === 'entity.parse.failed') return bad(res, 'Dữ liệu JSON không hợp lệ');

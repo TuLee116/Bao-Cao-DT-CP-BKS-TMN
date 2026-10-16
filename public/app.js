@@ -47,11 +47,11 @@ function applyBranding(s) {
 // =====================================================================
 // Tab
 // =====================================================================
-const loaders = { projects: loadProjects, users: loadUsers, settings: loadSettings, profile: async () => {} };
+const loaders = { projects: loadProjects, revenue: loadRevenueTab, users: loadUsers, settings: loadSettings, profile: async () => {} };
 
 function showTab(name) {
   $$('#tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
-  $$('.tab-panel').forEach((p) => (p.hidden = p.id !== 'tab-' + name));
+  $$('main > .tab-panel').forEach((p) => (p.hidden = p.id !== 'tab-' + name));
   try { localStorage.setItem('tab', name); } catch {}
   Promise.resolve(loaders[name]()).catch((err) => alert(err.message));
 }
@@ -84,7 +84,7 @@ function renderProjects() {
   $('#k-gn').textContent = fmt.format(gn);
   $('#k-tl').textContent = pct(gn, hd).toFixed(1) + '%';
 
-  const cols = canEdit() ? 11 : 10;
+  const cols = 11;
   $('#p-tbody').innerHTML = rows.length
     ? rows.map((r) => `
       <tr>
@@ -98,10 +98,11 @@ function renderProjects() {
         <td><span class="st st-${slug(r.trang_thai)}">${esc(r.trang_thai)}</span></td>
         <td>${dmy(r.ngay_bat_dau)}${r.ngay_ket_thuc ? ' → ' + dmy(r.ngay_ket_thuc) : ''}</td>
         <td class="muted">${esc(r.nguoi_cap_nhat || '')}</td>
-        ${canEdit() ? `<td class="row-actions">
-          <button data-edit="${r.id}">Sửa</button>
-          <button class="danger" data-del="${r.id}">Xóa</button>
-        </td>` : ''}
+        <td class="row-actions">
+          <button data-rev="${r.id}" title="Xem / nhập doanh thu">Doanh thu</button>
+          ${canEdit() ? `<button data-edit="${r.id}">Sửa</button>
+          <button class="danger" data-del="${r.id}">Xóa</button>` : ''}
+        </td>
       </tr>`).join('')
     : `<tr><td colspan="${cols}" class="empty">Chưa có dữ liệu</td></tr>`;
 }
@@ -130,7 +131,11 @@ $('#p-cancel')?.addEventListener('click', () => { resetProjectForm(); showMsg($(
 $('#p-search').addEventListener('input', renderProjects);
 
 $('#p-tbody').addEventListener('click', async (e) => {
-  const { edit, del } = e.target.dataset;
+  const { edit, del, rev } = e.target.dataset;
+  if (rev) {
+    revProjectId = Number(rev);
+    return showTab('revenue');
+  }
   if (edit) {
     const r = projects.find((x) => x.id === Number(edit));
     if (!r) return;
@@ -160,6 +165,219 @@ $('#p-csv').addEventListener('click', () => {
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 });
+
+// =====================================================================
+// DOANH THU theo công trình
+// =====================================================================
+// Công thức giống máy chủ (lib/revenue.js): Tiền VAT = làm tròn(Giá trị × VAT% / 100); VAT 0% = tạm tính
+const REV_LABEL = {
+  hd: { title: '1. Hợp đồng / Phụ lục', short: 'HĐ/PL', so: 'Số HĐ / Phụ lục *', soPh: 'VD: HĐ 01/2026/TMN, PL01' },
+  qt: { title: '2. Giá trị Hoàn thành / Quyết toán', short: 'HT/QT', so: 'Đợt / Hồ sơ HT/QT *', soPh: 'VD: Nghiệm thu đợt 1, Quyết toán' },
+};
+let revProjectId = null;
+let revData = null;
+try { revProjectId = Number(localStorage.getItem('revProject')) || null; } catch {}
+
+const calcVat = (giaTri, vat) => {
+  if (!vat || !giaTri) return 0;
+  const g = BigInt(giaTri) * BigInt(vat);
+  return Number((g + (g < 0n ? -50n : 50n)) / 100n);
+};
+const money = (n) => fmt.format(n);
+const vatBadge = (vat) => (vat ? `${vat}%` : '<span class="st st-tam-tinh">Tạm tính</span>');
+
+// Dựng 2 khối (HĐ/PL và HT/QT) từ một mẫu chung
+function buildRevenueSections() {
+  const wrap = $('#r-sections');
+  if (wrap.dataset.built) return;
+  wrap.dataset.built = '1';
+  wrap.innerHTML = Object.entries(REV_LABEL).map(([loai, L]) => `
+    <div class="card rev-card" data-loai="${loai}">
+      <h2>${L.title}</h2>
+      ${canEdit() ? `
+      <form class="grid-form rev-form" data-loai="${loai}" novalidate>
+        <input type="hidden" name="id">
+        <label>${L.so}<input name="so_hieu" required maxlength="150" placeholder="${L.soPh}"></label>
+        <label>Ngày<input name="ngay" type="date"></label>
+        <label>Giá trị ${L.short} (trước VAT) *<input name="gia_tri" class="money" required placeholder="0"></label>
+        <label>VAT (%)<input name="vat" type="number" min="0" max="100" step="1" placeholder="0 = chưa có VAT"></label>
+        <label>Giá trị ${L.short} (sau VAT)<output class="calc" name="sau_vat">0</output><span class="calc-note"></span></label>
+        <label class="span-2">Ghi chú<input name="ghi_chu" maxlength="500"></label>
+        <div class="actions">
+          <button type="submit" class="primary">Thêm dòng</button>
+          <button type="button" class="rev-cancel">Hủy</button>
+        </div>
+        <div class="msg" role="alert"></div>
+      </form>` : ''}
+      <div class="table-wrap">
+        <table class="rev-table">
+          <thead><tr>
+            <th class="num">#</th><th>${L.short === 'HĐ/PL' ? 'Số HĐ / Phụ lục' : 'Đợt / Hồ sơ'}</th><th>Ngày</th>
+            <th class="num">Trước VAT</th><th class="num">VAT</th><th class="num">Tiền VAT</th>
+            <th class="num">Sau VAT</th><th>Ghi chú</th><th>Người cập nhật</th>${canEdit() ? '<th></th>' : ''}
+          </tr></thead>
+          <tbody></tbody>
+          <tfoot></tfoot>
+        </table>
+      </div>
+    </div>`).join('');
+
+  $$('.rev-form', wrap).forEach((f) => {
+    attachMoneyInput(f.elements.gia_tri);
+    const update = () => updateRevPreview(f);
+    f.elements.gia_tri.addEventListener('input', update);
+    f.elements.vat.addEventListener('input', update);
+    f.addEventListener('submit', (e) => { e.preventDefault(); saveRevenue(f); });
+    $('.rev-cancel', f).addEventListener('click', () => resetRevForm(f));
+  });
+  wrap.addEventListener('click', onRevTableClick);
+}
+
+// Tính trực tiếp Giá trị sau VAT khi đang nhập
+function updateRevPreview(f) {
+  const raw = parseMoney(f.elements.gia_tri.value);
+  const gt = raw && raw !== '-' ? Number(raw) : 0;
+  const vatStr = f.elements.vat.value.trim();
+  const vat = vatStr === '' ? 0 : Number(vatStr);
+  const out = f.elements.sau_vat;
+  const note = $('.calc-note', f);
+  if (!Number.isInteger(vat) || vat < 0 || vat > 100) {
+    out.value = '—';
+    note.textContent = 'VAT phải là số nguyên 0–100';
+    note.className = 'calc-note err';
+    return;
+  }
+  const tv = calcVat(gt, vat);
+  out.value = money(gt + tv);
+  note.textContent = vat ? `Tiền VAT: ${money(tv)}` : 'Tạm tính (chưa có VAT)';
+  note.className = 'calc-note' + (vat ? '' : ' warn');
+}
+
+function resetRevForm(f) {
+  f.reset();
+  f.elements.id.value = '';
+  $('button[type=submit]', f).textContent = 'Thêm dòng';
+  showMsg($('.msg', f), '');
+  updateRevPreview(f);
+}
+
+async function loadRevenueTab() {
+  buildRevenueSections();
+  projects = await api('/api/du-an');
+  const sel = $('#r-project');
+  $('#r-empty').hidden = projects.length > 0;
+  $('#r-body').hidden = true;
+  sel.hidden = !projects.length;
+  if (!projects.length) return;
+  if (!projects.some((p) => p.id === revProjectId)) revProjectId = projects[0].id;
+  sel.innerHTML = projects.map((p) => `<option value="${p.id}">${esc(p.ma_du_an)} – ${esc(p.ten_du_an)}</option>`).join('');
+  sel.value = revProjectId;
+  await loadRevenue();
+}
+
+$('#r-project').addEventListener('change', (e) => {
+  revProjectId = Number(e.target.value);
+  $$('.rev-form').forEach(resetRevForm);
+  loadRevenue().catch((err) => alert(err.message));
+});
+
+async function loadRevenue() {
+  try { localStorage.setItem('revProject', revProjectId); } catch {}
+  revData = await api(`/api/du-an/${revProjectId}/doanh-thu`);
+  const p = revData.du_an;
+  $('#r-project-info').innerHTML = `Mã: <b>${esc(p.ma_du_an)}</b> · Chủ đầu tư: <b>${esc(p.chu_dau_tu || '—')}</b>`;
+  $('#r-body').hidden = false;
+  renderRevenue();
+}
+
+function renderRevenue() {
+  const { items, tong } = revData;
+  const hd = tong.hd, qt = tong.qt;
+  $('#r-k-hd').textContent = money(hd.sau_vat);
+  $('#r-k-hd-sub').innerHTML = `${hd.so_dong} dòng${hd.tam_tinh ? ' · <span class="warn-text">có dòng tạm tính</span>' : ''}`;
+  $('#r-k-qt').textContent = money(qt.sau_vat);
+  $('#r-k-qt-sub').innerHTML = `${qt.so_dong} dòng${qt.tam_tinh ? ' · <span class="warn-text">có dòng tạm tính</span>' : ''}`;
+  $('#r-k-tl').textContent = hd.sau_vat ? (qt.sau_vat / hd.sau_vat * 100).toFixed(1) + '%' : '—';
+  $('#r-k-cl').textContent = money(hd.sau_vat - qt.sau_vat);
+
+  const cols = canEdit() ? 10 : 9;
+  for (const loai of Object.keys(REV_LABEL)) {
+    const card = $(`.rev-card[data-loai="${loai}"]`);
+    const rows = items.filter((r) => r.loai === loai);
+    $('tbody', card).innerHTML = rows.length ? rows.map((r, i) => `
+      <tr>
+        <td class="num muted">${i + 1}</td>
+        <td><b>${esc(r.so_hieu)}</b></td>
+        <td>${dmy(r.ngay)}</td>
+        <td class="num">${money(r.gia_tri)}</td>
+        <td class="num">${vatBadge(r.vat)}</td>
+        <td class="num">${money(r.tien_vat)}</td>
+        <td class="num strong">${money(r.sau_vat)}</td>
+        <td class="wrap">${esc(r.ghi_chu)}</td>
+        <td class="muted">${esc(r.nguoi_cap_nhat || '')}</td>
+        ${canEdit() ? `<td class="row-actions"><button data-redit="${r.id}">Sửa</button><button class="danger" data-rdel="${r.id}">Xóa</button></td>` : ''}
+      </tr>`).join('') : `<tr><td colspan="${cols}" class="empty">Chưa có dữ liệu</td></tr>`;
+    const t = tong[loai];
+    $('tfoot', card).innerHTML = `
+      <tr>
+        <td></td><td colspan="2">TỔNG ${REV_LABEL[loai].short}${t.tam_tinh ? ' <span class="st st-tam-tinh">Có tạm tính</span>' : ''}</td>
+        <td class="num">${money(t.gia_tri)}</td><td></td>
+        <td class="num">${money(t.tien_vat)}</td>
+        <td class="num">${money(t.sau_vat)}</td>
+        <td colspan="${canEdit() ? 3 : 2}"></td>
+      </tr>`;
+  }
+}
+
+async function saveRevenue(f) {
+  const msgEl = $('.msg', f);
+  const id = f.elements.id.value;
+  const body = {
+    loai: f.dataset.loai,
+    so_hieu: f.elements.so_hieu.value,
+    ngay: f.elements.ngay.value,
+    gia_tri: parseMoney(f.elements.gia_tri.value),
+    vat: f.elements.vat.value,
+    ghi_chu: f.elements.ghi_chu.value,
+  };
+  try {
+    await api(id ? `/api/doanh-thu/${id}` : `/api/du-an/${revProjectId}/doanh-thu`,
+      { method: id ? 'PUT' : 'POST', body: JSON.stringify(body) });
+    resetRevForm(f);
+    showMsg(msgEl, id ? 'Đã cập nhật' : 'Đã thêm dòng');
+    await loadRevenue();
+  } catch (err) {
+    showMsg(msgEl, err.message, 'err');
+  }
+}
+
+async function onRevTableClick(e) {
+  const { redit, rdel } = e.target.dataset;
+  if (redit) {
+    const r = revData.items.find((x) => x.id === Number(redit));
+    const f = $(`.rev-form[data-loai="${r.loai}"]`);
+    f.elements.id.value = r.id;
+    f.elements.so_hieu.value = r.so_hieu;
+    f.elements.ngay.value = r.ngay || '';
+    f.elements.gia_tri.value = money(r.gia_tri);
+    f.elements.vat.value = r.vat;
+    f.elements.ghi_chu.value = r.ghi_chu || '';
+    $('button[type=submit]', f).textContent = 'Lưu thay đổi';
+    showMsg($('.msg', f), 'Đang sửa: ' + r.so_hieu);
+    updateRevPreview(f);
+    f.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+  if (rdel) {
+    const r = revData.items.find((x) => x.id === Number(rdel));
+    if (!r || !confirm(`Xóa dòng "${r.so_hieu}"?`)) return;
+    try {
+      await api(`/api/doanh-thu/${rdel}`, { method: 'DELETE' });
+      await loadRevenue();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+}
 
 // =====================================================================
 // TÀI KHOẢN (Quản trị)

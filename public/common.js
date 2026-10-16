@@ -66,3 +66,24 @@ function attachPwChecklist(input) {
   render();
   return () => !input.value || render();
 }
+
+// ---------- Ô nhập tiền: hiển thị 1.234.567, cho phép số âm (phụ lục giảm) ----------
+const moneyFmt = new Intl.NumberFormat('vi-VN');
+const parseMoney = (s) => {
+  const t = String(s ?? '').trim();
+  const neg = t.startsWith('-');
+  const digits = t.replace(/\D/g, '').replace(/^0+(?=\d)/, '');
+  return digits ? (neg ? '-' : '') + digits : (neg ? '-' : '');
+};
+function formatMoneyInput(input) {
+  const raw = parseMoney(input.value);
+  const fromEnd = input.value.length - (input.selectionStart ?? input.value.length);
+  input.value = raw === '' || raw === '-' ? raw : moneyFmt.format(Number(raw));
+  const pos = Math.max(0, input.value.length - fromEnd);
+  try { input.setSelectionRange(pos, pos); } catch {}
+}
+function attachMoneyInput(input) {
+  input.setAttribute('inputmode', 'numeric');
+  input.setAttribute('autocomplete', 'off');
+  input.addEventListener('input', () => formatMoneyInput(input));
+}

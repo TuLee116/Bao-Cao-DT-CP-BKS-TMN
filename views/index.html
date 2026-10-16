@@ -21,6 +21,7 @@
     </div>
     <nav id="tabs" class="tabs">
       <button data-tab="projects" class="active">Dự án</button>
+      <button data-tab="revenue">Doanh thu</button>
       <button data-tab="users" data-role="admin">Tài khoản</button>
       <button data-tab="settings" data-role="admin">Cài đặt</button>
       <button data-tab="profile">Cá nhân</button>
@@ -75,13 +76,35 @@
               <tr>
                 <th>Mã</th><th>Tên dự án</th><th>Chủ đầu tư</th>
                 <th class="num">Giá trị HĐ</th><th class="num">Đã giải ngân</th><th class="num">% GN</th>
-                <th>Tiến độ</th><th>Trạng thái</th><th>Thời gian</th><th>Cập nhật bởi</th><th data-role="admin editor"></th>
+                <th>Tiến độ</th><th>Trạng thái</th><th>Thời gian</th><th>Cập nhật bởi</th><th></th>
               </tr>
             </thead>
             <tbody id="p-tbody"></tbody>
           </table>
         </div>
       </div>
+    </section>
+
+    <!-- ================= DOANH THU ================= -->
+    <section id="tab-revenue" class="tab-panel" hidden>
+      <div class="card">
+        <div class="toolbar">
+          <h2>Doanh thu công trình</h2>
+          <select id="r-project" class="project-select" aria-label="Chọn công trình"></select>
+        </div>
+        <div id="r-project-info" class="muted small"></div>
+      </div>
+
+      <div id="r-body" class="section-stack" hidden>
+        <div class="kpis">
+          <div class="kpi"><div class="label">HĐ/PL sau VAT</div><div class="value" id="r-k-hd">0</div><div class="sub" id="r-k-hd-sub"></div></div>
+          <div class="kpi"><div class="label">HT/QT sau VAT</div><div class="value" id="r-k-qt">0</div><div class="sub" id="r-k-qt-sub"></div></div>
+          <div class="kpi"><div class="label">Tỷ lệ HT/QT so với HĐ/PL</div><div class="value" id="r-k-tl">0%</div><div class="sub">Theo giá trị sau VAT</div></div>
+          <div class="kpi"><div class="label">Còn lại (HĐ/PL − HT/QT)</div><div class="value" id="r-k-cl">0</div><div class="sub">Theo giá trị sau VAT</div></div>
+        </div>
+        <div id="r-sections" class="section-stack"></div>
+      </div>
+      <div id="r-empty" class="card empty" hidden>Chưa có công trình nào. Hãy thêm công trình ở tab <b>Dự án</b> trước.</div>
     </section>
 
     <!-- ================= TÀI KHOẢN ================= -->

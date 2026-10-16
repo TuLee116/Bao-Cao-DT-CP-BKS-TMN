@@ -10,9 +10,16 @@ Web quản lý dự án xây dựng có đăng nhập, phân quyền, khởi t�
 | **Khởi tạo lần đầu** (`/setup`) | Khi chưa có tài khoản nào: nhập tên công ty, tên hệ thống, tạo tài khoản Quản trị. Sau đó trang này tự khóa. |
 | **Đăng nhập** (`/login`) | Phiên lưu 7 ngày trong CSDL. Sai quá 10 lần trong 15 phút thì bị chặn tạm. |
 | **Dự án** | Dashboard KPI, thêm/sửa/xóa, tìm kiếm không dấu, xuất CSV cho Excel, ghi nhận người cập nhật. |
+| **Doanh thu** | Theo từng công trình: (1) Hợp đồng/Phụ lục, (2) Hoàn thành/Quyết toán – nhiều dòng, tự tính VAT, sau VAT, dòng tổng, tỷ lệ HT/QT so với HĐ/PL. |
 | **Tài khoản** (Quản trị) | Tạo / sửa / khóa / xóa tài khoản, đặt lại mật khẩu, phân quyền. |
 | **Cài đặt** (Quản trị) | Đổi tên công ty, tên hệ thống. |
 | **Cá nhân** | Đổi mật khẩu của chính mình. |
+
+### Công thức Doanh thu
+- **Tiền VAT** = làm tròn(Giá trị trước VAT × VAT% ÷ 100), VAT là số nguyên 0–100
+- **Giá trị sau VAT** = Giá trị trước VAT + Tiền VAT
+- **VAT = 0%** (hoặc để trống) → chưa có VAT: Giá trị sau VAT = Giá trị trước VAT, đánh dấu **Tạm tính**
+- Cho phép giá trị âm (phụ lục giảm). Tính bằng số nguyên chính xác, không sai lệch làm tròn số thực.
 
 ### Phân quyền
 | Quyền | Xem dự án | Thêm/sửa/xóa dự án | Quản lý tài khoản & cài đặt |

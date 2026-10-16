@@ -3,7 +3,8 @@ const path = require('path');
 const crypto = require('crypto');
 const store = require('./lib/db');
 const auth = require('./lib/auth');
-const { TRANG_THAI, ROLES, validateProject, validateUser, validateSettings, passwordErrors } = require('./lib/validate');
+const { TRANG_THAI, ROLES, validateProject, validateUser, validateSettings, validateRevenue, passwordErrors } = require('./lib/validate');
+const { LOAI_DOANH_THU, calcLine, summarize } = require('./lib/revenue');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -89,6 +90,7 @@ api.get('/meta', wrap(async (_req, res) => {
   const s = await store.getSettings();
   res.json({
     trang_thai: TRANG_THAI,
+    loai_doanh_thu: LOAI_DOANH_THU,
     roles: ROLES,
     db: store.kind,
     ten_cong_ty: s.ten_cong_ty,
@@ -243,6 +245,41 @@ api.delete('/du-an/:id', canEdit, wrap(async (req, res) => {
   if (!id) return bad(res, 'ID không hợp lệ');
   const ok = await store.deleteProject(id);
   ok ? res.status(204).end() : bad(res, 'Không tìm thấy dự án', 404);
+}));
+
+// ---------- Doanh thu theo công trình ----------
+api.get('/du-an/:id/doanh-thu', wrap(async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) return bad(res, 'ID không hợp lệ');
+  const du_an = await store.getProject(id);
+  if (!du_an) return bad(res, 'Không tìm thấy công trình', 404);
+  const items = (await store.listRevenue(id)).map(calcLine);
+  res.json({ du_an, items, tong: summarize(items) });
+}));
+
+api.post('/du-an/:id/doanh-thu', canEdit, wrap(async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) return bad(res, 'ID không hợp lệ');
+  if (!(await store.getProject(id))) return bad(res, 'Không tìm thấy công trình', 404);
+  const { data, errors } = validateRevenue(req.body || {});
+  if (errors.length) return bad(res, errors);
+  res.status(201).json(await store.createRevenue(id, data, req.user.id));
+}));
+
+api.put('/doanh-thu/:id', canEdit, wrap(async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) return bad(res, 'ID không hợp lệ');
+  const { data, errors } = validateRevenue(req.body || {});
+  if (errors.length) return bad(res, errors);
+  const ok = await store.updateRevenue(id, data, req.user.id);
+  ok ? res.json({ id }) : bad(res, 'Không tìm thấy dòng doanh thu', 404);
+}));
+
+api.delete('/doanh-thu/:id', canEdit, wrap(async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) return bad(res, 'ID không hợp lệ');
+  const ok = await store.deleteRevenue(id);
+  ok ? res.status(204).end() : bad(res, 'Không tìm thấy dòng doanh thu', 404);
 }));
 
 app.use('/api', api);

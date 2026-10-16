@@ -1959,6 +1959,14 @@ $('#u-tbody')?.addEventListener('click', async (e) => {
 // =====================================================================
 const sForm = $('#s-form');
 
+// Thông tin hệ thống (cập nhật Phiên bản mỗi lần phát hành)
+const SYS_INFO = {
+  ten: 'Hệ thống nội bộ',
+  so_huu: 'Ban Kiểm soát - TMN',
+  phat_trien: 'Le Phan Vinh Tu',
+  phien_ban: 'V01.16.10.26',
+};
+
 async function loadDemoStatus() {
   const { count } = await api('/api/demo');
   $('#demo-status').textContent = count ? `Đang có ${count} dự án mẫu (DEMO-...).` : 'Chưa có dữ liệu mẫu.';
@@ -2000,8 +2008,12 @@ async function loadSettings() {
     : '<span class="st st-tam-dung">Chưa đặt</span> Hiện chưa ai xóa được Số HĐ/PL cho đến khi đặt passcode.';
   $('#pc-submit').textContent = s.passcode_set ? 'Đổi passcode' : 'Đặt passcode';
   $('#sys-info').innerHTML = `
-    Cơ sở dữ liệu: <b>${META.db === 'postgres' ? 'PostgreSQL' : 'Bộ nhớ tạm (chưa kết nối CSDL)'}</b><br>
-    Mã khởi tạo (SETUP_TOKEN): ${META.setup_token_required ? 'đã đặt' : 'không đặt'}`;
+    Tên hệ thống/Website: <b>${esc(SYS_INFO.ten)}</b><br>
+    Đơn vị sở hữu: <b>${esc(SYS_INFO.so_huu)}</b><br>
+    Đơn vị phát triển: <b>${esc(SYS_INFO.phat_trien)}</b><br>
+    Phiên bản hiện tại: <b>${esc(SYS_INFO.phien_ban)}</b>
+    <div class="small" style="margin-top:8px">Cơ sở dữ liệu: ${META.db === 'postgres' ? 'PostgreSQL' : 'Bộ nhớ tạm (chưa kết nối CSDL)'} ·
+    Mã khởi tạo (SETUP_TOKEN): ${META.setup_token_required ? 'đã đặt' : 'không đặt'}</div>`;
 }
 
 sForm?.addEventListener('submit', async (e) => {

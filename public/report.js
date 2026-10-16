@@ -795,8 +795,6 @@ function bPcSection(list, v) {
     <div class="f-head">
       <div class="pc-sec-title">${one ? '<button type="button" class="sm no-print" id="pc-back" title="Quay lại tất cả công trình">← Về tổng quan</button>' : ''}<h2>Báo cáo theo công trình</h2></div>
       <div class="pc-ky no-print">
-        <label>Kỳ<select id="pc-ky" aria-label="Kỳ báo cáo">${KY_OPTS.map(([k, t]) => `<option value="${k}" ${k === BST.ky ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
-        ${BST.ky === 'tuychon' ? `<span class="b-ky-custom"><input type="month" id="pc-tu" value="${P.from}" aria-label="Từ tháng"> – <input type="month" id="pc-den" value="${P.to}" aria-label="Đến tháng"></span>` : ''}
         <button type="button" class="f-range f-range-btn" data-kypick title="Bấm để chọn kỳ báo cáo">📅 ${P.range} <span class="f-caret">▾</span></button>
       </div>
       <div class="f-range print-only">Kỳ: ${esc(P.label)} · ${P.range}</div>
@@ -986,15 +984,6 @@ $('#b-report').addEventListener('click', async (e) => {
 $('#b-project').addEventListener('change', (e) => { BST.project = e.target.value; bSave(); renderReport(); });
 $('#b-vat').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; BST.vat = b.dataset.v; bSave(); renderReport(); });
 $('#b-ky').addEventListener('change', (e) => { BST.ky = e.target.value; bSave(); renderReport(); });
-// Ô chọn kỳ ở phần Báo cáo theo công trình (liên kết với ô Kỳ trên thanh công cụ)
-$('#b-report').addEventListener('change', (e) => {
-  if (e.target.id === 'pc-ky') { BST.ky = e.target.value; }
-  else if (e.target.id === 'pc-tu' || e.target.id === 'pc-den') { BST.tu = $('#pc-tu').value; BST.den = $('#pc-den').value; }
-  else return;
-  bSave();
-  renderReport();
-  $('#pc-sec')?.scrollIntoView({ block: 'start' });
-});
 $('#b-ky-custom').addEventListener('change', () => { BST.tu = $('#b-tu').value; BST.den = $('#b-den').value; bSave(); renderReport(); });
 $('#b-reload').addEventListener('click', () => loadReport().catch((err) => alert(err.message)));
 $('#b-report').addEventListener('click', (e) => {

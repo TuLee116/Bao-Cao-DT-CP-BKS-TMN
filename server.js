@@ -377,16 +377,40 @@ api.put('/doanh-thu/:id', canEdit, wrap(async (req, res) => {
   ok ? res.json({ id }) : bad(res, 'Không tìm thấy dòng doanh thu', 404);
 }));
 
+// Phạm vi ảnh hưởng khi xóa 1 dòng HĐ/PL (để hiện cho người dùng xác nhận)
+async function contractImpact(cur) {
+  const items = (await store.listRevenue(cur.du_an_id)).map(calcLine);
+  const self = items.find((r) => r.id === cur.id);
+  const out = { so_hieu: cur.so_hieu, sau_vat: self?.sau_vat || 0, pls: [], qt: { n: 0, sau_vat: 0 }, tv: { n: 0, so_tien: 0 } };
+  if (cur.loai !== 'hd' || cur.ma_loai !== 'HĐ') return out;
+  const so = String(cur.so_ma).toLowerCase();
+  out.pls = items.filter((r) => r.loai === 'hd' && r.ma_loai !== 'HĐ' && String(r.so_ma).toLowerCase() === so)
+    .map((r) => ({ so_hieu: r.so_hieu, sau_vat: r.sau_vat }));
+  const qts = items.filter((r) => r.loai === 'qt' && r.hd_id === cur.id);
+  out.qt = { n: qts.length, sau_vat: qts.reduce((s, r) => s + r.sau_vat, 0) };
+  const tvs = (await store.listTienVe(cur.du_an_id)).filter((r) => r.hd_id === cur.id);
+  out.tv = { n: tvs.length, so_tien: tvs.reduce((s, r) => s + r.so_tien, 0) };
+  return out;
+}
+
+api.get('/doanh-thu/:id/impact', canEdit, wrap(async (req, res) => {
+  const id = parseId(req.params.id);
+  const cur = id && (await store.getRevenue(id));
+  if (!cur) return bad(res, 'Không tìm thấy dòng doanh thu', 404);
+  res.json(await contractImpact(cur));
+}));
+
 api.delete('/doanh-thu/:id', canEdit, wrap(async (req, res) => {
   const id = parseId(req.params.id);
   if (!id) return bad(res, 'ID không hợp lệ');
   const cur = await store.getRevenue(id);
   if (!cur) return bad(res, 'Không tìm thấy dòng doanh thu', 404);
+  const cascade = req.body?.cascade === true;
   if (cur.loai === 'hd') {
     const { qt, tv } = await store.countRevenueRefs(id);
-    if (qt || tv) {
+    if ((qt || tv) && !cascade) {
       const parts = [qt && `${qt} dòng Hoàn thành/Quyết toán`, tv && `${tv} dòng Tiền về`].filter(Boolean).join(' và ');
-      return bad(res, `Không xóa được "${cur.so_hieu}": đang được ${parts} tham chiếu. Hãy đổi Số HĐ của các dòng đó trước.`, 409);
+      return bad(res, `Không xóa được "${cur.so_hieu}": đang được ${parts} tham chiếu. Chọn "Xóa toàn bộ hợp đồng" để xóa kèm.`, 409);
     }
     // Xóa Số HĐ/PL phải nhập Passcode do Quản trị đặt
     const stored = (await store.getSettings())[PASSCODE_KEY];
@@ -398,6 +422,15 @@ api.delete('/doanh-thu/:id', canEdit, wrap(async (req, res) => {
       return bad(res, left > 0 ? `Passcode không đúng (còn ${left} lần thử)` : 'Passcode không đúng. Đã khóa chức năng xóa 15 phút', 403);
     }
     passFails.delete(req.user.id);
+    // Xóa toàn bộ hợp đồng: HĐ + PL cùng Số mã + HT/QT + Tiền về
+    if (cascade && cur.ma_loai === 'HĐ') {
+      const im = await contractImpact(cur);
+      await store.deleteContractCascade(cur);
+      console.log(`[NHẬT KÝ] ${new Date().toISOString()} ${req.user.username} đã XÓA TOÀN BỘ HỢP ĐỒNG "${cur.so_hieu}" ` +
+        `(công trình #${cur.du_an_id}): HĐ ${im.sau_vat}đ; ${im.pls.length} PL [${im.pls.map((p) => p.so_hieu).join(', ')}]; ` +
+        `${im.qt.n} dòng HT/QT ${im.qt.sau_vat}đ; ${im.tv.n} dòng tiền về ${im.tv.so_tien}đ`);
+      return res.status(204).end();
+    }
   }
   const ok = await store.deleteRevenue(id);
   if (ok && cur.loai === 'hd') console.log(`[NHẬT KÝ] ${new Date().toISOString()} ${req.user.username} đã xóa "${cur.so_hieu}" (công trình #${cur.du_an_id}, dòng #${id})`);

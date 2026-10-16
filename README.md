@@ -31,6 +31,7 @@ Web quản lý dự án xây dựng có đăng nhập, phân quyền, khởi t�
 ### Passcode xóa Số HĐ/PL
 - Quản trị đặt/đổi ở tab **Cài đặt** (phải nhập lại mật khẩu đăng nhập). Passcode gồm đúng 8 chữ số, chặn dãy dễ đoán; lưu dạng mã hóa một chiều.
 - Xóa dòng HĐ/PL ở mục 1 bắt buộc nhập passcode; chưa đặt passcode thì không ai xóa được.
+- HĐ đang có PL / HT/QT / Tiền về gắn vào: hộp xác nhận liệt kê toàn bộ dữ liệu kèm theo; nhập đúng passcode sẽ **xóa toàn bộ hợp đồng** (HĐ + PL cùng Số mã + HT/QT + Tiền về) trong một giao dịch.
 - Sai 5 lần / 15 phút → khóa chức năng xóa của tài khoản đó 15 phút.
 - Mọi lần đặt passcode và xóa HĐ/PL đều ghi nhật ký `[NHẬT KÝ]` trong log máy chủ (Railway → Deploy Logs).
 

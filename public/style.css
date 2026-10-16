@@ -214,6 +214,7 @@ tr.hd-orphan td { background: #fffbeb; }
 /* Hộp nhập passcode */
 dialog.pass-dlg { border: 0; border-radius: 16px; padding: 24px; width: min(380px, calc(100vw - 32px)); box-shadow: var(--shadow-lg); font-family: inherit; }
 dialog.pass-dlg::backdrop { background: rgba(19, 38, 74, .55); }
+dialog.pass-dlg p { white-space: pre-line; line-height: 1.6; }
 dialog.pass-dlg h3 { margin: 0; color: var(--danger); font-size: 17px; }
 dialog.pass-dlg input { font-size: 20px; letter-spacing: 6px; text-align: center; }
 button.danger-solid { color: #fff; background: var(--danger); border-color: var(--danger); }

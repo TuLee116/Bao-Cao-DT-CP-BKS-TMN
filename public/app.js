@@ -565,13 +565,26 @@ async function onRevTableClick(e) {
     if (!r) return;
     let body;
     if (r.loai === 'hd') {
-      // Xóa Số HĐ/PL: bắt buộc Passcode do Quản trị đặt
-      const pc = await askPasscode(`Xóa "${r.so_hieu}"?`, `Giá trị sau VAT: ${money(r.sau_vat)} đ. Thao tác này không hoàn tác được.`);
+      // Xóa Số HĐ/PL: bắt buộc Passcode; HĐ có dữ liệu kèm theo -> liệt kê và xóa toàn bộ
+      let im;
+      try { im = await api(`/api/doanh-thu/${r.id}/impact`); } catch (err) { return alert(err.message); }
+      const cascade = r.ma_loai === 'HĐ' && (im.pls.length || im.qt.n || im.tv.n);
+      const lines = [`${r.so_hieu}: ${money(im.sau_vat)} đ sau VAT`];
+      if (cascade) {
+        if (im.pls.length) lines.push(`${im.pls.length} phụ lục: ${im.pls.map((p) => `${p.so_hieu} (${money(p.sau_vat)} đ)`).join(', ')}`);
+        if (im.qt.n) lines.push(`${im.qt.n} dòng Hoàn thành/Quyết toán: ${money(im.qt.sau_vat)} đ`);
+        if (im.tv.n) lines.push(`${im.tv.n} dòng Tiền về: ${money(im.tv.so_tien)} đ`);
+      }
+      const pc = await askPasscode(
+        cascade ? `Xóa toàn bộ hợp đồng "${r.so_hieu}"?` : `Xóa "${r.so_hieu}"?`,
+        (cascade ? 'Sẽ xóa tất cả dữ liệu sau:\n• ' : '') + lines.join('\n• ') + '\nThao tác này không hoàn tác được.');
       if (pc === null) return;
-      body = JSON.stringify({ passcode: pc });
+      body = JSON.stringify({ passcode: pc, cascade: Boolean(cascade) });
     } else if (!confirm(`Xóa dòng "${r.so_hieu}"?`)) return;
     try {
       await api(`/api/doanh-thu/${rdel}`, { method: 'DELETE', body });
+      tvDrafts = null;
+      tvEdits = {};
       await loadRevenue();
     } catch (err) {
       alert(err.message);

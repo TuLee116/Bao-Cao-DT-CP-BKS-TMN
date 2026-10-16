@@ -7,7 +7,8 @@ const BST = { project: '', vat: 'gt', ky: 'nam', tu: '', den: '', chi_tiet: fals
 try { Object.assign(BST, JSON.parse(localStorage.getItem('bao_cao') || '{}')); } catch {}
 const bSave = () => { try { localStorage.setItem('bao_cao', JSON.stringify(BST)); } catch {} };
 
-const BCOL = { dt: '#2a78d6', cp: '#eb6834', dk: '#1baf7a', th: '#2a78d6', thu: '#2a78d6', chi: '#eb6834' };
+// Bảng màu doanh nghiệp (đã kiểm tra phân biệt màu cho người mù màu): Doanh thu navy · Chi phí đồng · Lợi nhuận teal
+const BCOL = { dt: '#2c5fa3', cp: '#c27a3e', dk: '#16968a', th: '#2c5fa3', thu: '#2c5fa3', chi: '#c27a3e', ts: '#7e5aa6' };
 const bf = new Intl.NumberFormat('vi-VN');
 const bn = (n) => bf.format(Math.round(n || 0));
 const bm = (n) => `<span class="${n < 0 ? 'neg' : ''}">${bn(n)}</span>`;
@@ -150,7 +151,7 @@ function bDelta(cur, prev, good = true) {
   const ok = up === good;
   return `<span class="f-delta ${ok ? 'ok' : 'bad'}">${up ? '▲' : '▼'} ${Math.abs(p * 100).toFixed(1).replace('.', ',')}% <small>so với kỳ trước</small></span>`;
 }
-const PROJ_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#6250d6'];
+const PROJ_COLORS = ['#2c5fa3', '#c27a3e', '#16968a', '#7e5aa6', '#9a8a2e', '#b04f5a', '#3f8fbf'];
 
 function bFinHtml(list, v) {
   const P = bPeriod(list);
@@ -194,12 +195,12 @@ function bFinHtml(list, v) {
         ${bar('Doanh thu', ytd.dt, tg.dt, BCOL.dt, tyFmt)}
         ${bar('Chi phí', ytd.cp, tg.cp, BCOL.cp, tyFmt)}
         ${bar('Lợi nhuận', ytd.ln, tg.ln, BCOL.dk, tyFmt)}
-        ${bar('Tỷ suất LN', tsAct * 100, tg.ty_suat, '#6250d6', (x) => `${Number(x).toFixed(1).replace('.', ',')}%`)}
+        ${bar('Tỷ suất LN', tsAct * 100, tg.ty_suat, BCOL.ts, (x) => `${Number(x).toFixed(1).replace('.', ',')}%`)}
         <div class="muted small">Thực hiện lũy kế 01/${year} – ${ymTxt(P.to)}</div>
       </div>
     </div>
+    <div class="f-box f-big"><h3>Doanh thu – Chi phí – Lợi nhuận <span class="muted">(tỷ đồng · ${P.n > 12 ? 'theo quý' : 'theo tháng'})</span></h3><div id="f-ch-col" class="chart"></div></div>
     <div class="f-row2">
-      <div class="f-box"><h3>Doanh thu – Chi phí – Lợi nhuận <span class="muted">(tỷ đồng)</span></h3><div id="f-ch-col" class="chart"></div></div>
       <div class="f-box"><h3>Cơ cấu doanh thu theo công trình</h3><div id="f-ch-donut" class="chart"></div></div>
       <div class="f-box"><h3>Hiệu quả từng công trình <span class="muted">(tỷ đồng)</span></h3>
         <div class="table-wrap"><table class="b-table f-eff">
@@ -229,7 +230,7 @@ function bFinDraw(list, v) {
   const P = bPeriod(list);
   const pts = bSeries(list, v, P);
   bColChart($('#f-ch-col'), pts, [{ key: 'dt', name: 'Doanh thu', color: BCOL.dt }, { key: 'cp', name: 'Chi phí', color: BCOL.cp }, { key: 'ln', name: 'Lợi nhuận', color: BCOL.dk }],
-    { valueLabels: pts.length <= 6, tipExtra: (p) => `<tr class="sum"><td>Tỷ suất LN</td><td>${bpct(p.ln, p.dt)}</td></tr>`, height: 240 });
+    { valueLabels: 'auto', tipExtra: (p) => `<tr class="sum"><td>Tỷ suất LN</td><td>${bpct(p.ln, p.dt)}</td></tr>`, height: 340, maxBar: 30 });
   const items = list.map((d, i) => ({ label: d.ma_du_an, sub: d.ten_du_an, val: bSumRange([d], v, P.from, P.to).dt, color: PROJ_COLORS[i % PROJ_COLORS.length] }));
   bDonut($('#f-ch-donut'), items);
 }
@@ -372,7 +373,8 @@ function bColChart(el, pts, series, opt = {}) {
   const ticks = bAxis(Math.min(...vals), Math.max(...vals));
   const y0 = ticks[0], y1 = ticks[ticks.length - 1];
   const Y = (v) => pad.t + ih - ((v - y0) / (y1 - y0)) * ih;
-  const slot = iw / pts.length, bw = Math.max(2, Math.min(18, (slot - 4) / series.length - 2));
+  const slot = iw / pts.length, bw = Math.max(2, Math.min(opt.maxBar || 18, (slot * 0.72) / series.length - 2));
+  const showVal = opt.valueLabels === 'auto' ? bw >= 20 : opt.valueLabels;
   const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, width: '100%', role: 'img', 'aria-label': series.map((s) => s.name).join(', ') }, el);
   bLegend(svg, series.map((s) => [s.name, s.color]), pad.l);
   for (const t of ticks) {
@@ -386,7 +388,7 @@ function bColChart(el, pts, series, opt = {}) {
       const v = p[s.key], x = cx - (series.length * (bw + 2)) / 2 + j * (bw + 2);
       const ya = Y(Math.max(0, v)), yb = Y(Math.min(0, v));
       svgEl('rect', { x, y: ya, width: bw, height: Math.max(v ? 1 : 0, yb - ya), rx: Math.min(3, bw / 2), fill: s.color }, svg);
-      if (opt.valueLabels && v) svgEl('text', { x: x + bw / 2, y: v >= 0 ? ya - 4 : yb + 11, 'text-anchor': 'middle', class: 'ax-lbl strong' }, svg).textContent = bTy(v).replace(/,0+$/, '').replace(/(,\d)0$/, '$1');
+      if (showVal && v) svgEl('text', { x: x + bw / 2, y: v >= 0 ? ya - 5 : yb + 12, 'text-anchor': 'middle', class: 'bar-val' }, svg).textContent = (v / 1e9).toLocaleString('vi-VN', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
     });
     if (!(i % every)) svgEl('text', { x: cx, y: H - 10, 'text-anchor': 'middle', class: 'ax-lbl' }, svg).textContent = p.label;
     const hit = svgEl('rect', { x: pad.l + slot * i, y: pad.t, width: slot, height: ih, fill: 'transparent' }, svg);
@@ -1125,13 +1127,13 @@ $('#b-pptx').addEventListener('click', (e) => bBusy(e.target, async () => {
     return { text: `${p >= 0 ? '▲' : '▼'} ${Math.abs(p * 100).toFixed(1).replace('.', ',')}% so với kỳ trước`, color: (p >= 0) === good ? '0A7D32' : 'C2410C' };
   };
   const sF = slide(`Tổng quan tài chính · ${F.P.label}`, `${F.P.range}${F.P.prev ? ` · so với ${ymTxt(F.P.prev.from)} – ${ymTxt(F.P.prev.to)}` : ''} · Đơn vị: tỷ đồng (${vt}; dòng tiền sau VAT)`);
-  [['TỔNG DOANH THU', F.cur.dt, dPct(F.cur.dt, F.prv?.dt), 'Nghiệm thu trong kỳ', 'EDF4FD', '2A78D6'],
-    ['TỔNG CHI PHÍ', F.cur.cp, dPct(F.cur.cp, F.prv?.cp, false), `${bpct(F.cur.cp, F.cur.dt)} doanh thu`, 'FDF1EB', 'EB6834'],
-    ['LỢI NHUẬN', F.cur.ln, dPct(F.cur.ln, F.prv?.ln), `Tỷ suất LN: ${bpct(F.cur.ln, F.cur.dt)}`, 'EAF8F1', '1BAF7A'],
-    ['DÒNG TIỀN THỰC TẾ', F.cur.dong_tien, dPct(F.cur.dong_tien, F.prv?.dong_tien), `Số dư cuối kỳ: ${ty(F.bal)} tỷ`, 'F1EFFC', '6250D6']]
+  [['TỔNG DOANH THU', F.cur.dt, dPct(F.cur.dt, F.prv?.dt), 'Nghiệm thu trong kỳ', 'F7F9FC', '2C5FA3'],
+    ['TỔNG CHI PHÍ', F.cur.cp, dPct(F.cur.cp, F.prv?.cp, false), `${bpct(F.cur.cp, F.cur.dt)} doanh thu`, 'F7F9FC', 'C27A3E'],
+    ['LỢI NHUẬN', F.cur.ln, dPct(F.cur.ln, F.prv?.ln), `Tỷ suất LN: ${bpct(F.cur.ln, F.cur.dt)}`, 'F7F9FC', '16968A'],
+    ['DÒNG TIỀN THỰC TẾ', F.cur.dong_tien, dPct(F.cur.dong_tien, F.prv?.dong_tien), `Số dư cuối kỳ: ${ty(F.bal)} tỷ`, 'F7F9FC', '7E5AA6']]
     .forEach(([t, val, dl, sub, bg, ac], i) => {
       const x = 0.5 + i * 2.62;
-      sF.addShape(pptx.ShapeType.roundRect, { x, y: 1.45, w: 2.47, h: 2.0, fill: { color: bg }, line: { color: bg }, rectRadius: 0.1 });
+      sF.addShape(pptx.ShapeType.roundRect, { x, y: 1.45, w: 2.47, h: 2.0, fill: { color: bg }, line: { color: LINE }, rectRadius: 0.06 });
       sF.addShape(pptx.ShapeType.rect, { x, y: 1.45, w: 2.47, h: 0.07, fill: { color: ac } });
       sF.addText(t, { x: x + 0.15, y: 1.6, w: 2.2, h: 0.3, fontFace: FONT, fontSize: 10.5, bold: true, color: ac });
       sF.addText([{ text: ty(val), options: { fontSize: 24, bold: true, color: val < 0 ? 'D92D35' : NAVY } }, { text: ' tỷ', options: { fontSize: 11, color: MUTED } }], { x: x + 0.15, y: 1.92, w: 2.25, h: 0.55, fontFace: FONT });
@@ -1142,7 +1144,7 @@ $('#b-pptx').addEventListener('click', (e) => bBusy(e.target, async () => {
   sF.addShape(pptx.ShapeType.roundRect, { x: 11.0, y: 1.45, w: 1.83, h: 2.0, fill: { color: 'FFFFFF' }, line: { color: LINE }, rectRadius: 0.1 });
   sF.addText(`Mục tiêu ${F.year}`, { x: 11.1, y: 1.52, w: 1.7, h: 0.3, fontFace: FONT, fontSize: 10.5, bold: true, color: NAVY });
   const tsY = F.ytd.dt ? (F.ytd.ln / F.ytd.dt) * 100 : 0;
-  [['Doanh thu', F.ytd.dt, F.tg.dt, '2A78D6'], ['Chi phí', F.ytd.cp, F.tg.cp, 'EB6834'], ['Lợi nhuận', F.ytd.ln, F.tg.ln, '1BAF7A'], ['Tỷ suất LN', tsY, F.tg.ty_suat, '6250D6']].forEach(([l, a, t, c], i) => {
+  [['Doanh thu', F.ytd.dt, F.tg.dt, '2C5FA3'], ['Chi phí', F.ytd.cp, F.tg.cp, 'C27A3E'], ['Lợi nhuận', F.ytd.ln, F.tg.ln, '16968A'], ['Tỷ suất LN', tsY, F.tg.ty_suat, '7E5AA6']].forEach(([l, a, t, c], i) => {
     const y = 1.88 + i * 0.38;
     const pc = t > 0 ? a / t : 0;
     sF.addText([{ text: l, options: { color: INK } }, { text: t > 0 ? `  ${pc < 0 ? '<0' : Math.round(pc * 100)}%` : '  chưa đặt', options: { bold: true, color: pc < 0 ? 'D92D35' : c } }], { x: 11.1, y, w: 1.7, h: 0.2, fontFace: FONT, fontSize: 8.5 });
@@ -1161,7 +1163,7 @@ $('#b-pptx').addEventListener('click', (e) => bBusy(e.target, async () => {
   if (F.series.length) {
     const sC = slide(`Doanh thu – Chi phí – Lợi nhuận · ${F.P.label}`, `Đơn vị: tỷ đồng (${vt})`);
     sC.addChart(pptx.ChartType.bar, ['dt', 'cp', 'ln'].map((k, i) => ({ name: ['Doanh thu', 'Chi phí', 'Lợi nhuận'][i], labels: F.series.map((p) => p.label), values: F.series.map((p) => p[k] / 1e9) })),
-      { ...chartOpt, x: 0.5, w: 7.6, barDir: 'col', catAxisLabelPos: 'low', barGrouping: 'clustered', chartColors: ['2A78D6', 'EB6834', '1BAF7A'], showValue: F.series.length <= 6, dataLabelFormatCode: '#,##0.0', dataLabelFontSize: 8 });
+      { ...chartOpt, x: 0.5, w: 7.6, barDir: 'col', catAxisLabelPos: 'low', barGrouping: 'clustered', chartColors: ['2C5FA3', 'C27A3E', '16968A'], showValue: F.series.length <= 6, dataLabelFormatCode: '#,##0.0', dataLabelFontSize: 8 });
     const pos = F.rows.filter((x) => x.dt > 0).sort((a, b) => b.dt - a.dt);
     if (pos.length) {
       sC.addText('Cơ cấu doanh thu theo công trình', { x: 8.4, y: 1.35, w: 4.4, h: 0.3, fontFace: FONT, fontSize: 12, bold: true, color: NAVY });
@@ -1182,9 +1184,9 @@ $('#b-pptx').addEventListener('click', (e) => bBusy(e.target, async () => {
   };
   const rowLab = (y, t, sub) => s2.addText([{ text: t.toUpperCase(), options: { bold: true, color: NAVY } }, { text: `  (${sub})`, options: { color: MUTED } }], { x: 0.5, y: y - 0.34, w: 12, h: 0.3, fontFace: FONT, fontSize: 12 });
   const cols = [0.5, 4.7, 8.9];
-  [['Dự kiến', 'theo HĐ', 1.62, [['Doanh thu dự kiến', T.dk.dt[v], vt, TEAL], ['Chi phí dự kiến', T.dk.cp[v], `${bpct(T.dk.cp[v], T.dk.dt[v])} doanh thu`, 'EB6834'], ['Lợi nhuận dự kiến', lnDk, `Tỷ suất ${bpct(lnDk, T.dk.dt[v])}`, NAVY]]],
-    ['Thực hiện', 'đến nay', 3.37, [['Doanh thu thực hiện', T.th.dt[v], `Đạt ${bpct(T.th.dt[v], T.dk.dt[v])} dự kiến`, TEAL], ['Chi phí thực hiện', T.th.cp[v], `${bpct(T.th.cp[v], T.th.dt[v])} doanh thu`, 'EB6834'], ['Lợi nhuận thực hiện', lnTh, `Tỷ suất ${bpct(lnTh, T.th.dt[v])}`, NAVY]]],
-    ['Dòng tiền & công nợ', 'sau VAT', 5.12, [['Tiền về', T.tien_ve, `${bpct(T.tien_ve, T.dk.dt.sv)} giá trị HĐ`, TEAL], ['Còn phải thu', T.th.con_lai, 'Theo khối lượng nghiệm thu', 'EB6834'], ['Còn phải trả thầu phụ', T.tp_con_lai, `Trả nợ gốc vay: ${ty(T.tra_goc)}`, NAVY]]]]
+  [['Dự kiến', 'theo HĐ', 1.62, [['Doanh thu dự kiến', T.dk.dt[v], vt, TEAL], ['Chi phí dự kiến', T.dk.cp[v], `${bpct(T.dk.cp[v], T.dk.dt[v])} doanh thu`, 'C27A3E'], ['Lợi nhuận dự kiến', lnDk, `Tỷ suất ${bpct(lnDk, T.dk.dt[v])}`, NAVY]]],
+    ['Thực hiện', 'đến nay', 3.37, [['Doanh thu thực hiện', T.th.dt[v], `Đạt ${bpct(T.th.dt[v], T.dk.dt[v])} dự kiến`, TEAL], ['Chi phí thực hiện', T.th.cp[v], `${bpct(T.th.cp[v], T.th.dt[v])} doanh thu`, 'C27A3E'], ['Lợi nhuận thực hiện', lnTh, `Tỷ suất ${bpct(lnTh, T.th.dt[v])}`, NAVY]]],
+    ['Dòng tiền & công nợ', 'sau VAT', 5.12, [['Tiền về', T.tien_ve, `${bpct(T.tien_ve, T.dk.dt.sv)} giá trị HĐ`, TEAL], ['Còn phải thu', T.th.con_lai, 'Theo khối lượng nghiệm thu', 'C27A3E'], ['Còn phải trả thầu phụ', T.tp_con_lai, `Trả nợ gốc vay: ${ty(T.tra_goc)}`, NAVY]]]]
     .forEach(([t, sub, y, cards]) => { rowLab(y, t, sub); cards.forEach(([l, val, s, c], i) => card(cols[i], y, l, val, s, c)); });
 
   // 3–4. Biểu đồ theo tháng (biểu đồ gốc PowerPoint, sửa được)
@@ -1193,30 +1195,30 @@ $('#b-pptx').addEventListener('click', (e) => bBusy(e.target, async () => {
     slide('Doanh thu – Chi phí thực hiện (lũy kế)', `Đơn vị: tỷ đồng (${vt})`).addChart(pptx.ChartType.line, [
       { name: 'Doanh thu', labels: pts.map((p) => p.label), values: pts.map((p) => p.luy_dt / 1e9) },
       { name: 'Chi phí', labels: pts.map((p) => p.label), values: pts.map((p) => p.luy_cp / 1e9) },
-    ], { ...chartOpt, chartColors: ['2A78D6', 'EB6834'], lineSize: 2, lineDataSymbolSize: 5 });
+    ], { ...chartOpt, chartColors: ['2C5FA3', 'C27A3E'], lineSize: 2, lineDataSymbolSize: 5 });
     slide('Dòng tiền thực tế theo tháng', 'Thu = tiền về; Chi = chi phí + thanh toán thầu phụ + trả nợ gốc · Đơn vị: tỷ đồng (sau VAT)').addChart(pptx.ChartType.bar, [
       { name: 'Thu', labels: pts.map((p) => p.label), values: pts.map((p) => p.thu / 1e9) },
       { name: 'Chi', labels: pts.map((p) => p.label), values: pts.map((p) => p.chi / 1e9) },
-    ], { ...chartOpt, barDir: 'col', barGrouping: 'clustered', chartColors: ['2A78D6', 'EB6834'] });
+    ], { ...chartOpt, barDir: 'col', barGrouping: 'clustered', chartColors: ['2C5FA3', 'C27A3E'] });
   }
   // 5. Cơ cấu chi phí
   const cg = bCostGroups(list, v).slice(0, 10).reverse();
   if (cg.length) {
     slide('Cơ cấu chi phí dự kiến theo nhóm', `Đơn vị: tỷ đồng (${vt})`).addChart(pptx.ChartType.bar, [{ name: 'Chi phí', labels: cg.map((x) => x.ten), values: cg.map((x) => x.val / 1e9) }],
-      { ...chartOpt, barDir: 'bar', catAxisLabelPos: 'low', chartColors: ['EB6834'], showLegend: false, showValue: true, dataLabelFormatCode: '#,##0.00', dataLabelFontSize: 9 });
+      { ...chartOpt, barDir: 'bar', catAxisLabelPos: 'low', chartColors: ['C27A3E'], showLegend: false, showValue: true, dataLabelFormatCode: '#,##0.00', dataLabelFontSize: 9 });
   }
   // 6. Lợi nhuận theo dự án / theo HĐ
   if (one) {
     const tp = (x) => (v === 'gt' ? x.qt_gt : x.qt_sv);
     if (one.hds.length) slide('Lãi gộp dự kiến theo HĐ chủ đầu tư', `Doanh thu dự kiến − giá trị thầu phụ thuộc HĐ · Đơn vị: tỷ đồng (${vt})`).addChart(pptx.ChartType.bar,
       [{ name: 'Lãi gộp dự kiến', labels: one.hds.map((x) => x.so_ma), values: one.hds.map((x) => (x.dk[v] - tp(x.tp)) / 1e9) }],
-      { ...chartOpt, barDir: 'bar', catAxisLabelPos: 'low', chartColors: ['1BAF7A'], showLegend: false, showValue: true, dataLabelFormatCode: '#,##0.00', dataLabelFontSize: 9 });
+      { ...chartOpt, barDir: 'bar', catAxisLabelPos: 'low', chartColors: ['16968A'], showLegend: false, showValue: true, dataLabelFormatCode: '#,##0.00', dataLabelFontSize: 9 });
   } else {
     const rows = [...list].reverse();
     slide('Lợi nhuận theo dự án', `Dự kiến và thực hiện · Đơn vị: tỷ đồng (${vt})`).addChart(pptx.ChartType.bar, [
       { name: 'Dự kiến', labels: rows.map((d) => d.ma_du_an), values: rows.map((d) => (d.du_kien.doanh_thu[v] - d.du_kien.chi_phi[v]) / 1e9) },
       { name: 'Thực hiện', labels: rows.map((d) => d.ma_du_an), values: rows.map((d) => (d.thuc_hien.doanh_thu[v] - d.thuc_hien.chi_phi[v]) / 1e9) },
-    ], { ...chartOpt, barDir: 'bar', catAxisLabelPos: 'low', barGrouping: 'clustered', chartColors: ['1BAF7A', '2A78D6'], showValue: true, dataLabelFormatCode: '#,##0.00', dataLabelFontSize: 9 });
+    ], { ...chartOpt, barDir: 'bar', catAxisLabelPos: 'low', barGrouping: 'clustered', chartColors: ['16968A', '2C5FA3'], showValue: true, dataLabelFormatCode: '#,##0.00', dataLabelFontSize: 9 });
     // 7. Bảng tổng hợp dự án
     slide('Tổng hợp theo dự án', `Đơn vị: tỷ đồng (${vt}; tiền về, phải thu, phải trả sau VAT)`).addTable([
       ['Dự án', 'DT dự kiến', 'CP dự kiến', 'LN dự kiến', '%', 'DT thực hiện', 'CP thực hiện', 'LN thực hiện', '%', 'Tiền về', 'Còn phải thu', 'Phải trả TP'].map(hd),

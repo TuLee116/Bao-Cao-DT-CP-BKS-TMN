@@ -121,9 +121,9 @@ function renderProjects() {
 // =====================================================================
 // DASHBOARD (tab Dự án) – số liệu lấy từ Doanh thu + Chi phí
 // =====================================================================
-const C_DT = '#2a78d6'; // Doanh thu
-const C_CP = '#eb6834'; // Chi phí
-const PIE_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#6250d6'];
+const C_DT = '#2c5fa3'; // Doanh thu (navy)
+const C_CP = '#c27a3e'; // Chi phí (đồng)
+const PIE_COLORS = ['#2c5fa3', '#c27a3e', '#16968a', '#7e5aa6', '#9a8a2e', '#b04f5a', '#3f8fbf'];
 const C_OTHER = '#b5b3ab';
 const SVGNS = 'http://www.w3.org/2000/svg';
 

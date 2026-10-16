@@ -26,6 +26,7 @@
       <button data-tab="users" data-role="admin">Tài khoản</button>
       <button data-tab="settings" data-role="admin">Cài đặt</button>
       <button data-tab="profile">Cá nhân</button>
+      <button data-tab="contact">Liên hệ</button>
     </nav>
     <div class="user-box">
       <span id="me-name"></span>
@@ -279,8 +280,19 @@
         </div>
         <div id="demo-msg" class="msg" role="alert"></div>
         <hr>
+        <h2>Trạng thái kỹ thuật</h2>
+        <div id="sys-tech" class="muted small"></div>
+      </div>
+    </section>
+
+    <!-- ================= LIÊN HỆ ================= -->
+    <section id="tab-contact" class="tab-panel" hidden>
+      <div class="card narrow">
         <h2>Thông tin hệ thống</h2>
-        <div id="sys-info" class="muted"></div>
+        <dl class="info-list" id="sys-info"></dl>
+        <hr>
+        <h2>Liên hệ hỗ trợ</h2>
+        <dl class="info-list" id="sys-contact"></dl>
       </div>
     </section>
 

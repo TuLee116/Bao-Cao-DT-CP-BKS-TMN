@@ -47,7 +47,7 @@ function applyBranding(s) {
 // =====================================================================
 // Tab
 // =====================================================================
-const loaders = { projects: loadProjects, revenue: loadRevenueTab, cost: loadCostTab, users: loadUsers, settings: loadSettings, profile: async () => {} };
+const loaders = { projects: loadProjects, revenue: loadRevenueTab, cost: loadCostTab, users: loadUsers, settings: loadSettings, profile: async () => {}, contact: loadContact };
 
 function showTab(name) {
   $$('#tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
@@ -1965,7 +1965,22 @@ const SYS_INFO = {
   so_huu: 'Ban Kiểm soát - TMN',
   phat_trien: 'Le Phan Vinh Tu',
   phien_ban: 'V01.16.10.26',
+  sdt: '0794 570 057',
+  mail: 'lephanvinhtu.tu@gmail.com',
 };
+
+// Tab Liên hệ: mọi tài khoản đều xem được
+function loadContact() {
+  const row = (k, v) => `<dt>${k}</dt><dd>${v}</dd>`;
+  $('#sys-info').innerHTML =
+    row('Tên hệ thống/Website', esc(SYS_INFO.ten)) +
+    row('Đơn vị sở hữu', esc(SYS_INFO.so_huu)) +
+    row('Đơn vị phát triển', esc(SYS_INFO.phat_trien)) +
+    row('Phiên bản hiện tại', esc(SYS_INFO.phien_ban));
+  $('#sys-contact').innerHTML =
+    row('SĐT', `<a href="tel:${SYS_INFO.sdt.replace(/\s/g, '')}">${esc(SYS_INFO.sdt)}</a>`) +
+    row('Mail', `<a href="mailto:${esc(SYS_INFO.mail)}">${esc(SYS_INFO.mail)}</a>`);
+}
 
 async function loadDemoStatus() {
   const { count } = await api('/api/demo');
@@ -2007,13 +2022,8 @@ async function loadSettings() {
     ? '<span class="st st-hoan-thanh">Đã đặt</span> Nhân viên Nhập liệu / Quản trị phải nhập passcode khi xóa Số HĐ/PL.'
     : '<span class="st st-tam-dung">Chưa đặt</span> Hiện chưa ai xóa được Số HĐ/PL cho đến khi đặt passcode.';
   $('#pc-submit').textContent = s.passcode_set ? 'Đổi passcode' : 'Đặt passcode';
-  $('#sys-info').innerHTML = `
-    Tên hệ thống/Website: <b>${esc(SYS_INFO.ten)}</b><br>
-    Đơn vị sở hữu: <b>${esc(SYS_INFO.so_huu)}</b><br>
-    Đơn vị phát triển: <b>${esc(SYS_INFO.phat_trien)}</b><br>
-    Phiên bản hiện tại: <b>${esc(SYS_INFO.phien_ban)}</b>
-    <div class="small" style="margin-top:8px">Cơ sở dữ liệu: ${META.db === 'postgres' ? 'PostgreSQL' : 'Bộ nhớ tạm (chưa kết nối CSDL)'} ·
-    Mã khởi tạo (SETUP_TOKEN): ${META.setup_token_required ? 'đã đặt' : 'không đặt'}</div>`;
+  $('#sys-tech').innerHTML = `Cơ sở dữ liệu: <b>${META.db === 'postgres' ? 'PostgreSQL' : 'Bộ nhớ tạm (chưa kết nối CSDL)'}</b><br>
+    Mã khởi tạo (SETUP_TOKEN): ${META.setup_token_required ? 'đã đặt' : 'không đặt'}`;
 }
 
 sForm?.addEventListener('submit', async (e) => {

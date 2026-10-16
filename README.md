@@ -52,6 +52,7 @@ Số liệu lấy tự động từ tab Doanh thu và Chi phí (API `GET /api/da
 - **Tổng số HĐ**: số Hợp đồng gốc (không đếm PL).
 - **Doanh thu**: HĐ đã có Giá trị HT/QT → lấy tổng HT/QT; chưa có → giá trị HĐ + các PL.
 - **Chi phí**: tổng tab Chi phí (trực tiếp + gián tiếp + tài chính; thầu phụ theo HT/QT).
+  **Trả nợ gốc vay** không phải chi phí (chỉ là dòng tiền trả nợ) nên không tính vào chi phí / lợi nhuận; **Trả lãi vay** có tính. Trả nợ vay không chịu VAT.
 - **Lợi nhuận** = Doanh thu − Chi phí; **Còn lại (phải thu)** = Doanh thu sau VAT − Tiền về.
 - Chọn cơ sở **Trước VAT / Sau VAT**; lọc theo dự án (hoặc bấm vào biểu đồ quạt).
 - Biểu đồ đường: Doanh thu – Chi phí lũy kế theo tháng (theo ngày chứng từ; dòng thiếu ngày vẫn tính trong số tổng).

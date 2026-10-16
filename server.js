@@ -5,7 +5,7 @@ const store = require('./lib/db');
 const auth = require('./lib/auth');
 const { TRANG_THAI, ROLES, validateProject, validateUser, validateSettings, validateRevenue, validateTienVe, validateCost, validateTp, validateTpLine, validateTpPay, passwordErrors, passcodeErrors } = require('./lib/validate');
 const { buildContracts, summarizeContracts } = require('./lib/subcontract');
-const { KHOI_CHI_PHI, NHOM_CHI_PHI, summarizeCost, sortCost } = require('./lib/cost');
+const { KHOI_CHI_PHI, NHOM_CHI_PHI, summarizeCost, sortCost, costLine } = require('./lib/cost');
 const { summarizeProject } = require('./lib/dashboard');
 const { LOAI_DOANH_THU, calcLine, summarize, sortRevenue, tienVeLabel, sortTienVe, summarizeTienVe } = require('./lib/revenue');
 
@@ -306,7 +306,7 @@ api.get('/dashboard', wrap(async (_req, res) => {
       store.listRevenue(p.id), store.listTienVe(p.id), store.listCost(p.id), store.listTp(p.id)]);
     return {
       id: p.id, ma_du_an: p.ma_du_an, ten_du_an: p.ten_du_an,
-      ...summarizeProject({ rev: rev.map(calcLine), tienVe, cost: cost.map(calcLine), tp: buildContracts(tp) }),
+      ...summarizeProject({ rev: rev.map(calcLine), tienVe, cost: cost.map(costLine), tp: buildContracts(tp) }),
     };
   }));
   res.json({ du_an });
@@ -468,7 +468,7 @@ api.get('/du-an/:id/chi-phi', wrap(async (req, res) => {
   if (!id) return bad(res, 'ID không hợp lệ');
   const du_an = await store.getProject(id);
   if (!du_an) return bad(res, 'Không tìm thấy công trình', 404);
-  const items = sortCost(await store.listCost(id)).map(calcLine);
+  const items = sortCost(await store.listCost(id)).map(costLine);
   const thau_phu = buildContracts(await store.listTp(id));
   // Nhóm 1 Thầu phụ = giá trị HT/QT của các HĐTP (+ dòng thầu phụ nhập kiểu cũ nếu có)
   const tpAsCost = thau_phu.map((c) => ({ nhom: 'thau_phu', gia_tri: c.qt_gia_tri, tien_vat: c.qt_tien_vat, sau_vat: c.qt_sau_vat, tam_tinh: c.tam_tinh }));

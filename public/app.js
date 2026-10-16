@@ -167,7 +167,8 @@ function renderDashboard() {
   const basis = v === 'gt' ? 'trước VAT' : 'sau VAT';
   setK('hd', String(soHd), `${rows.length} dự án`);
   setK('dt', dt, `VNĐ, ${basis}`);
-  setK('cp', cp, `${pctTxt(cp, dt)} doanh thu`);
+  const goc = sum((d) => d.tra_goc[v]);
+  setK('cp', cp, `${pctTxt(cp, dt)} doanh thu` + (goc ? ` · không gồm trả gốc vay ${fmt.format(goc)}` : ''));
   setK('ln', ln, `Tỷ suất LN: ${pctTxt(ln, dt)}`, ln < 0);
   setK('cl', cl, `Đã thu ${fmt.format(tv)} (${pctTxt(tv, dtSv)}), sau VAT`, cl < 0);
 
@@ -1266,6 +1267,7 @@ function setCostMode() {
   $$('.c-gen', cForm).forEach((el) => (el.hidden = tp));
   if (tp) $('#c-sub-wrap').hidden = true;
   updateNoiDungHint();
+  if (cForm.elements.sau_vat) updateCostPreview();
   const req = NHOM().find((n) => n.code === cForm.elements.nhom.value)?.bat_buoc_doi_tac;
   $('#c-dt-label').textContent = tp ? 'Nhà thầu phụ' : req ? `${req} *` : 'Đối tác / Nhà cung cấp';
   // Trả nợ vay ngân hàng: gợi ý tên ngân hàng (đã nhập trước đó + ngân hàng phổ biến)
@@ -1315,8 +1317,9 @@ function updateCostPreview() {
   }
   const tv = calcVat(gt, vat);
   cForm.elements.sau_vat.value = money(gt + tv);
-  note.textContent = vat ? `Tiền VAT: ${money(tv)}` : 'Tạm tính (chưa có VAT)';
-  note.className = 'calc-note vat-note' + (vat ? '' : ' warn');
+  const noVat = NHOM().find((n) => n.code === cForm.elements.nhom.value)?.khong_vat;
+  note.textContent = vat ? `Tiền VAT: ${money(tv)}` : noVat ? 'Không chịu VAT' : 'Tạm tính (chưa có VAT)';
+  note.className = 'calc-note vat-note' + (vat || noVat ? '' : ' warn');
 }
 
 function initCostForm() {
@@ -1397,7 +1400,8 @@ function renderCost() {
   const edit = canEdit();
   const pct = (v) => (tong.sau_vat ? ((v / tong.sau_vat) * 100).toFixed(1) + '%' : '—');
   $('#c-k-sau').textContent = money(tong.sau_vat);
-  $('#c-k-sub').innerHTML = `Trước VAT ${money(tong.gia_tri)} · VAT ${money(tong.tien_vat)}${tong.tam_tinh ? ' · <span class="warn-text">có tạm tính</span>' : ''}`;
+  $('#c-k-sub').innerHTML = `Trước VAT ${money(tong.gia_tri)} · VAT ${money(tong.tien_vat)}${tong.tam_tinh ? ' · <span class="warn-text">có tạm tính</span>' : ''}` +
+    (tong.ngoai_cp.so_dong ? `<br>Không gồm trả nợ gốc vay: ${money(tong.ngoai_cp.sau_vat)}` : '');
   for (const k of KHOI()) {
     const t = tong.theo_khoi[k.code];
     $(`#c-k-${k.code}`).textContent = money(t.sau_vat);
@@ -1411,14 +1415,15 @@ function renderCost() {
       <td class="num">${pct(t.sau_vat)}</td>`;
   const toggle = (key, n) => (n ? `<button class="grp-toggle" data-cgrp="${key}">${costOpen.has(key) ? '▾' : '▸'}</button>` : '<span class="grp-toggle-sp"></span>');
   const addBtn = (nhom, sub) => (edit ? `<button class="sm" data-cadd="${nhom}" data-csub="${sub || ''}" title="Thêm chi phí vào mục này">+</button>` : '');
+  const ngoaiCp = (r) => Boolean(NHOM().find((n) => n.code === r.nhom)?.sub.find((sc) => sc.code === r.nhom_con)?.khong_tinh_cp);
   const detail = (r, no, indent) => `
-    <tr class="c-row" title="${esc(r.nguoi_cap_nhat ? 'Cập nhật bởi ' + r.nguoi_cap_nhat : '')}">
+    <tr class="c-row${ngoaiCp(r) ? ' ngoai-cp' : ''}" title="${esc(r.nguoi_cap_nhat ? 'Cập nhật bởi ' + r.nguoi_cap_nhat : '')}">
       <td class="num muted">${no}</td>
       <td class="indent-${indent}"><span class="tree">└</span>${esc(r.noi_dung)}</td>
       <td class="c-dt">${esc(r.doi_tac)}${r.so_ct ? `<div class="muted small">${esc(r.so_ct)}</div>` : ''}</td><td>${dmy(r.ngay)}</td>
-      <td class="num">${money(r.gia_tri)}</td><td class="num">${vatBadge(r.vat)}</td>
+      <td class="num">${money(r.gia_tri)}</td><td class="num">${r.khong_vat && !r.vat ? '<span class="muted small">Không VAT</span>' : vatBadge(r.vat)}</td>
       <td class="num">${money(r.tien_vat)}</td><td class="num strong">${money(r.sau_vat)}</td>
-      <td class="num muted">${pct(r.sau_vat)}</td>
+      <td class="num muted">${ngoaiCp(r) ? '—' : pct(r.sau_vat)}</td>
       <td class="c-note">${esc(r.ghi_chu)}</td>
       <td class="row-actions">${edit ? `<button class="sm" data-cedit="${r.id}">Sửa</button><button class="danger sm" data-cdel="${r.id}">Xóa</button>` : ''}</td>
     </tr>`;
@@ -1455,11 +1460,20 @@ function renderCost() {
         const key = `${n.code}:${sc.code}`;
         const sr = rows.filter((r) => r.nhom_con === sc.code);
         const st = g.sub[sc.code];
-        html += `<tr class="c-g2"><td class="num muted">${no}.${j + 1}</td>
+        html += `<tr class="c-g2${sc.khong_tinh_cp ? ' ngoai-cp' : ''}"><td class="num muted">${no}.${j + 1}</td>
           <td colspan="3" class="indent-1">${toggle(key, sr.length)}${esc(sc.ten)} <span class="muted small">(${st.so_dong} dòng)</span></td>
-          ${sumCells(st)}<td></td><td class="row-actions">${addBtn(n.code, sc.code)}</td></tr>`;
+          ${sc.khong_tinh_cp ? sumCells(st).replace(/<td class="num">[^<]*<\/td>\s*$/, '<td class="num muted">—</td>') : sumCells(st)}<td></td><td class="row-actions">${addBtn(n.code, sc.code)}</td></tr>`;
         if (costOpen.has(key)) sr.forEach((r, x) => { html += detail(r, `${no}.${j + 1}.${x + 1}`, 2); });
       });
+      // Dòng cũ chưa chọn hạng mục (vd: Trả nợ vay nhập trước khi tách gốc/lãi) -> cần Sửa để phân loại
+      const orphan = rows.filter((r) => !n.sub.some((sc) => sc.code === r.nhom_con));
+      if (orphan.length) {
+        const key = `${n.code}:_`;
+        html += `<tr class="c-g2"><td class="num muted">${no}.${n.sub.length + 1}</td>
+          <td colspan="3" class="indent-1">${toggle(key, orphan.length)}<span class="warn-text">Chưa phân loại hạng mục – bấm Sửa để chọn</span> <span class="muted small">(${orphan.length} dòng)</span></td>
+          <td colspan="5"></td><td></td><td></td></tr>`;
+        if (costOpen.has(key)) orphan.forEach((r, x) => { html += detail(r, `${no}.${n.sub.length + 1}.${x + 1}`, 2); });
+      }
     });
     return html;
   };

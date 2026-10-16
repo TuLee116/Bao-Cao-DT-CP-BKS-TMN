@@ -261,6 +261,8 @@ button.danger-solid:hover { background: #b91c1c; }
 input.invalid { border-color: var(--danger); background: #fff5f5; }
 tfoot td { font-weight: 700; color: var(--navy); background: #eef4fb; border-top: 2px solid #c9d8ee; border-bottom: 0; }
 
+tr.ngoai-cp td { color: var(--muted); font-style: italic; }
+
 /* ---------- Dashboard tổng (tab Dự án) ---------- */
 .dash-head .toolbar { margin-bottom: 16px; }
 .dash-kpis { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }

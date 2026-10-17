@@ -98,7 +98,7 @@ function renderProjects() {
         <td><a href="#" class="p-open" data-brep="${r.id}" title="Xem báo cáo công trình"><b class="p-ma">${esc(r.ma_du_an)}</b><div>${esc(r.ten_du_an)}</div></a>${r.cong_suat || r.loai_cong_trinh || r.dia_diem ? `<div class="muted small">${esc([r.cong_suat ? kwp(r.cong_suat) : '', r.loai_cong_trinh, r.dia_diem].filter(Boolean).join(' · '))}</div>` : ''}</td>
         <td>${esc(r.chu_dau_tu)}</td>
         <td class="num">${fmt.format(dt)}</td>
-        <td class="num">${fmt.format(cp)}</td>
+        <td class="num">${fmt.format(cp)}${d && d.thuc_hien.do_dang?.[v] ? `<div class="muted small" title="Chi phí công trình chưa hoàn thành – chưa trừ vào lợi nhuận">dở dang ${fmt.format(d.thuc_hien.do_dang[v])}</div>` : ''}</td>
         <td class="num">${money(dt - cp)}</td>
         <td><span class="bar"><i style="width:${Math.min(100, Number(r.tien_do) || 0)}%"></i></span>${r.tien_do}%</td>
         <td><span class="st st-${slug(r.trang_thai)}">${esc(r.trang_thai)}</span></td>
@@ -226,7 +226,7 @@ $('#p-csv').addEventListener('click', () => {
   const vt = v === 'gt' ? ' (trước VAT)' : ' (sau VAT)';
   const head = ['Mã DA', 'Tên dự án', 'Khách hàng', 'Số HĐ',
     'DT dự kiến' + vt, 'CP dự kiến' + vt, 'LN dự kiến' + vt, 'DT thực hiện' + vt, 'CP thực hiện' + vt, 'LN thực hiện' + vt,
-    'Tiền về', 'Còn lại theo HĐ', 'Còn phải thu (theo nghiệm thu)', 'Tiến độ %', 'Trạng thái', 'Ngày bắt đầu', 'Ngày kết thúc'];
+    'Tiền về', 'Còn lại theo HĐ', 'Còn phải thu (theo hoàn thành)', 'Tiến độ %', 'Trạng thái', 'Ngày bắt đầu', 'Ngày kết thúc'];
   const line = (r) => {
     const d = by.get(r.id);
     if (!d) return [r.ma_du_an, r.ten_du_an, r.chu_dau_tu, '', '', '', '', '', '', '', '', '', '', r.tien_do, r.trang_thai, r.ngay_bat_dau, r.ngay_ket_thuc];
@@ -250,7 +250,7 @@ $('#p-csv').addEventListener('click', () => {
 // Công thức giống máy chủ (lib/revenue.js): Tiền VAT = làm tròn(Giá trị × VAT% / 100); VAT 0% = tạm tính
 const REV_LABEL = {
   hd: { title: '1. Hợp đồng / Phụ lục', short: 'HĐ/PL', so: 'Số HĐ / Phụ lục *', soPh: '' },
-  qt: { title: '2. Giá trị Hoàn thành / Quyết toán', short: 'HT/QT', so: 'Đợt / Hồ sơ HT/QT *', soPh: 'Nghiệm thu đợt 1, Quyết toán...' },
+  qt: { title: '2. Hoàn thành lắp đặt (ghi nhận doanh thu)', short: 'Hoàn thành', so: 'Hồ sơ hoàn thành *', soPh: 'Hoàn thành lắp đặt, đóng điện' },
 };
 let revProjectId = null;
 let revData = null;
@@ -294,7 +294,7 @@ function buildRevenueSections() {
       <div class="table-wrap">
         <table class="rev-table">
           <thead><tr>
-            <th class="num">#</th><th>${loai === 'hd' ? 'Số HĐ / Phụ lục' : 'Số HĐ / Đợt – Hồ sơ'}</th><th>Ngày</th>
+            <th class="num">#</th><th>${loai === 'hd' ? 'Số HĐ / Phụ lục' : 'Số HĐ / Hồ sơ hoàn thành'}</th><th>Ngày</th>
             <th class="num">Trước VAT</th><th class="num">VAT</th><th class="num">Tiền VAT</th>
             <th class="num">Sau VAT</th><th>Ghi chú</th><th>Người cập nhật</th>${canEdit() ? '<th></th>' : ''}
           </tr></thead>
@@ -535,7 +535,7 @@ function qtGroupsHtml(rows) {
     const n = gi + 1;
     const open = !g.k || qtOpen.has(g.k);
     const sum = (f) => g.rows.reduce((s, r) => s + r[f], 0);
-    const daQt = g.rows.some((r) => normVn(r.so_hieu).includes('quyet toan'));
+    const daQt = g.rows.length > 0; // đã có dòng hoàn thành lắp đặt
     const tamTinh = g.rows.some((r) => r.tam_tinh);
     const base = hdVal.get(g.k);
     const pctHd = base ? ` · đạt ${(sum('sau_vat') / base * 100).toFixed(1).replace('.', ',')}% giá trị HĐ` : '';
@@ -543,14 +543,14 @@ function qtGroupsHtml(rows) {
       <td class="num">${n}</td>
       <td>${g.k ? `<button class="grp-toggle" data-qtgrp="${g.k}" title="${open ? 'Thu gọn' : 'Mở chi tiết'}">${open ? '▾' : '▸'}</button>
         <span class="kind-tag kind-hd">HĐ</span> <b>${esc(g.head.so_ma || g.head.so_hieu)}</b>` : '<span class="st st-tam-tinh">Chưa gắn HĐ</span>'}
-        <span class="muted small">(${g.rows.length} đợt)</span>
-        ${daQt ? ' <span class="st st-hoan-thanh">Đã quyết toán</span>' : ''}${tamTinh ? ' <span class="st st-tam-tinh">Có tạm tính</span>' : ''}</td>
+        ${g.rows.length > 1 ? `<span class="muted small">(${g.rows.length} dòng)</span>` : ''}
+        ${daQt ? ' <span class="st st-hoan-thanh">Đã hoàn thành</span>' : ''}${tamTinh ? ' <span class="st st-tam-tinh">Có tạm tính</span>' : ''}</td>
       <td></td>
       <td class="num strong">${money(sum('gia_tri'))}</td><td></td>
       <td class="num strong">${money(sum('tien_vat'))}</td>
       <td class="num tv-head-sum">${money(sum('sau_vat'))}</td>
-      <td colspan="2" class="muted small">${g.rows.length} đợt${pctHd}</td>
-      ${edit ? `<td class="row-actions">${g.k && !daQt ? `<button class="sm" data-qtadd="${g.k}" title="Thêm đợt nghiệm thu / quyết toán cho HĐ này">+ Đợt</button>` : ''}</td>` : ''}
+      <td colspan="2" class="muted small">${pctHd.replace(' · ', '')}</td>
+      ${edit ? `<td class="row-actions">${g.k && !daQt ? `<button class="sm" data-qtadd="${g.k}" title="Thêm dòng hoàn thành cho HĐ này">+ Hoàn thành</button>` : ''}</td>` : ''}
     </tr>`;
     return head + (open ? g.rows.map((r, i) => `
       <tr class="tv-child" data-rid="${r.id}">
@@ -691,8 +691,8 @@ async function onRevTableClick(e) {
     const k = Number(qtadd);
     const n = revData.items.filter((r) => r.loai === 'qt' && r.hd_id === k).length;
     f._hdAc?.set(k);
-    f.elements.so_hieu.value = `Nghiệm thu đợt ${n + 1}`;
-    showMsg($('.msg', f), 'Nhập giá trị đợt mới (đổi tên thành "Quyết toán" nếu là hồ sơ quyết toán)');
+    f.elements.so_hieu.value = n ? `Hoàn thành bổ sung ${n}` : 'Hoàn thành lắp đặt';
+    showMsg($('.msg', f), 'Nhập ngày và giá trị hoàn thành lắp đặt – doanh thu và chi phí công trình được ghi nhận từ ngày này');
     f.scrollIntoView({ behavior: 'smooth', block: 'center' });
     setTimeout(() => f.elements.gia_tri.focus(), 300);
     return;
@@ -735,7 +735,7 @@ async function onRevTableClick(e) {
       const lines = [`${r.so_hieu}: ${money(im.sau_vat)} đ sau VAT`];
       if (cascade) {
         if (im.pls.length) lines.push(`${im.pls.length} phụ lục: ${im.pls.map((p) => `${p.so_hieu} (${money(p.sau_vat)} đ)`).join(', ')}`);
-        if (im.qt.n) lines.push(`${im.qt.n} dòng Hoàn thành/Quyết toán: ${money(im.qt.sau_vat)} đ`);
+        if (im.qt.n) lines.push(`${im.qt.n} dòng Hoàn thành lắp đặt: ${money(im.qt.sau_vat)} đ`);
         if (im.tv.n) lines.push(`${im.tv.n} dòng Tiền về: ${money(im.tv.so_tien)} đ`);
       }
       if (im.tp) lines.push(`${im.tp} HĐ thầu phụ đang gắn HĐ này sẽ KHÔNG bị xóa, chỉ chuyển về nhóm "Chưa gắn HĐ khách hàng"`);
@@ -1911,7 +1911,7 @@ $('#demo-seed')?.addEventListener('click', async (e) => {
   try {
     const r = await api('/api/demo', { method: 'POST', body: '{}' });
     const c = r.count;
-    showMsg($('#demo-msg'), `Đã tạo ${c.du_an} dự án · ${c.hd} HĐ khách hàng · ${c.pl} PL · ${c.ht_qt} dòng HT/QT · ${c.tien_ve} dòng tiền về · ${c.thau_phu} HĐ thầu phụ · ${c.tp_thanh_toan} lần thanh toán TP · ${c.chi_phi} dòng chi phí (${(r.ms / 1000).toFixed(1)} giây). Xem ở tab Dự án.`);
+    showMsg($('#demo-msg'), `Đã tạo ${c.du_an} dự án · ${c.hd} HĐ khách hàng · ${c.pl} PL · ${c.ht_qt} dòng hoàn thành · ${c.tien_ve} dòng tiền về · ${c.thau_phu} HĐ thầu phụ · ${c.tp_thanh_toan} lần thanh toán TP · ${c.chi_phi} dòng chi phí (${(r.ms / 1000).toFixed(1)} giây). Xem ở tab Dự án.`);
   } catch (err) {
     showMsg($('#demo-msg'), err.message, 'err');
   }

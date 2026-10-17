@@ -62,15 +62,16 @@ function check(cond, what, detail = '') {
     const hd = rv.items.filter((r) => r.loai === 'hd');
     const qt = rv.items.filter((r) => r.loai === 'qt');
     const masters = hd.filter((r) => r.ma_loai === 'HĐ');
-    // Dự kiến: HĐ đã quyết toán -> HT/QT, chưa -> HĐ + PL;  Thực hiện: tổng HT/QT
+    // Dự kiến: HĐ đã hoàn thành lắp đặt -> giá trị hoàn thành, chưa -> HĐ + PL;  Thực hiện: tổng dòng hoàn thành
     const noAccent = (x) => String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').toLowerCase();
-    let dtGt = 0, dtSv = 0, dtUndated = 0, thGt = 0, thSv = 0, thUndated = 0;
+    let dtGt = 0, dtSv = 0, dtUndated = 0, thGt = 0, thSv = 0, thUndated = 0, chuaXong = 0;
     const used = new Set();
     for (const m of masters) {
       const group = hd.filter((r) => String(r.so_ma).toLowerCase() === String(m.so_ma).toLowerCase());
       const q = qt.filter((r) => r.hd_id === m.id);
       q.forEach((r) => used.add(r.id));
-      const daQt = rv.tien_ve.some((t) => t.hd_id === m.id && t.loai === 'quyet_toan') || q.some((r) => noAccent(r.so_hieu).includes('quyet toan'));
+      const daQt = q.length > 0;
+      if (!daQt) chuaXong++;
       for (const r of daQt && q.length ? q : group) {
         dtGt += r.gia_tri; dtSv += sv(r.gia_tri, r.vat);
         if (!r.ngay) dtUndated += r.gia_tri;
@@ -144,7 +145,16 @@ function check(cond, what, detail = '') {
     check(K.doanh_thu.gt === dtGt && K.doanh_thu.sv === dtSv, `${tag}: Dự kiến – Doanh thu`, `${fmt(K.doanh_thu.gt)} ≠ ${fmt(dtGt)}`);
     check(K.chi_phi.sv === cpSv && Math.abs(K.chi_phi.gt - cpGt) <= khoaN, `${tag}: Dự kiến – Chi phí (= tổng tab Chi phí)`, `${fmt(K.chi_phi.sv)} ≠ ${fmt(cpSv)}`);
     check(H.doanh_thu.gt === thGt && H.doanh_thu.sv === thSv, `${tag}: Thực hiện – Doanh thu (= tổng HT/QT)`, `${fmt(H.doanh_thu.gt)} ≠ ${fmt(thGt)}`);
-    check(H.chi_phi.sv === otherSv + tpThSv && Math.abs(H.chi_phi.gt - (otherGt + tpThGt)) <= khoaN + nPay, `${tag}: Thực hiện – Chi phí`, `${fmt(H.chi_phi.sv)} ≠ ${fmt(otherSv + tpThSv)}`);
+    // Thực hiện: công trình hoàn thành -> ghi nhận đủ chi phí + giá trị thầu phụ; chưa -> 0, phần đã chi để dở dang
+    const xong = masters.length > 0 && chuaXong === 0;
+    check(d.hoan_thanh === xong, `${tag}: trạng thái hoàn thành lắp đặt`);
+    if (xong) {
+      check(H.chi_phi.sv === otherSv + tpSv && Math.abs(H.chi_phi.gt - (otherGt + tpGt)) <= 1, `${tag}: Thực hiện – Chi phí (hoàn thành = toàn bộ chi phí)`, `${fmt(H.chi_phi.sv)} ≠ ${fmt(otherSv + tpSv)}`);
+      check(H.do_dang.sv === 0, `${tag}: hoàn thành thì không còn dở dang`);
+    } else {
+      check(H.chi_phi.sv === 0 && H.chi_phi.gt === 0, `${tag}: chưa hoàn thành – chưa ghi nhận chi phí`);
+      check(H.do_dang.sv === otherSv + tpThSv && Math.abs(H.do_dang.gt - (otherGt + tpThGt)) <= khoaN + nPay, `${tag}: Chi phí dở dang`, `${fmt(H.do_dang.sv)} ≠ ${fmt(otherSv + tpThSv)}`);
+    }
     check(d.tien_ve === tvSum && K.con_lai === dtSv - tvSum && H.con_lai === thSv - tvSum, `${tag}: Tiền về / Còn lại 2 lớp`);
     check(H.doanh_thu.gt <= K.doanh_thu.gt || qt.length > 0, `${tag}: Doanh thu thực hiện không vượt dự kiến khi chưa nghiệm thu`);
     for (const [nm, L] of [['Dự kiến', K], ['Thực hiện', H]]) {

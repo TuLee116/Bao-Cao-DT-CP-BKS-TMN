@@ -1294,7 +1294,7 @@ $('#b-pptx').addEventListener('click', (e) => bBusy(e.target, async () => {
   const scope = one ? `${one.ma_du_an} – ${one.ten_du_an}` : `Tất cả dự án (${list.length})`;
   const dateTxt = new Date(BC.lap_luc).toLocaleDateString('vi-VN');
   pptx.defineSlideMaster({
-    title: 'TMN', background: { color: 'FFFFFF' },
+    title: 'BRAND', background: { color: 'FFFFFF' },
     objects: [
       { rect: { x: 0, y: 0, w: 13.33, h: 0.12, fill: { color: TEAL } } },
       { text: { text: `${BC.ten_cong_ty || ''} · Báo cáo tổng quan dự án · ${dateTxt}`, options: { x: 0.5, y: 7.05, w: 9, h: 0.3, fontFace: FONT, fontSize: 9, color: MUTED } } },
@@ -1302,7 +1302,7 @@ $('#b-pptx').addEventListener('click', (e) => bBusy(e.target, async () => {
     slideNumber: { x: 12.3, y: 7.05, w: 0.6, h: 0.3, fontFace: FONT, fontSize: 9, color: MUTED, align: 'right' },
   });
   const slide = (title, sub) => {
-    const s = pptx.addSlide({ masterName: 'TMN' });
+    const s = pptx.addSlide({ masterName: 'BRAND' });
     s.addText(title, { x: 0.5, y: 0.3, w: 12.3, h: 0.6, fontFace: FONT, fontSize: 24, bold: true, color: NAVY });
     if (sub) s.addText(sub, { x: 0.5, y: 0.85, w: 12.3, h: 0.35, fontFace: FONT, fontSize: 12, color: MUTED });
     return s;
@@ -1322,7 +1322,7 @@ $('#b-pptx').addEventListener('click', (e) => bBusy(e.target, async () => {
   s1.addText('BÁO CÁO TỔNG QUAN DỰ ÁN', { x: 0.8, y: 2.0, w: 11.7, h: 1.0, fontFace: FONT, fontSize: 40, color: 'FFFFFF', bold: true });
   s1.addText(scope, { x: 0.8, y: 3.1, w: 11.7, h: 0.5, fontFace: FONT, fontSize: 20, color: 'FFFFFF' });
   s1.addText(`Ngày lập: ${dateTxt} · Người lập: ${BC.nguoi_lap} · Đơn vị: tỷ đồng (${vt})`, { x: 0.8, y: 4.0, w: 11.7, h: 0.4, fontFace: FONT, fontSize: 14, color: 'BFE9E6' });
-  s1.addText('Produced by the Supervisory Board of Tan Minh Nhan Corporation®', { x: 0.8, y: 6.2, w: 11.7, h: 0.4, fontFace: FONT, fontSize: 11, color: 'BFE9E6' });
+  s1.addText('Produced by the Supervisory Board of T&T Helio', { x: 0.8, y: 6.2, w: 11.7, h: 0.4, fontFace: FONT, fontSize: 11, color: 'BFE9E6' });
 
   // 1b. Tổng quan tài chính theo kỳ
   const F = bFinData(list, v);

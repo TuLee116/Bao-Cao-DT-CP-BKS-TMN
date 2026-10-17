@@ -230,7 +230,7 @@ api.put('/settings', auth.requireRole('admin'), wrap(async (req, res) => {
 // ---------- Tab Liên hệ: Thông tin hệ thống & hỗ trợ ----------
 //   Phiên bản tự động theo version.json; Quản trị có thể ghi đè – bản ghi đè chỉ áp dụng đến lần phát hành kế tiếp
 const CONTACT_KEY = 'lien_he';
-const CONTACT_DEFAULT = { ten: 'Hệ thống nội bộ', so_huu: 'Ban Kiểm soát - TMN', phat_trien: 'Le Phan Vinh Tu', sdt: '0794 570 057', mail: 'lephanvinhtu.tu@gmail.com' };
+const CONTACT_DEFAULT = { ten: 'Hệ thống nội bộ', so_huu: 'Ban Kiểm soát - T&T Helio', phat_trien: 'Le Phan Vinh Tu', sdt: '0794 570 057', mail: 'lephanvinhtu.tu@gmail.com' };
 async function readContact() {
   let saved = {};
   try { saved = JSON.parse((await store.getSettings())[CONTACT_KEY] || '{}'); } catch {}
@@ -802,12 +802,12 @@ function dbErrorPage() {
   return `<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="refresh" content="10"><title>Chưa kết nối CSDL</title><link rel="icon" href="/img/favicon.png">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap&subset=vietnamese"><link rel="stylesheet" href="/style.css"></head>
-<body class="auth-page"><div class="auth-box wide"><div class="auth-brand"><img class="logo-full" src="/img/logo-full.png" alt="TMN">
+<body class="auth-page"><div class="auth-box wide"><div class="auth-brand"><img class="logo-full" src="/img/logo-full.png" alt="T&amp;T Helio">
 <h1>Chưa kết nối được cơ sở dữ liệu</h1><p class="muted">Web đang chạy, đang tự thử kết nối lại (lần ${dbState.attempts}). Trang tự tải lại sau 10 giây.</p></div>
 <div class="stack"><div><b>Nguyên nhân có thể:</b><br>${e(dbHint(dbState.error))}</div>
 <div><b>Lỗi chi tiết:</b><br><code>${e(dbState.error || 'Đang kết nối...')}</code></div>
 <div><b>DATABASE_URL đang trỏ tới:</b><br><code>${e(store.target)}</code></div></div></div>
-<div class="auth-foot">Produced by the Supervisory Board of Tan Minh Nhan Corporation®</div></body></html>`;
+<div class="auth-foot">Produced by the Supervisory Board of T&amp;T Helio</div></body></html>`;
 }
 
 // =====================================================================

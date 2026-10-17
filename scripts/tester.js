@@ -1,6 +1,6 @@
 // Tester hệ thống: đọc dữ liệu thô qua API, tự tính lại ĐỘC LẬP và đối chiếu với Dashboard / tab Doanh thu / tab Chi phí
 // Chạy: node scripts/tester.js <URL> <tên đăng nhập> <mật khẩu> [--demo]   (--demo: chỉ kiểm tra dự án DEMO-...)
-// Ví dụ: node scripts/tester.js https://project-profit-bks-tmn-production.up.railway.app admin 'MatKhau@123'
+// Ví dụ: node scripts/tester.js https://bks-tmn-report.up.railway.app admin 'MatKhau@123'
 const [URL_, USER, PASS] = process.argv.slice(2);
 const ONLY_DEMO = process.argv.includes('--demo');
 if (!URL_ || !USER || !PASS) {

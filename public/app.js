@@ -95,7 +95,7 @@ function renderProjects() {
       const cp = d ? lopOf(d).chi_phi[v] : 0;
       return `
       <tr>
-        <td><a href="#" class="p-open" data-brep="${r.id}" title="Xem báo cáo công trình"><b class="p-ma">${esc(r.ma_du_an)}</b><div>${esc(r.ten_du_an)}</div></a>${r.loai_cong_trinh || r.dia_diem ? `<div class="muted small">${esc([r.loai_cong_trinh, r.dia_diem].filter(Boolean).join(' · '))}</div>` : ''}</td>
+        <td><a href="#" class="p-open" data-brep="${r.id}" title="Xem báo cáo công trình"><b class="p-ma">${esc(r.ma_du_an)}</b><div>${esc(r.ten_du_an)}</div></a>${r.cong_suat || r.loai_cong_trinh || r.dia_diem ? `<div class="muted small">${esc([r.cong_suat ? kwp(r.cong_suat) : '', r.loai_cong_trinh, r.dia_diem].filter(Boolean).join(' · '))}</div>` : ''}</td>
         <td>${esc(r.chu_dau_tu)}</td>
         <td class="num">${fmt.format(dt)}</td>
         <td class="num">${fmt.format(cp)}</td>
@@ -121,6 +121,9 @@ function renderProjects() {
 const SVGNS = 'http://www.w3.org/2000/svg';
 
 // Số gọn cho trục / nhãn: 1,25 tỷ · 850 tr
+// Công suất: 10,5 kWp · 1.250 kWp
+const kwp = (n) => `${new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 2 }).format(Number(n) || 0)} kWp`;
+
 function shortMoney(n) {
   const a = Math.abs(n);
   const f = (x) => new Intl.NumberFormat('vi-VN', { maximumFractionDigits: x >= 100 ? 0 : x >= 10 ? 1 : 2 }).format(x);
@@ -221,7 +224,7 @@ $('#p-csv').addEventListener('click', () => {
   const by = dashById();
   const v = DSTATE.vat;
   const vt = v === 'gt' ? ' (trước VAT)' : ' (sau VAT)';
-  const head = ['Mã DA', 'Tên dự án', 'Chủ đầu tư', 'Số HĐ',
+  const head = ['Mã DA', 'Tên dự án', 'Khách hàng', 'Số HĐ',
     'DT dự kiến' + vt, 'CP dự kiến' + vt, 'LN dự kiến' + vt, 'DT thực hiện' + vt, 'CP thực hiện' + vt, 'LN thực hiện' + vt,
     'Tiền về', 'Còn lại theo HĐ', 'Còn phải thu (theo nghiệm thu)', 'Tiến độ %', 'Trạng thái', 'Ngày bắt đầu', 'Ngày kết thúc'];
   const line = (r) => {
@@ -461,7 +464,7 @@ async function loadRevenue() {
   }
   revData = await api(`/api/du-an/${revProjectId}/doanh-thu`);
   const p = revData.du_an;
-  $('#r-project-info').innerHTML = `Mã: <b>${esc(p.ma_du_an)}</b> · Chủ đầu tư: <b>${esc(p.chu_dau_tu || '—')}</b>`;
+  $('#r-project-info').innerHTML = `Mã: <b>${esc(p.ma_du_an)}</b> · Khách hàng: <b>${esc(p.chu_dau_tu || '—')}</b>`;
   $('#r-body').hidden = false;
   renderRevenue();
   // Cập nhật ô chọn Loại theo dữ liệu mới, không xóa nội dung đang nhập
@@ -735,7 +738,7 @@ async function onRevTableClick(e) {
         if (im.qt.n) lines.push(`${im.qt.n} dòng Hoàn thành/Quyết toán: ${money(im.qt.sau_vat)} đ`);
         if (im.tv.n) lines.push(`${im.tv.n} dòng Tiền về: ${money(im.tv.so_tien)} đ`);
       }
-      if (im.tp) lines.push(`${im.tp} HĐ thầu phụ đang gắn HĐ này sẽ KHÔNG bị xóa, chỉ chuyển về nhóm "Chưa gắn HĐ CĐT"`);
+      if (im.tp) lines.push(`${im.tp} HĐ thầu phụ đang gắn HĐ này sẽ KHÔNG bị xóa, chỉ chuyển về nhóm "Chưa gắn HĐ khách hàng"`);
       const pc = await askPasscode(
         cascade ? `Xóa toàn bộ hợp đồng "${r.so_hieu}"?` : `Xóa "${r.so_hieu}"?`,
         (cascade ? 'Sẽ xóa tất cả dữ liệu sau:\n• ' : '') + lines.join('\n• ') + '\nThao tác này không hoàn tác được.');
@@ -1094,7 +1097,7 @@ async function loadCost() {
   try { localStorage.setItem('revProject', revProjectId); } catch {}
   costData = await api(`/api/du-an/${revProjectId}/chi-phi`);
   const p = costData.du_an;
-  $('#c-project-info').innerHTML = `Mã: <b>${esc(p.ma_du_an)}</b> · Chủ đầu tư: <b>${esc(p.chu_dau_tu || '—')}</b>`;
+  $('#c-project-info').innerHTML = `Mã: <b>${esc(p.ma_du_an)}</b> · Khách hàng: <b>${esc(p.chu_dau_tu || '—')}</b>`;
   $('#c-body').hidden = false;
   renderCost();
 }
@@ -1211,7 +1214,7 @@ async function saveCost() {
         hd: { ngay, gia_tri: parseMoney(e.gia_tri.value), vat: e.vat.value },
       }) });
       costOpen.add('thau_phu');
-      tpOpen.add(Number(e.hd_cdt.value) || 0); // mở nhóm HĐ CĐT vừa thêm
+      tpOpen.add(Number(e.hd_cdt.value) || 0); // mở nhóm HĐ khách hàng vừa thêm
       resetCostForm('thau_phu');
       showMsg(msg, `Đã tạo HĐ thầu phụ ${so}. Nhấp đúp vào số HĐ ở bảng "1. Thầu phụ" để nhập PL, HT/QT, thanh toán.`);
       await loadCost();
@@ -1280,16 +1283,16 @@ function renderCost() {
       const tps = n.code === 'thau_phu' ? costData.thau_phu : [];
       const open = costOpen.has(n.code);
       html += `<tr class="c-g1"><td class="num">${no}</td>
-        <td colspan="3">${toggle(n.code, rows.length || n.sub.length || tps.length)}<b>${esc(n.ten)}</b> <span class="muted small">(${tps.length ? `${new Set(tps.map((c) => c.hd_cdt_id || 0)).size} HĐ CĐT · ${tps.length} HĐTP` + (rows.length ? ' + ' + rows.length + ' dòng' : '') : g.so_dong + ' dòng'})</span>${g.tam_tinh ? ' <span class="st st-tam-tinh">Có tạm tính</span>' : ''}</td>
+        <td colspan="3">${toggle(n.code, rows.length || n.sub.length || tps.length)}<b>${esc(n.ten)}</b> <span class="muted small">(${tps.length ? `${new Set(tps.map((c) => c.hd_cdt_id || 0)).size} HĐ KH · ${tps.length} HĐTP` + (rows.length ? ' + ' + rows.length + ' dòng' : '') : g.so_dong + ' dòng'})</span>${g.tam_tinh ? ' <span class="st st-tam-tinh">Có tạm tính</span>' : ''}</td>
         ${sumCells(g, 'strong')}<td></td><td class="row-actions">${addBtn(n.code, n.sub[0]?.code)}</td></tr>`;
       if (!open) return;
-      // Thầu phụ: gộp theo HĐ chủ đầu tư (cấp 2), HĐ thầu phụ là cấp 3
+      // Thầu phụ: gộp theo HĐ khách hàng (cấp 2), HĐ thầu phụ là cấp 3
       const tpGs = tps.length ? tpGroups(tps) : [];
       tpGs.forEach((tg, j) => {
         const key = `thau_phu:hd${tg.k}`;
         const st = tg.rows.reduce((a, c) => ({ gia_tri: a.gia_tri + c.qt_gia_tri, tien_vat: a.tien_vat + c.qt_tien_vat, sau_vat: a.sau_vat + c.qt_sau_vat }), { gia_tri: 0, tien_vat: 0, sau_vat: 0 });
         html += `<tr class="c-g2${tg.k ? '' : ' tv-sub-warn'}"><td class="num muted">${no}.${j + 1}</td>
-          <td colspan="3" class="indent-1">${toggle(key, tg.rows.length)}${tg.k ? `<span class="kind-tag kind-hd">HĐ CĐT</span> ${esc(hdCdtName(tg.k).replace(/^HĐ\s+/, ''))}` : '<span class="st st-tam-tinh">Chưa gắn HĐ CĐT</span>'}
+          <td colspan="3" class="indent-1">${toggle(key, tg.rows.length)}${tg.k ? `<span class="kind-tag kind-hd">HĐ KH</span> ${esc(hdCdtName(tg.k).replace(/^HĐ\s+/, ''))}` : '<span class="st st-tam-tinh">Chưa gắn HĐ khách hàng</span>'}
             <span class="muted small">(${tg.rows.length} HĐTP)</span></td>
           ${sumCells(st)}<td></td><td></td></tr>`;
         if (!costOpen.has(key)) return;
@@ -1420,11 +1423,11 @@ $('#tab-cost').addEventListener('click', async (e) => {
 // Bộ lọc bảng thầu phụ: từ khóa + trạng thái quyết toán
 const tpFilter = { q: '', loc: '' };
 const tpDaQt = (c) => c.khoa || c.da_qt;
-// Nhóm theo HĐ chủ đầu tư (0 = chưa gắn); mặc định thu gọn, đang lọc/tìm thì tự mở
+// Nhóm theo HĐ khách hàng (0 = chưa gắn); mặc định thu gọn, đang lọc/tìm thì tự mở
 const tpOpen = new Set();
 const hdCdtName = (id) => costData?.hd_cdt?.find((h) => h.id === id)?.so_hieu || '';
 function hdCdtOptions(sel) {
-  return `<option value="">— Chưa gắn HĐ CĐT —</option>` +
+  return `<option value="">— Chưa gắn HĐ khách hàng —</option>` +
     (costData?.hd_cdt || []).map((h) => `<option value="${h.id}" ${h.id === sel ? 'selected' : ''}>${esc(h.so_hieu)}</option>`).join('');
 }
 function tpGroups(list) {
@@ -1478,7 +1481,7 @@ function renderTpCard() {
     return `<tr class="tv-head-row ${g.k ? '' : 'tv-sub-warn'}">
       <td class="num">${n}</td>
       <td colspan="2"><button class="grp-toggle" data-tpgrp="${g.k}" title="${open ? 'Thu gọn' : 'Mở chi tiết'}">${open ? '▾' : '▸'}</button>
-        ${g.k ? `<span class="kind-tag kind-hd">HĐ CĐT</span> <b>${esc(hdCdtName(g.k).replace(/^HĐ\s+/, ''))}</b>` : '<span class="st st-tam-tinh">Chưa gắn HĐ CĐT</span>'}
+        ${g.k ? `<span class="kind-tag kind-hd">HĐ KH</span> <b>${esc(hdCdtName(g.k).replace(/^HĐ\s+/, ''))}</b>` : '<span class="st st-tam-tinh">Chưa gắn HĐ khách hàng</span>'}
         <span class="muted small">(${g.rows.length} HĐTP · ${nQt} đã QT)</span></td>
       <td class="num strong">${money(sumOf(g.rows, 'hd_sau_vat'))}</td>
       <td class="num strong">${money(sumOf(g.rows, 'qt_sau_vat'))}</td>
@@ -1493,7 +1496,7 @@ function renderTpCard() {
   const btn = $('#tp-toggle-all');
   btn.hidden = autoOpen || !list.length;
   btn.textContent = groups.some((g) => !tpOpen.has(g.k)) ? 'Mở tất cả' : 'Thu gọn tất cả';
-  // Ô chọn HĐ CĐT ở form tạo HĐTP
+  // Ô chọn HĐ khách hàng ở form tạo HĐTP
   const sel = cForm?.elements.hd_cdt;
   if (sel) { const keep = Number(sel.value) || null; sel.innerHTML = hdCdtOptions(keep); }
 }
@@ -1621,10 +1624,10 @@ function renderTpDlg() {
     ${canInfo ? `<div class="grid-form tp-info" data-k="info">
       <label>Số HĐ thầu phụ *<input data-f="so_ma" value="${esc(c.so_ma)}" maxlength="120"></label>
       <label>Nhà thầu phụ<input data-f="doi_tac" value="${esc(c.doi_tac)}" maxlength="200"></label>
-      <label>Thuộc HĐ chủ đầu tư<select data-f="hd_cdt_id">${hdCdtOptions(c.hd_cdt_id)}</select></label>
+      <label>Thuộc HĐ khách hàng<select data-f="hd_cdt_id">${hdCdtOptions(c.hd_cdt_id)}</select></label>
       <label class="span-2">Ghi chú<input data-f="ghi_chu" value="${esc(c.ghi_chu)}" maxlength="500"></label>
       <div class="actions"><button class="primary sm" data-save hidden>Lưu thông tin</button></div>
-    </div>` : `<p class="muted">Nhà thầu phụ: <b>${esc(c.doi_tac || '—')}</b> · Thuộc HĐ CĐT: <b>${esc(hdCdtName(c.hd_cdt_id) || 'chưa gắn')}</b>${c.ghi_chu ? ' · ' + esc(c.ghi_chu) : ''}</p>`}
+    </div>` : `<p class="muted">Nhà thầu phụ: <b>${esc(c.doi_tac || '—')}</b> · Thuộc HĐ khách hàng: <b>${esc(hdCdtName(c.hd_cdt_id) || 'chưa gắn')}</b>${c.ghi_chu ? ' · ' + esc(c.ghi_chu) : ''}</p>`}
     <div class="kpis tp-kpis">
       <div class="kpi"><div class="label">Tổng giá trị HĐ</div><div class="value">${money(c.hd_sau_vat)}</div><div class="sub">HĐ + ${c.so_pl} PL, sau VAT</div></div>
       <div class="kpi"><div class="label">Tổng giá trị HT/QT</div><div class="value">${money(c.qt_sau_vat)}</div><div class="sub">${locked ? '= Tổng thanh toán (đã quyết toán)' : c.da_qt ? 'Đã quyết toán theo HĐ/PL' : 'Chưa QT = theo giá trị HĐ/PL'}</div></div>
@@ -1902,13 +1905,13 @@ async function loadDemoStatus() {
   $('#demo-del').disabled = count === 0;
 }
 $('#demo-seed')?.addEventListener('click', async (e) => {
-  if (!confirm('Tạo 12 dự án mẫu DEMO-01…12 để chạy thử?')) return;
+  if (!confirm('Tạo 15 công trình mẫu DEMO-01…15 để chạy thử?')) return;
   e.target.disabled = true;
   showMsg($('#demo-msg'), 'Đang tạo dữ liệu mẫu, vui lòng chờ...');
   try {
     const r = await api('/api/demo', { method: 'POST', body: '{}' });
     const c = r.count;
-    showMsg($('#demo-msg'), `Đã tạo ${c.du_an} dự án · ${c.hd} HĐ CĐT · ${c.pl} PL · ${c.ht_qt} dòng HT/QT · ${c.tien_ve} dòng tiền về · ${c.thau_phu} HĐ thầu phụ · ${c.tp_thanh_toan} lần thanh toán TP · ${c.chi_phi} dòng chi phí (${(r.ms / 1000).toFixed(1)} giây). Xem ở tab Dự án.`);
+    showMsg($('#demo-msg'), `Đã tạo ${c.du_an} dự án · ${c.hd} HĐ khách hàng · ${c.pl} PL · ${c.ht_qt} dòng HT/QT · ${c.tien_ve} dòng tiền về · ${c.thau_phu} HĐ thầu phụ · ${c.tp_thanh_toan} lần thanh toán TP · ${c.chi_phi} dòng chi phí (${(r.ms / 1000).toFixed(1)} giây). Xem ở tab Dự án.`);
   } catch (err) {
     showMsg($('#demo-msg'), err.message, 'err');
   }

@@ -327,7 +327,7 @@ api.delete('/du-an/:id', canEdit, wrap(async (req, res) => {
   ok ? res.status(204).end() : bad(res, 'Không tìm thấy dự án', 404);
 }));
 
-// Nâng cấp dữ liệu (1 lần): HĐ thầu phụ chưa gắn HĐ CĐT mà ghi chú / số HĐTP chứa đúng 1 số HĐ CĐT -> tự gắn
+// Nâng cấp dữ liệu (1 lần): HĐ thầu phụ chưa gắn HĐ khách hàng mà ghi chú / số HĐTP chứa đúng 1 số HĐ khách hàng -> tự gắn
 async function migrateTpHdCdt() {
   const KEY = 'mig_tp_hd_cdt';
   if ((await store.getSettings())[KEY]) return 0;
@@ -345,7 +345,7 @@ async function migrateTpHdCdt() {
     }
   }
   await store.saveSettings({ [KEY]: new Date().toISOString() });
-  if (n) console.log(`[NHẬT KÝ] Tự gắn ${n} HĐ thầu phụ vào HĐ chủ đầu tư theo ghi chú`);
+  if (n) console.log(`[NHẬT KÝ] Tự gắn ${n} HĐ thầu phụ vào HĐ khách hàng theo ghi chú`);
   return n;
 }
 
@@ -574,7 +574,7 @@ api.get('/doanh-thu/:id/impact', canEdit, wrap(async (req, res) => {
   const cur = id && (await store.getRevenue(id));
   if (!cur) return bad(res, 'Không tìm thấy dòng doanh thu', 404);
   const im = await contractImpact(cur);
-  // HĐ thầu phụ đang gắn HĐ CĐT này (không bị xóa, chỉ chuyển về "Chưa gắn HĐ CĐT")
+  // HĐ thầu phụ đang gắn HĐ khách hàng này (không bị xóa, chỉ chuyển về "Chưa gắn HĐ khách hàng")
   im.tp = cur.ma_loai === 'HĐ' ? (await store.listTp(cur.du_an_id)).contracts.filter((t) => t.hd_cdt_id === cur.id).length : 0;
   res.json(im);
 }));
@@ -618,7 +618,7 @@ api.get('/du-an/:id/chi-phi', wrap(async (req, res) => {
   const thau_phu = buildContracts(await store.listTp(id));
   // Nhóm 1 Thầu phụ = giá trị HT/QT của các HĐTP (+ dòng thầu phụ nhập kiểu cũ nếu có)
   const tpAsCost = thau_phu.map((c) => ({ nhom: 'thau_phu', gia_tri: c.qt_gia_tri, tien_vat: c.qt_tien_vat, sau_vat: c.qt_sau_vat, tam_tinh: c.tam_tinh }));
-  // Danh sách HĐ chủ đầu tư (HĐ gốc) để gộp / gắn thầu phụ, theo thứ tự như tab Doanh thu
+  // Danh sách HĐ khách hàng (HĐ gốc) để gộp / gắn thầu phụ, theo thứ tự như tab Doanh thu
   const hd_cdt = sortRevenue((await store.listRevenue(id)).filter((r) => r.loai === 'hd' && r.ma_loai === 'HĐ'))
     .map((r) => ({ id: r.id, so_ma: r.so_ma, so_hieu: r.so_hieu, ngay: r.ngay }));
   res.json({ du_an, items, thau_phu, hd_cdt, tong_tp: summarizeContracts(thau_phu), tong: summarizeCost([...items, ...tpAsCost]) });
@@ -669,7 +669,7 @@ api.post('/du-an/:id/thau-phu', canEdit, wrap(async (req, res) => {
   const l = validateTpLine({ ...(req.body?.hd || {}), ma_loai: 'HĐ' });
   const errors = [...t.errors, ...l.errors];
   if (errors.length) return bad(res, errors);
-  if (t.data.hd_cdt_id) { const e = await checkHeadRef(t.data.hd_cdt_id, id); if (e) return bad(res, 'HĐ chủ đầu tư: ' + e); }
+  if (t.data.hd_cdt_id) { const e = await checkHeadRef(t.data.hd_cdt_id, id); if (e) return bad(res, 'HĐ khách hàng: ' + e); }
   res.status(201).json(await store.createTp(id, t.data, l.data, req.user.id));
 }));
 
@@ -679,7 +679,7 @@ api.put('/thau-phu/:id', canEdit, wrap(async (req, res) => {
   const { data, errors } = validateTp(body);
   if (errors.length) return bad(res, errors);
   if (!('hd_cdt_id' in body)) data.hd_cdt_id = tp.hd_cdt_id ?? null; // không gửi -> giữ nguyên liên kết
-  if (data.hd_cdt_id) { const e = await checkHeadRef(data.hd_cdt_id, tp.du_an_id); if (e) return bad(res, 'HĐ chủ đầu tư: ' + e); }
+  if (data.hd_cdt_id) { const e = await checkHeadRef(data.hd_cdt_id, tp.du_an_id); if (e) return bad(res, 'HĐ khách hàng: ' + e); }
   await store.updateTp(tp.id, data, req.user.id);
   res.json({ id: tp.id });
 }));

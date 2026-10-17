@@ -45,9 +45,10 @@
           <input type="hidden" name="id">
           <label>Mã dự án *<input name="ma_du_an" required maxlength="50"></label>
           <label>Tên dự án *<input name="ten_du_an" required maxlength="255"></label>
-          <label>Chủ đầu tư<input name="chu_dau_tu" maxlength="255"></label>
-          <label>Loại công trình<input name="loai_cong_trinh" maxlength="100" placeholder="Nhà cao tầng, Nhà xưởng..."></label>
-          <label>Địa điểm<input name="dia_diem" maxlength="150" placeholder="Quận 1, TP.HCM"></label>
+          <label>Khách hàng<input name="chu_dau_tu" maxlength="255"></label>
+          <label>Công suất (kWp)<input name="cong_suat" type="number" min="0" step="0.01" placeholder="VD: 10,5"></label>
+          <label>Loại hệ thống<input name="loai_cong_trinh" maxlength="100" placeholder="Hòa lưới bám tải, Hybrid lưu trữ..."></label>
+          <label>Địa điểm<input name="dia_diem" maxlength="150" placeholder="Q. Gò Vấp, TP.HCM"></label>
           <label>Tiến độ (%)<input name="tien_do" type="number" min="0" max="100" step="0.01" value="0"></label>
           <label>Trạng thái<select name="trang_thai"></select></label>
           <label>Ngày bắt đầu<input name="ngay_bat_dau" type="date"></label>
@@ -64,14 +65,14 @@
         <div class="toolbar">
           <h2>Danh sách dự án</h2>
           <span class="muted small p-note">Doanh thu · Chi phí · Lợi nhuận: số thực hiện, trước VAT — bấm tên dự án để xem báo cáo chi tiết</span>
-          <input id="p-search" type="search" placeholder="Tìm mã, tên, chủ đầu tư...">
+          <input id="p-search" type="search" placeholder="Tìm mã, tên, khách hàng...">
           <button id="p-csv">Xuất CSV</button>
         </div>
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Mã / Tên dự án</th><th>Chủ đầu tư</th>
+                <th>Mã / Tên dự án</th><th>Khách hàng</th>
                 <th class="num">Doanh thu</th><th class="num">Chi phí</th><th class="num">Lợi nhuận</th>
                 <th>Tiến độ</th><th>Trạng thái</th><th>Thời gian</th><th>Cập nhật</th><th></th>
               </tr>
@@ -127,7 +128,7 @@
             <input type="hidden" name="id">
             <label>Nhóm chi phí *<select name="nhom"></select></label>
             <label id="c-sub-wrap">Hạng mục *<select name="nhom_con"></select></label>
-            <label class="c-tp">Thuộc HĐ chủ đầu tư<select name="hd_cdt"></select></label>
+            <label class="c-tp">Thuộc HĐ khách hàng<select name="hd_cdt"></select></label>
             <label class="c-tp">Số HĐ thầu phụ *<input name="so_tp" maxlength="120" placeholder="Số mới: gõ · Số đã có: nhấp đúp" title="Số HĐ mới: gõ trực tiếp. Số đã có: nhấp đúp để mở bảng chi tiết"></label>
             <label class="span-2 c-gen">Nội dung *<input name="noi_dung" maxlength="300"></label>
             <label><span id="c-dt-label">Đối tác / Nhà cung cấp</span><input name="doi_tac" maxlength="200"></label>
@@ -154,7 +155,7 @@
           </div>
           <div class="toolbar tp-filter">
             <button type="button" class="sm" id="tp-toggle-all">Mở tất cả</button>
-            <input id="tp-q" type="search" placeholder="Tìm số HĐ, nhà thầu, ghi chú (HĐ CĐT)..." aria-label="Tìm hợp đồng thầu phụ">
+            <input id="tp-q" type="search" placeholder="Tìm số HĐ, nhà thầu, ghi chú (HĐ khách hàng)..." aria-label="Tìm hợp đồng thầu phụ">
             <div class="seg" id="tp-loc" role="group" aria-label="Lọc theo quyết toán">
               <button type="button" data-v="" class="on">Tất cả</button><button type="button" data-v="chua">Chưa QT</button><button type="button" data-v="da">Đã QT</button>
             </div>
@@ -237,7 +238,7 @@
         </form>
         <hr>
         <h2>Dữ liệu mẫu (chạy thử hệ thống)</h2>
-        <p class="small">Tạo 12 dự án mẫu mã <b>DEMO-01…12</b>: mỗi dự án 5–10 HĐ chủ đầu tư ở các giai đoạn (mới ký / đang thi công / đã quyết toán), mỗi HĐ 5–10 HĐ thầu phụ và các khoản chi phí khác. Không ảnh hưởng dữ liệu thật; xóa được toàn bộ bằng Passcode.</p>
+        <p class="small">Tạo 15 công trình điện mặt trời áp mái mẫu mã <b>DEMO-01…15</b> (nhà phố, cửa hàng, xưởng nhỏ 5–100 kWp): mỗi công trình 1 HĐ lắp đặt ở các giai đoạn (mới ký / đang lắp đặt / hoàn thành / đã quyết toán), kèm chi phí tấm pin, inverter, pin lưu trữ, nhân công, đấu nối điện lực. Không ảnh hưởng dữ liệu thật; xóa được toàn bộ bằng Passcode.</p>
         <p id="demo-status" class="small muted"></p>
         <div class="actions">
           <button type="button" class="primary" id="demo-seed">Tạo dữ liệu mẫu</button>

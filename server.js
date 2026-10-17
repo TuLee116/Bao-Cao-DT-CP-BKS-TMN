@@ -807,7 +807,7 @@ function dbErrorPage() {
 <div class="stack"><div><b>Nguyên nhân có thể:</b><br>${e(dbHint(dbState.error))}</div>
 <div><b>Lỗi chi tiết:</b><br><code>${e(dbState.error || 'Đang kết nối...')}</code></div>
 <div><b>DATABASE_URL đang trỏ tới:</b><br><code>${e(store.target)}</code></div></div></div>
-<div class="auth-foot">Produced by the Supervisory Board of T&amp;T Helio</div></body></html>`;
+<div class="auth-foot">Produced by T&amp;T Helio</div></body></html>`;
 }
 
 // =====================================================================
